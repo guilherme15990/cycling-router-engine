@@ -1,0 +1,25 @@
+{
+  "version": 0.6,
+  "generator": "fixture",
+  "elements": [
+    {"type": "node", "id": 1, "lat": 0.0000, "lon": 0.0000, "tags": {"ele": "700"}},
+    {"type": "node", "id": 2, "lat": 0.0010, "lon": 0.0000, "tags": {"ele": "705"}},
+    {"type": "node", "id": 3, "lat": 0.0010, "lon": 0.0010, "tags": {"ele": "710"}},
+    {"type": "node", "id": 4, "lat": 0.0000, "lon": 0.0010, "tags": {"ele": "705"}},
+    {"type": "node", "id": 5, "lat": 0.0020, "lon": 0.0000, "tags": {"ele": "715"}},
+    {"type": "node", "id": 6, "lat": 0.0020, "lon": 0.0010, "tags": {"ele": "720"}},
+    {"type": "node", "id": 8, "lat": 0.0002, "lon": 0.0008, "tags": {}},
+
+    {"type": "way", "id": 101, "nodes": [1, 2], "tags": {"highway": "residential", "oneway": "yes", "surface": "asphalt", "name": "Rua Um"}},
+    {"type": "way", "id": 102, "nodes": [2, 3], "tags": {"highway": "residential", "surface": "paving_stones"}},
+    {"type": "way", "id": 103, "nodes": [3, 4], "tags": {"highway": "residential", "surface": "asphalt"}},
+    {"type": "way", "id": 104, "nodes": [4, 1], "tags": {"highway": "cycleway", "oneway": "yes", "oneway:bicycle": "no", "surface": "asphalt"}},
+    {"type": "way", "id": 105, "nodes": [2, 5], "tags": {"highway": "track", "tracktype": "grade2"}},
+    {"type": "way", "id": 106, "nodes": [5, 6], "tags": {"highway": "path", "surface": "ground"}},
+    {"type": "way", "id": 107, "nodes": [6, 3], "tags": {"highway": "residential", "surface": "asphalt"}},
+    {"type": "way", "id": 108, "nodes": [1, 3], "tags": {"highway": "steps"}},
+    {"type": "way", "id": 109, "nodes": [2, 4], "tags": {"highway": "residential", "bicycle": "no"}},
+    {"type": "way", "id": 111, "nodes": [1, 2], "tags": {"highway": "footway", "surface": "asphalt"}},
+    {"type": "way", "id": 113, "nodes": [1, 8, 3], "tags": {"highway": "residential", "surface": "asphalt"}}
+  ]
+}
