@@ -1,6 +1,6 @@
 """Estimativa de energia eletrica por rota (perfil ``Elétrico``).
 
-Ponte entre a selecao (``Route`` reconstruida) e o modelo energetico da camada
+Ponte entre a selecao (``SearchRoute`` reconstruida) e o modelo energetico da camada
 fisica (``physical.energy_model``). A energia acumulada na rota e **mecanica**;
 aqui ela e convertida em **eletrica** (``E_eletrica ~= E_mec / eta``) para
 exibicao em Wh e, se houver bateria configurada, para avaliar viabilidade.
@@ -14,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from router.core.physics.physical.energy_model import (
+from router.core.physics.energy_model import (
     BatteryConfig,
     BatteryFeasibility,
     EnergyEstimate,
@@ -22,7 +22,7 @@ from router.core.physics.physical.energy_model import (
     assess_battery,
 )
 
-from .route import Route
+from .route import SearchRoute
 
 
 @dataclass(frozen=True, slots=True)
@@ -61,7 +61,7 @@ class RouteEnergyEstimate:
 
 
 def estimate_route_energy(
-    route: Route,
+    route: SearchRoute,
     model: EnergyModel | None = None,
     *,
     battery: BatteryConfig | None = None,
@@ -81,7 +81,7 @@ def estimate_route_energy(
 
 
 def estimate_routes_energy(
-    routes: Iterable[Route],
+    routes: Iterable[SearchRoute],
     model: EnergyModel | None = None,
     *,
     battery: BatteryConfig | None = None,

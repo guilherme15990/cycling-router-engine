@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from router.core.physics.physical.models import TraversalPath
+from router.core.physics.models import TraversalPath
 
 
 @dataclass(frozen=True, slots=True)

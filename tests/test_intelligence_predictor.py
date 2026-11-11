@@ -14,8 +14,8 @@ Cobrem:
 import ast
 import inspect
 import pytest
-import router.core.prediction.intelligence.predictor as predictor_module
-from router.core.prediction.intelligence import (
+import router.core.prediction.predictor as predictor_module
+from router.core.prediction import (
     ConstantModel,
     CyclistId,
     LinearModel,
@@ -34,7 +34,7 @@ from router.core.prediction.intelligence import (
 )
 from _intelligence_fixtures import features
 from router.core.prediction.ml import EffortPredictor, predict_effort
-from router.core.physics.physiology import (
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     PredictionContext,
     PredictionStatus,
@@ -199,7 +199,7 @@ def test_trained_calibrated_model_predicts_end_to_end(tmp_path):
     ]
     dataset = build_dataset("v1", observations, provenance=provenance())
     store = ModelStore(tmp_path / "models")
-    from router.core.prediction.intelligence import train_and_save
+    from router.core.prediction import train_and_save
 
     trained = train_and_save(
         dataset,

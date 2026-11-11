@@ -25,8 +25,8 @@ from router.core.evaluation import (
 from router.core.data.graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
 from router.core.data.graph.restrictions import AccessRule
 from router.core.prediction.ml import UnavailablePredictor
-from router.core.physics.physical import BicycleModel, CyclistModel
-from router.core.physics.physiology import (
+from router.core.physics import BicycleModel, CyclistModel
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     PhysiologicalPrediction,
     PredictionStatus,
@@ -230,7 +230,7 @@ def test_zone_preference_unknown_without_distribution():
 def _with_intensity(distribution, *, duration_distribution=None):
     from dataclasses import replace
 
-    from router.core.prediction.intelligence.intensity import IntensityEstimate
+    from router.core.prediction.intensity import IntensityEstimate
 
     estimate = IntensityEstimate(
         borg_scale=DEFAULT_BORG_SCALE,
@@ -365,3 +365,33 @@ def test_classify_route_rejects_wrong_types():
         classify_route(object())  # type: ignore[arg-type]
     with pytest.raises(ClassificationError):
         classify_route(assess(two_arc_graph()), preference=object())  # type: ignore[arg-type]
+
+
+def test_classification_does_not_import_concrete_dto():
+    """A classificacao depende de ``RouteAssessmentView``, nao do DTO concreto.
+
+    Regressao do ADR-033 (E2): se alguem reintroduzir o import concreto, o
+    protocolo estrutural volta a nao ter consumidor real.
+    """
+    import router.core.evaluation.classification as classification_module
+
+    assert not hasattr(classification_module, "RouteAssessment")
+
+
+def test_classification_accepts_a_structural_view():
+    """Um objeto que satisfaz o protocolo (sem ser o DTO) e classificado."""
+    from types import SimpleNamespace
+
+    from router.core.evaluation import RouteAssessment
+
+    real = assess(two_arc_graph())
+    view = SimpleNamespace(
+        outcome=real.outcome,
+        prediction=real.prediction,
+        intensity=real.intensity,
+        arc_ids=real.arc_ids,
+    )
+    assert not isinstance(view, RouteAssessment)
+    classification = classify_route(view)  # type: ignore[arg-type]
+    assert classification.arc_ids == real.arc_ids
+    assert classification.outcome is real.outcome

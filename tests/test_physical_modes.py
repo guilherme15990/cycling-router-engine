@@ -22,7 +22,7 @@ import pytest
 from router.interfaces.cli import main
 from router.core.data.graph.model import Arc, ElevationSample, Node, RoutingGraph, Segment
 from router.core.data.graph.serialize import save_json
-from router.core.physics.physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     Environment,

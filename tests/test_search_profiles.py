@@ -1,6 +1,6 @@
 import pytest
 from router.core.data.graph.model import RoutingGraph, Arc, Segment, Node
-from router.core.physics.physical import TraversalResult
+from router.core.physics import TraversalResult
 from router.core.search import (
     PROFILE_CONFIG,
     PROFILE_IDS,
@@ -13,7 +13,7 @@ from router.core.search import (
     ProfileSearchRequest,
     RankingStrategy,
     RankingTolerance,
-    Route,
+    SearchRoute,
     RouteExplainer,
     RouteProfile,
     ScoreReference,
@@ -35,8 +35,8 @@ def route(
     distance_m: float = 1000.0,
     ascent_m: float = 10.0,
     label_id: int = 0,
-) -> Route:
-    return Route(
+) -> SearchRoute:
+    return SearchRoute(
         arc_ids=tuple(arc_ids),
         arc_lengths=tuple([distance_m / max(1, len(arc_ids))] * len(arc_ids)),
         time_s=time_s,

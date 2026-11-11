@@ -1,7 +1,7 @@
 import math
 import pytest
 from router.core.data.graph.model import RoutingGraph, Arc, Segment, GraphError, Node
-from router.core.physics.physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     Environment,

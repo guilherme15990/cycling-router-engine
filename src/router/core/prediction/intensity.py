@@ -62,8 +62,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import ClassVar
 
-from router.core.physics.physical.models import TraversalPath
-from router.core.physics.physiology import DEFAULT_BORG_SCALE, BorgScale
+from router.core.physics.models import TraversalPath
+from router.core.physiology import DEFAULT_BORG_SCALE, BorgScale
 
 #: Identificador estavel do metodo (origem: heuristica do `toporide`).
 INTENSITY_MODEL_ID = "toporide-heuristic"

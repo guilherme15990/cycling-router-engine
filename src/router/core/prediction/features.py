@@ -16,8 +16,8 @@ from __future__ import annotations
 
 from typing import Mapping
 
-from router.core.physics.physical.effort import EffortFeatures
-from router.core.physics.physiology import PredictionContext, RiderProfile
+from router.core.physics.effort import EffortFeatures
+from router.core.physiology import PredictionContext, RiderProfile
 
 #: Versao do contrato de montagem de features.
 FEATURES_VERSION = "1"

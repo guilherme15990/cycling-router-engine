@@ -20,8 +20,8 @@ from collections.abc import Hashable
 from dataclasses import dataclass, field
 
 from router.core.data.graph.model import Arc, BicycleAccess
-from router.core.physics.physical.energy import kinetic_energy_j
-from router.core.physics.physical.models import (
+from router.core.physics.energy import kinetic_energy_j
+from router.core.physics.models import (
     ElevationUncertainty,
     SimulationStatus,
     TraversalResult,

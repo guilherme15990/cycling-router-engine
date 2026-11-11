@@ -20,8 +20,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterable
 
-from router.core.physics.physical.effort import EFFORT_FEATURES_VERSION
-from router.core.physics.physiology import BorgScale, DEFAULT_BORG_SCALE
+from router.core.physics.effort import EFFORT_FEATURES_VERSION
+from router.core.physiology import BorgScale, DEFAULT_BORG_SCALE
 
 from ._validation import finite, non_empty_str, non_negative, positive
 from .targets import TargetKind

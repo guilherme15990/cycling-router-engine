@@ -7,7 +7,7 @@ equivalentes podem representar a mesma alternativa.
 
 ``CandidateMetrics`` e o conjunto completo de metricas finais (inclui descida,
 que nao e objetivo). Os objetivos sao um subconjunto avaliado por
-``evaluator.py``. O nome evita colisao com o acumulador ``RouteMetrics`` da
+``evaluator.py``. O nome evita colisao com o acumulador ``PhysicsRouteMetrics`` da
 camada fisica.
 
 O pool **nao** decide preferencia nem selecao: ele apenas prepara candidatas
@@ -21,14 +21,14 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from enum import Enum
 
-from .route import Route, routes_from_result
+from .route import SearchRoute, routes_from_result
 
 
 @dataclass(frozen=True, slots=True)
 class CandidateMetrics:
     """Metricas finais de uma candidata (objetivos + descida).
 
-    Diferente de ``physical.RouteMetrics`` (acumulador fisico com
+    Diferente de ``physical.PhysicsRouteMetrics`` (acumulador fisico com
     energia do ciclista e bateria), este e o subconjunto lido pela selecao.
     """
 
@@ -39,7 +39,7 @@ class CandidateMetrics:
     energy_j: float
 
     @classmethod
-    def from_route(cls, route: Route) -> "CandidateMetrics":
+    def from_route(cls, route: SearchRoute) -> "CandidateMetrics":
         return cls(
             time_s=float(route.time_s),
             distance_m=float(route.distance_m),
@@ -63,12 +63,12 @@ class RouteCandidate:
     """Alternativa candidata: identidade + rota reconstruida + metricas."""
 
     route_id: str
-    route: Route
+    route: SearchRoute
     metrics: CandidateMetrics
 
     @classmethod
     def from_route(
-        cls, route: Route, route_id: str | None = None
+        cls, route: SearchRoute, route_id: str | None = None
     ) -> "RouteCandidate":
         identifier = (
             route_id if route_id is not None else f"route-{route.label_id}"
@@ -191,7 +191,7 @@ class RouteCandidatePool:
     @classmethod
     def from_routes(
         cls,
-        routes: Iterable[Route],
+        routes: Iterable[SearchRoute],
         *,
         deduplicator: RouteDeduplicator | None = None,
     ) -> "RouteCandidatePool":
@@ -227,7 +227,7 @@ class RouteCandidatePool:
         )
 
     @property
-    def routes(self) -> tuple[Route, ...]:
+    def routes(self) -> tuple[SearchRoute, ...]:
         return tuple(candidate.route for candidate in self.candidates)
 
     def __len__(self) -> int:

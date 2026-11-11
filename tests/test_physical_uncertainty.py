@@ -23,7 +23,7 @@ from router.core.data.graph.model import (
     Segment,
 )
 from router.core.data.graph.surface import Surface, SurfaceStatus
-from router.core.physics.physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     ElevationUncertainty,

@@ -19,7 +19,7 @@ from .evaluator import (
     objective_value,
 )
 from .profiles import RankingStrategy, RouteObjective, RouteProfile
-from .route import Route
+from .route import SearchRoute
 from .selection import SelectionReason
 
 
@@ -47,11 +47,11 @@ class RouteExplainer:
 
     def explain(
         self,
-        route: Route,
+        route: SearchRoute,
         profile: RouteProfile,
         reason: SelectionReason,
         *,
-        candidates: Iterable[Route] = (),
+        candidates: Iterable[SearchRoute] = (),
     ) -> RouteExplanation:
         pool = tuple(candidates)
         comparative = bool(pool)
@@ -76,7 +76,7 @@ class RouteExplainer:
     # ------------------------------------------------------------- interno
     def _headline(
         self,
-        route: Route,
+        route: SearchRoute,
         values: ObjectiveValues,
         profile: RouteProfile,
         comparative: bool,
@@ -219,11 +219,11 @@ class RouteExplainer:
 
 
 def explain_route(
-    route: Route,
+    route: SearchRoute,
     profile: RouteProfile,
     reason: SelectionReason,
     *,
-    candidates: Iterable[Route] = (),
+    candidates: Iterable[SearchRoute] = (),
     evaluator: ObjectiveEvaluator | None = None,
 ) -> RouteExplanation:
     """Atalho funcional para ``RouteExplainer().explain``."""

@@ -8,7 +8,7 @@ rota: ela evita encher a lista de alternativas quase iguais. Duas metricas:
   grafo (duas rotas visualmente iguais podem usar arcos diferentes).
 * ``SHARED_DISTANCE_RATIO``: ``D_shared(A,B) / min(D_A, D_B)`` — responde "quanto
   da rota mais curta ja esta presente na outra". E a metrica principal do MVP e
-  usa os comprimentos por arco (``Route.arc_length_map``); quando faltam
+  usa os comprimentos por arco (``SearchRoute.arc_length_map``); quando faltam
   comprimentos, recai para contagem de arcos.
 """
 
@@ -18,10 +18,10 @@ import math
 from dataclasses import dataclass
 
 from .profiles import DiversityMetric
-from .route import Route
+from .route import SearchRoute
 
 
-def arc_jaccard(a: Route, b: Route) -> float:
+def arc_jaccard(a: SearchRoute, b: SearchRoute) -> float:
     """Similaridade de Jaccard sobre os arcos direcionados.
 
     Duas rotas iguais dao ``1.0``; sem arco em comum dao ``0.0``.
@@ -36,7 +36,7 @@ def arc_jaccard(a: Route, b: Route) -> float:
     return len(arcs_a & arcs_b) / len(union)
 
 
-def shared_distance_ratio(a: Route, b: Route) -> float:
+def shared_distance_ratio(a: SearchRoute, b: SearchRoute) -> float:
     """Proporcao de distancia compartilhada, em ``[0, 1]``.
 
     ``R(A,B) = D_shared(A,B) / min(D_A, D_B)``. ``D_shared`` soma, por arco
@@ -66,7 +66,7 @@ def shared_distance_ratio(a: Route, b: Route) -> float:
 
 
 def route_diversity(
-    a: Route, b: Route, metric: DiversityMetric
+    a: SearchRoute, b: SearchRoute, metric: DiversityMetric
 ) -> float:
     """Semelhanca entre ``a`` e ``b`` segundo ``metric`` (0 = distintas)."""
     if metric is DiversityMetric.ARC_JACCARD:
@@ -77,14 +77,14 @@ def route_diversity(
 
 
 def is_too_similar(
-    a: Route, b: Route, metric: DiversityMetric, threshold: float
+    a: SearchRoute, b: SearchRoute, metric: DiversityMetric, threshold: float
 ) -> bool:
     """True quando a semelhanca excede ``threshold``."""
     return route_diversity(a, b, metric) > threshold
 
 
 # Nome historico mantido: similaridade padrao do projeto e o Jaccard de arcos.
-def route_similarity(a: Route, b: Route) -> float:
+def route_similarity(a: SearchRoute, b: SearchRoute) -> float:
     """Alias de ``arc_jaccard`` (compatibilidade com a API anterior)."""
     return arc_jaccard(a, b)
 
@@ -109,11 +109,11 @@ class RouteDiversity:
             )
         object.__setattr__(self, "threshold", threshold)
 
-    def similarity(self, a: Route, b: Route) -> float:
+    def similarity(self, a: SearchRoute, b: SearchRoute) -> float:
         return route_diversity(a, b, self.metric)
 
     def is_too_similar(
-        self, a: Route, b: Route, threshold: float | None = None
+        self, a: SearchRoute, b: SearchRoute, threshold: float | None = None
     ) -> bool:
         limit = self.threshold if threshold is None else threshold
         return self.similarity(a, b) > limit

@@ -12,9 +12,9 @@ from router.core.data.elevation import CallableElevation
 from router.app.multi_leg import plan_routes
 from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
 from router.core.data.osm.parse import OsmData
-from router.core.physics.physical import BicycleModel, CyclistModel
+from router.core.physics import BicycleModel, CyclistModel
 from router.app.planning import plan_offline_routes
-from router.contracts import RoutePlanV1, dumps, loads
+from router.contracts import RoutePlan, dumps, loads
 
 _NETWORK = {
     "elements": [
@@ -73,7 +73,7 @@ def _cyclist() -> CyclistModel:
     )
 
 
-def _plan(stops=(), **kwargs) -> RoutePlanV1:
+def _plan(stops=(), **kwargs) -> RoutePlan:
     return plan_routes(
         _graph(),
         ORIGIN,
@@ -99,7 +99,7 @@ def test_no_stops_matches_single_leg_contract():
 def test_two_legs_have_continuous_geometry_and_accumulated_distance():
     plan = _plan(stops=(STOP,))
 
-    assert isinstance(plan, RoutePlanV1)
+    assert isinstance(plan, RoutePlan)
     assert plan.reached is True
     assert plan.request.stops == (STOP,)
     assert plan.routes, "o trajeto completo deve existir"

@@ -28,7 +28,7 @@ from router.core.data.graph.serialize import graph_from_dict, graph_to_dict
 from router.core.data.graph.simplify import simplify_graph
 from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
 from router.core.data.osm.parse import OsmData
-from router.core.physics.physical.arc_profile import ArcProfile
+from router.core.physics.arc_profile import ArcProfile
 from router.core.data.snapping import SpatialSnapper
 
 # --------------------------------------------------------------------------

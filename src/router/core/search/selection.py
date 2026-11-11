@@ -33,7 +33,7 @@ from .profiles import (
     route_profile_for,
 )
 from .ranking import RankedCandidate, rank_candidates
-from .route import Route
+from .route import SearchRoute
 
 if TYPE_CHECKING:
     from .astar import SearchResult
@@ -113,7 +113,7 @@ class SelectedRoute:
     selection_reason: SelectionReason
 
     @property
-    def route(self) -> Route:
+    def route(self) -> SearchRoute:
         return self.candidate.route
 
     @property
@@ -158,7 +158,7 @@ class SelectionResult:
         return len(self.selected)
 
     @property
-    def routes(self) -> tuple[Route, ...]:
+    def routes(self) -> tuple[SearchRoute, ...]:
         return tuple(selected.route for selected in self.selected)
 
     @property
@@ -226,7 +226,7 @@ def select_candidates(
     # greedy a diversidade e honrada (True); no relaxamento o limiar e
     # afrouxado, entao a candidata entra como alternativa proxima (False).
     accepted: list[tuple[RankedCandidate, bool]] = []
-    chosen_routes: list[Route] = []
+    chosen_routes: list[SearchRoute] = []
     rejected: list[RankedCandidate] = []
 
     for ranked_candidate in ranked:
@@ -285,7 +285,7 @@ def select_candidates(
 
 
 def select_routes(
-    routes: Iterable[Route],
+    routes: Iterable[SearchRoute],
     profile: RouteProfile,
     config: SelectionConfig | None = None,
     *,
@@ -363,8 +363,8 @@ def _resolve_profile(
 
 
 def _is_distinct(
-    candidate: Route,
-    chosen: list[Route],
+    candidate: SearchRoute,
+    chosen: list[SearchRoute],
     diversity: DiversityConfig,
     threshold: float | None = None,
 ) -> bool:

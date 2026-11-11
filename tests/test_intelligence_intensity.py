@@ -11,9 +11,9 @@ from __future__ import annotations
 import json
 import math
 import pytest
-from router.core.physics.physical.models import RouteMetrics, TraversalPath, TraversalResult
-from router.core.physics.physiology import DEFAULT_BORG_SCALE
-from router.core.prediction.intelligence.intensity import (
+from router.core.physics.models import PhysicsRouteMetrics, TraversalPath, TraversalResult
+from router.core.physiology import DEFAULT_BORG_SCALE
+from router.core.prediction.intensity import (
     DEFAULT_INTENSITY_COEFFICIENTS,
     INTENSITY_BAND_DEFINITION,
     INTENSITY_BAND_EDGES,
@@ -212,7 +212,7 @@ def test_estimate_rejects_bad_fraction_dict():
 
 
 def test_estimate_uses_scale_bounds_for_cr10():
-    from router.core.physics.physiology import BorgScale
+    from router.core.physiology import BorgScale
 
     estimate = estimate_intensity(
         (_segment(rider_energy_j=1000.0),),
@@ -235,14 +235,14 @@ class _StubArc:
 def _path(results: list[TraversalResult]) -> TraversalPath:
     return TraversalPath(
         results=tuple(results),
-        metrics=RouteMetrics.from_results(results),
+        metrics=PhysicsRouteMetrics.from_results(results),
         initial_speed_mps=0.0,
         final_speed_mps=0.0,
     )
 
 
 def test_segments_from_traversal_builds_grade_and_traffic():
-    from router.core.prediction.intelligence.intensity import segments_from_traversal
+    from router.core.prediction.intensity import segments_from_traversal
 
     results = [
         TraversalResult(
@@ -282,7 +282,7 @@ def test_segments_from_traversal_builds_grade_and_traffic():
 
 
 def test_segments_from_traversal_rejects_mismatched_lengths():
-    from router.core.prediction.intelligence.intensity import segments_from_traversal
+    from router.core.prediction.intensity import segments_from_traversal
 
     results = [
         TraversalResult(

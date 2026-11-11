@@ -51,7 +51,7 @@ class ObjectiveSet:
         """Extrai os valores na ordem dos objetivos.
 
         ``source`` pode ser um ``Mapping`` (nome -> valor) ou um objeto com
-        atributos nomeados (por exemplo ``RouteMetrics`` ou um estado futuro).
+        atributos nomeados (por exemplo ``PhysicsRouteMetrics`` ou um estado futuro).
         """
         return tuple(_value_of(source, name) for name in self.objectives)
 

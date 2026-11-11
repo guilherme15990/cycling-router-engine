@@ -614,9 +614,14 @@ Reavaliar esta decisão se:
 |---|---|
 | 2026-11-11 | Fases 1–2 concluídas: 843 testes verdes, 105 módulos, 350 arestas, 0 ciclos, 0 violações, 0 imports dinâmicos; custo de import medido |
 | 2026-11-11 | Fase 3 concluída com a decisão deste ADR; ADR-032 reposicionado como estrutura-alvo condicional |
-| — | Fases 4–6 **não iniciadas**; nenhum arquivo de produção alterado |
+| 2026-11-11 | E1–E8 executados (branch `refactor/adr-032-033`): fronteira pública e docs (E1), portas sem consumidor removidas (E2), `app/plan_view.py` (E3), verificação arquitetural — ciclos/fachadas (E4), `router.integration` com carga tardia (E5), CLI e `app/tooling` decompostos (E6), empacotamento/wheel (E7), achatamentos do ADR-032 (E8) |
+| 2026-11-11 | 861 testes verdes; 113 módulos, 365 arestas, 0 ciclos, 0 violações; fachada `api` congelada em 336; wheel sem `data/`/`.cache/`/`.git/`/`tests/` |
+| 2026-11-11 | Revisão de nomes: sufixo ``V1`` removido do contrato (`RoutePlan`, `RouteMetrics`, `Route`, `Reason`, `RouteSafety`, `BBox`, …); classes internas colidentes renomeadas (`RoutePlanResult`, `PhysicsRouteMetrics`, `SearchRoute`, `SafetyReason`, `RouteSafetyAssessment`, `GeoBBox`); `api` segue com 336 símbolos, formato serializado inalterado |
+| — | Cobertura e type-check **não medidos** (ferramentas ausentes); `lint` não executado |
 
-**Nota de honestidade:** cobertura de testes não foi medida; lint, type-check e
-build de wheel não foram executados por ausência de ferramentas no ambiente.
-Este ADR não afirma melhoria verificada — afirma uma decisão fundamentada em
-medições de estrutura e dependência, com critérios de verificação definidos.
+**Nota de honestidade:** cobertura de testes não foi medida; lint e type-check
+não foram executados por ausência de ferramentas no ambiente. O build de wheel
+foi executado ao final (E7) num alvo temporário (`setuptools`/`build` instalados
+em `--target`), sem alterar o ambiente do projeto. Este ADR não afirma melhoria
+verificada — afirma uma decisão fundamentada em medições de estrutura e
+dependência, com critérios de verificação definidos.

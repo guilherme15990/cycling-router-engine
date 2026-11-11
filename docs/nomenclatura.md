@@ -95,8 +95,9 @@ O `Link` reúne as agregações **sem sentido** (`distance_m`, `surface`, `name`
   `segment_count`, `link_count`, `arc_count`.
 - Acesso: `get_node`, `get_link`, `get_arc`, `out_arcs(node)`, `in_arcs(node)`,
   `incident_links(node)`, `add_link`, `link_of(arc)`.
-- Arquivo-fonte do modelo: `src/graph/model.py` (um único módulo com as cinco
-  entidades; a divisão em `src/domain/` fica como evolução futura opcional).
+- Arquivo-fonte do modelo: `src/router/core/data/graph/model.py` (um único
+  módulo com as cinco entidades; a divisão em módulos menores dentro de
+  `src/router/core/data/graph/` fica como evolução futura opcional).
 
 ## Formato serializado
 

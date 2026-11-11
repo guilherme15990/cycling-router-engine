@@ -21,7 +21,7 @@ busca escolhe as rotas.
 
 ```python
 from router.core.data.graph.serialize import load_json
-from router.core.physics.physical import BicycleModel, CyclistModel, PhysicalTraversal
+from router.core.physics import BicycleModel, CyclistModel, PhysicalTraversal
 from router.core.search import (
     PhysicalTraversalModel,
     ProfileSearchRequest,
@@ -97,7 +97,7 @@ para Wh e a viabilidade de bateria acontecem **depois** da seleção, em
 percentual.
 
 ```python
-from router.core.physics.physical import BatteryConfig, EnergyModel, GenericEnergyConfig
+from router.core.physics import BatteryConfig, EnergyModel, GenericEnergyConfig
 from router.core.search import ProfileSearchRequest, route_profile_for, search_profile
 
 # Modelo energetico: sem configuracao, usa valores de referencia internos.

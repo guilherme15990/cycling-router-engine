@@ -23,7 +23,7 @@ from collections.abc import Hashable, Iterable, Sequence
 from dataclasses import dataclass
 
 from router.core.data.graph.model import Arc, RoutingGraph
-from router.core.physics.physical.models import TraversalResult
+from router.core.physics.models import TraversalResult
 from .circulation import (
     CirculationPolicy,
     ConditionEvaluator,

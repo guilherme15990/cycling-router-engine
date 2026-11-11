@@ -1,7 +1,7 @@
 """Planejamento com paradas intermediarias (ADR-030, Fase 3).
 
 ``plan_routes`` encadeia ``planning.plan_offline_routes`` por perna e funde os
-resultados no contrato publico ``RoutePlanV1``. A fusao acontece **no nucleo**,
+resultados no contrato publico ``RoutePlan``. A fusao acontece **no nucleo**,
 nao no consumidor: a geometria e continua, ``dist_m`` e acumulado e as metricas
 sao somadas (ou ponderadas, quando a grandeza e uma fracao/media).
 
@@ -27,21 +27,21 @@ from typing import Any
 
 from router.core.data.graph.model import RoutingGraph
 from router.app.planning import plan_offline_routes
-from router.core.physics.physical.bicycle import BicycleModel
-from router.core.physics.physical.cyclist import CyclistModel
+from router.core.physics.bicycle import BicycleModel
+from router.core.physics.cyclist import CyclistModel
 from router.contracts import (
     INTENSITY_BANDS,
-    BBoxV1,
-    ReasonV1,
-    RouteMLV1,
-    RouteMetricsV1,
-    RoutePlanV1,
-    RoutePointV1,
-    RouteProvenanceV1,
-    RouteRequestV1,
-    RouteSafetyV1,
-    RouteV1,
-    ZoneV1,
+    BBox,
+    Reason,
+    RouteML,
+    RouteMetrics,
+    RoutePlan,
+    RoutePoint,
+    RouteProvenance,
+    RouteRequest,
+    RouteSafety,
+    Route,
+    Zone,
 )
 
 Coord = tuple[float, float]
@@ -53,16 +53,16 @@ _SAFETY_RANK: dict[str, int] = {"validated": 0, "degraded": 1, "rejected": 2}
 _EPS_COORD = 1e-9
 
 
-def _same_coord(a: Coord | RoutePointV1, b: Coord | RoutePointV1) -> bool:
-    ax, ay = (a.lat, a.lon) if isinstance(a, RoutePointV1) else a
-    bx, by = (b.lat, b.lon) if isinstance(b, RoutePointV1) else b
+def _same_coord(a: Coord | RoutePoint, b: Coord | RoutePoint) -> bool:
+    ax, ay = (a.lat, a.lon) if isinstance(a, RoutePoint) else a
+    bx, by = (b.lat, b.lon) if isinstance(b, RoutePoint) else b
     return abs(ax - bx) < _EPS_COORD and abs(ay - by) < _EPS_COORD
 
 
-def _union_bbox(boxes: Sequence[BBoxV1]) -> BBoxV1:
+def _union_bbox(boxes: Sequence[BBox]) -> BBox:
     if not boxes:
         raise ValueError("nao ha bbox para fundir")
-    return BBoxV1(
+    return BBox(
         south=min(box.south for box in boxes),
         west=min(box.west for box in boxes),
         north=max(box.north for box in boxes),
@@ -84,9 +84,9 @@ def _weighted_mean(values: Sequence[float], weights: Sequence[float], fallback: 
     return sum(value * weight for value, weight in zip(values, weights)) / total
 
 
-def _merge_geometry(legs: Sequence[RouteV1]) -> tuple[RoutePointV1, ...]:
+def _merge_geometry(legs: Sequence[Route]) -> tuple[RoutePoint, ...]:
     """Concatena a geometria das pernas, deslocando ``dist_m`` e sem duplicar a juncao."""
-    points: list[RoutePointV1] = []
+    points: list[RoutePoint] = []
     offset = 0.0
     for leg in legs:
         for point in leg.geometry:
@@ -97,7 +97,7 @@ def _merge_geometry(legs: Sequence[RouteV1]) -> tuple[RoutePointV1, ...]:
     return tuple(points)
 
 
-def _merge_metrics(legs: Sequence[RouteV1]) -> RouteMetricsV1:
+def _merge_metrics(legs: Sequence[Route]) -> RouteMetrics:
     max_grades = [
         leg.metrics.max_grade_pct
         for leg in legs
@@ -107,7 +107,7 @@ def _merge_metrics(legs: Sequence[RouteV1]) -> RouteMetricsV1:
         sum(leg.metrics.meters_band[index] for leg in legs)
         for index in range(3)
     ]
-    return RouteMetricsV1(
+    return RouteMetrics(
         source="assessment" if all(leg.metrics.source == "assessment" for leg in legs) else "search",
         distance_m=sum(leg.metrics.distance_m for leg in legs),
         time_s=sum(leg.metrics.time_s for leg in legs),
@@ -121,7 +121,7 @@ def _merge_metrics(legs: Sequence[RouteV1]) -> RouteMetricsV1:
     )
 
 
-def _merge_ml(legs: Sequence[RouteV1]) -> RouteMLV1:
+def _merge_ml(legs: Sequence[Route]) -> RouteML:
     """Funde a estimativa de intensidade mantendo-a explicitamente **nao calibrada**."""
     weights = [max(leg.metrics.distance_m, 0.0) for leg in legs]
     band_distance = {
@@ -155,7 +155,7 @@ def _merge_ml(legs: Sequence[RouteV1]) -> RouteMLV1:
         # representasse o todo. A ausencia de um identificador unico e explicita.
         method_id, model_version, borg_scale = "multi_leg", "", ""
 
-    return RouteMLV1(
+    return RouteML(
         mean_rpe=_weighted_mean([leg.ml.mean_rpe for leg in legs], weights),
         peak_rpe=max(leg.ml.peak_rpe for leg in legs),
         calibrated=all(leg.ml.calibrated for leg in legs),
@@ -168,8 +168,8 @@ def _merge_ml(legs: Sequence[RouteV1]) -> RouteMLV1:
     )
 
 
-def _merge_reasons(legs: Sequence[RouteV1]) -> tuple[ReasonV1, ...]:
-    merged: list[ReasonV1] = []
+def _merge_reasons(legs: Sequence[Route]) -> tuple[Reason, ...]:
+    merged: list[Reason] = []
     seen: set[tuple[str, str, str | None]] = set()
     for leg in legs:
         for reason in leg.safety.reasons:
@@ -181,8 +181,8 @@ def _merge_reasons(legs: Sequence[RouteV1]) -> tuple[ReasonV1, ...]:
     return tuple(merged)
 
 
-def _merge_advisories(legs: Sequence[RouteV1]) -> tuple[ReasonV1, ...]:
-    merged: list[ReasonV1] = []
+def _merge_advisories(legs: Sequence[Route]) -> tuple[Reason, ...]:
+    merged: list[Reason] = []
     seen: set[tuple[str, str, str | None]] = set()
     for leg in legs:
         for advisory in leg.safety.advisories:
@@ -194,12 +194,12 @@ def _merge_advisories(legs: Sequence[RouteV1]) -> tuple[ReasonV1, ...]:
     return tuple(merged)
 
 
-def _merge_safety(legs: Sequence[RouteV1]) -> RouteSafetyV1:
+def _merge_safety(legs: Sequence[Route]) -> RouteSafety:
     state = max(
         (leg.safety.state for leg in legs),
         key=lambda value: _SAFETY_RANK.get(value, _SAFETY_RANK["rejected"]),
     )
-    return RouteSafetyV1(
+    return RouteSafety(
         state=state,
         eligible=all(leg.safety.eligible for leg in legs),
         reasons=_merge_reasons(legs),
@@ -207,8 +207,8 @@ def _merge_safety(legs: Sequence[RouteV1]) -> RouteSafetyV1:
     )
 
 
-def _merge_route(legs: Sequence[RouteV1], *, rank: int, profile: str) -> RouteV1:
-    return RouteV1(
+def _merge_route(legs: Sequence[Route], *, rank: int, profile: str) -> Route:
+    return Route(
         id=f"m{rank}",
         profile=profile,
         recommended=rank == 0,
@@ -216,21 +216,21 @@ def _merge_route(legs: Sequence[RouteV1], *, rank: int, profile: str) -> RouteV1
         metrics=_merge_metrics(legs),
         ml=_merge_ml(legs),
         safety=_merge_safety(legs),
-        provenance=RouteProvenanceV1(kind="multi_leg", profile=profile),
+        provenance=RouteProvenance(kind="multi_leg", profile=profile),
     )
 
 
 def _empty_plan(
-    request: RouteRequestV1,
-    legs: Sequence[RoutePlanV1],
-) -> RoutePlanV1:
+    request: RouteRequest,
+    legs: Sequence[RoutePlan],
+) -> RoutePlan:
     graph = legs[0]
-    return RoutePlanV1(
+    return RoutePlan(
         request=request,
         reached=False,
         search_bbox=graph.search_bbox,
         bbox=graph.bbox,
-        zone=ZoneV1(
+        zone=Zone(
             nodes=sum(leg.zone.nodes for leg in legs),
             arcs=sum(leg.zone.arcs for leg in legs),
             graph_nodes=graph.zone.graph_nodes,
@@ -252,10 +252,10 @@ def _empty_plan(
 
 
 def _merge_leg_plans(
-    legs: Sequence[RoutePlanV1],
+    legs: Sequence[RoutePlan],
     *,
-    request: RouteRequestV1,
-) -> RoutePlanV1:
+    request: RouteRequest,
+) -> RoutePlan:
     if any(not leg.reached for leg in legs):
         return _empty_plan(request, legs)
 
@@ -287,12 +287,12 @@ def _merge_leg_plans(
     if eligible:
         eligible[0] = replace(eligible[0], recommended=True)
 
-    return RoutePlanV1(
+    return RoutePlan(
         request=request,
         reached=all(leg.reached for leg in legs),
         search_bbox=_union_bbox([leg.search_bbox for leg in legs]),
         bbox=_union_bbox([leg.bbox for leg in legs]),
-        zone=ZoneV1(
+        zone=Zone(
             nodes=sum(leg.zone.nodes for leg in legs),
             arcs=sum(leg.zone.arcs for leg in legs),
             graph_nodes=legs[0].zone.graph_nodes,
@@ -325,7 +325,7 @@ def plan_routes(
     bicycle: BicycleModel,
     profile: str = "fastest",
     **options: Any,
-) -> RoutePlanV1:
+) -> RoutePlan:
     """Planeja uma rota passando por ``stops``, na ordem informada.
 
     Sem paradas, delega a ``plan_offline_routes`` e devolve o contrato v1 — o
@@ -346,7 +346,7 @@ def plan_routes(
             **nao** e encadeada entre pernas na v1.
 
     Returns:
-        ``RoutePlanV1`` com ``request.stops`` ecoado e geometria continua.
+        ``RoutePlan`` com ``request.stops`` ecoado e geometria continua.
 
     Raises:
         ValueError: paradas consecutivas iguais (perna degenerada).
@@ -381,7 +381,7 @@ def plan_routes(
 
     contracts = [leg.to_contract() for leg in leg_plans]
     profile_id = leg_plans[0].profile_id
-    request = RouteRequestV1(
+    request = RouteRequest(
         origin=origin,
         destination=destination,
         profile=profile_id,

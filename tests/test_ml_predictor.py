@@ -13,7 +13,7 @@ Cobertura exigida:
 import ast
 import inspect
 import pytest
-import router.core.prediction.ml.predictor as predictor_module
+import router.core.prediction.ml as predictor_module
 from router.core.data.graph.model import Arc, ElevationSample, Segment
 from router.core.prediction.ml import (
     EffortPredictor,
@@ -21,7 +21,7 @@ from router.core.prediction.ml import (
     UnavailablePredictor,
     predict_effort,
 )
-from router.core.physics.physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     EffortFeatures,
@@ -30,7 +30,7 @@ from router.core.physics.physical import (
     SimulationStatus,
     extract_effort_features,
 )
-from router.core.physics.physiology import (
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     MetabolicParameters,
     PhysiologicalPrediction,
@@ -254,8 +254,8 @@ def test_prediction_does_not_mutate_features():
 def test_predictor_module_does_not_import_routing():
     """A inferencia nao conhece o roteamento.
 
-    Ela depende apenas da fisica (``physical.effort``) e do contrato
-    fisiologico (``physiology``). Assim, vale para qualquer rota — tradicional
+    Ela depende apenas da fisica (``core.physics.effort``) e do contrato
+    fisiologico (``core.physiology``). Assim, vale para qualquer rota — tradicional
     ou gerada por ML — sem alterar a busca.
     """
     tree = ast.parse(inspect.getsource(predictor_module))
@@ -272,7 +272,10 @@ def test_predictor_module_does_not_import_routing():
     assert not any("search" in name for name in absolute)
     allowed = {"__future__", "dataclasses", "typing"}
     assert all(
-        name in allowed or name.startswith("router.core.physics") for name in absolute
+        name in allowed
+        or name.startswith("router.core.physics")
+        or name.startswith("router.core.physiology")
+        for name in absolute
     ), absolute
 
 

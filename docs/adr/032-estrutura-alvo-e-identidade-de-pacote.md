@@ -442,3 +442,32 @@ wheel limpo e comportamento idêntico ao baseline.
 7. `router.__version__ == pyproject.version`; wheel construído e inspecionado
    sem `data/`, `.cache/`, `.git/`, `tests/` ou caches.
 8. Contrato v1 e comportamento de rota idênticos ao baseline.
+
+---
+
+## 12. Registro de execução
+
+| Data | Evento |
+|---|---|
+| 2026-11-11 | E1–E8 executados na branch `refactor/adr-032-033` (base `8fcd4c1`): árvore-alvo de §2 aplicada, 113 módulos `router.*`, 365 arestas, 0 ciclos, 0 violações de fronteira |
+| 2026-11-11 | `router.integration` é a implementação única da superfície curada (`integration.__all__` 28); `interfaces/integration.py` removido; `api.__all__` 336 congelado |
+| 2026-11-11 | `py-modules` e `src/__main__.py` removidos; `py.typed` por pacote; wheel `roteamento_com_ml-0.18.0` inspecionado sem `data/`, `.cache/`, `.git/` ou `tests/`; `python -m router --help` e `api.integration is router.integration` verificados |
+| 2026-11-11 | Suíte: **861 testes verdes** (843 + 18: E2 2, E4 6, E6 4, E7 6) |
+
+**Nota:** os shims de caminho antigo (§5.2) **não** foram mantidos — a árvore de
+§2 não os inclui e não havia consumidor no repositório. `pyproject.version`
+segue estático com teste de igualdade (`tests/test_packaging.py`), opção aceita
+em §6.2. Os dois console scripts (`roteamento` e `router`) foram mantidos
+(§6.1). Não foi adicionado arquivo `LICENSE`: a licença fica declarada no
+`pyproject.toml` (o wheel sai com `License-Expression: MIT`). O nome da
+distribuição continua `roteamento-com-ml` (D6 permanece aberta).
+
+**Revisão posterior (nomes do contrato):** o sufixo ``V1`` foi removido dos
+nomes do contrato público (``RoutePlanV1`` → ``RoutePlan``, etc.), agora que a
+versão vive só no campo ``version`` do envelope. As classes internas que
+colidiam passaram a ter nome próprio: ``app.planning.RoutePlan`` →
+``RoutePlanResult``, ``core.physics.RouteMetrics`` → ``PhysicsRouteMetrics``,
+``core.search.Route`` → ``SearchRoute``, ``core.evaluation.{Reason,RouteSafety}``
+→ ``{SafetyReason,RouteSafetyAssessment}`` e ``core.data.BBox`` → ``GeoBBox``. A
+fachada ``api`` mantém 336 símbolos (nomes internos alterados); o formato
+serializado (``roteamento.cycling-route-plan``, ``version`` 1) não mudou.

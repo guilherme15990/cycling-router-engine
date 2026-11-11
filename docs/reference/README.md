@@ -7,8 +7,10 @@
 - [`quickstart.md`](quickstart.md) — guia rápido com 5 receitas: do OSM às
   rotas, perfil elétrico com bateria, exploração da fronteira Pareto, contrato
   de rota v1 e múltiplas paradas/superfície de integração.
-- [`api.md`](api.md) — referência da API pública (336 símbolos de `api.__all__`),
-  com assinaturas geradas automaticamente por
+- [`api.md`](api.md) — referência da **fachada ampla congelada**
+  (`router.interfaces.api`, 336 símbolos), mantida por compatibilidade; **não** é
+  a API recomendada (prefira a superfície curada `router.integration`).
+  Assinaturas geradas automaticamente por
   [`../scripts/generate_api_reference.py`](../scripts/generate_api_reference.py).
   Não edite à mão: regenere com
   `python scripts/generate_api_reference.py`.
@@ -16,24 +18,29 @@
   `Elétrico`: modelo energético separado, bateria opcional e o mapeamento de
   implementação.
 
-## Arquitetura (ADR-031)
+## Arquitetura (ADR-031; ADR-032/033)
 
 O motor vive em um namespace unico, `router`:
 
 - `router.contracts` - contrato publico `v1` (dados versionados);
-- `router.integration` - superficie curada para o aplicativo;
-- `router.core.data` / `router.core.physics` / `router.core.search` /
-  `router.core.prediction` / `router.core.evaluation` - nucleo interno;
+- `router.integration` - **unica superficie publica de nivel B** (curada para o
+  aplicativo);
+- `router.core.data` / `router.core.physics` / `router.core.physiology` /
+  `router.core.search` / `router.core.prediction` / `router.core.evaluation` -
+  nucleo interno;
 - `router.app` - orquestracao; `router.interfaces` - adaptadores (API/CLI).
 
-`router.core.*` nao oferece estabilidade. A fachada ampla
-`router.interfaces.api` permanece congelada por compatibilidade. As fronteiras
-sao verificadas por `tests/test_architecture.py`.
+`router.core.*` nao oferece estabilidade. `router.interfaces.api` e **legado
+congelado por compatibilidade** (336 nomes), nao a API recomendada; ela ainda
+reexporta `router.integration` como `api.integration`. As fronteiras sao
+verificadas por `tests/test_architecture.py`.
 
-A estrutura-alvo revisada (achatamento de `physical`/`intelligence`,
-`physiology` como irmao da fisica e identidade de pacote) esta no
-[ADR-032](../adr/032-estrutura-alvo-e-identidade-de-pacote.md), ainda como
-proposta; nenhum codigo foi movido.
+A estrutura-alvo do
+[ADR-032](../adr/032-estrutura-alvo-e-identidade-de-pacote.md) (achatamento de
+`physical`/`intelligence`, `physiology` como irmao da fisica, `router.integration`
+como fonte unica e identidade de pacote) foi **executada**; o registro esta na
+secao 14 do ADR-032 e na secao 14 do
+[ADR-033](../adr/033-arquitetura-por-componentes-de-pipeline.md).
 
 ## Projeto
 

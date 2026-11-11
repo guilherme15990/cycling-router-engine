@@ -1,7 +1,7 @@
 """Contrato publico de resposta de rota (ADR-030, F2).
 
 Cobrem o envelope versionado ``route_contract`` e a projecao de
-``planning.RoutePlan`` para ele:
+``planning.RoutePlanResult`` para ele:
 
 * round-trip ``dumps``/``loads`` sem perda de informacao;
 * ``format``/``version`` obrigatorios e versao desconhecida rejeitada;
@@ -21,22 +21,22 @@ import pytest
 from router.core.data.elevation import CallableElevation
 from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
 from router.core.data.osm.parse import OsmData
-from router.core.physics.physical import BicycleModel, CyclistModel
+from router.core.physics import BicycleModel, CyclistModel
 from router.app.planning import plan_offline_routes
 from router.contracts import (
     CONTRACT_FORMAT,
     CONTRACT_VERSION,
-    BBoxV1,
+    BBox,
     RouteContractError,
-    RouteMLV1,
-    RouteMetricsV1,
-    RoutePlanV1,
-    RoutePointV1,
-    RouteProvenanceV1,
-    RouteRequestV1,
-    RouteSafetyV1,
-    RouteV1,
-    ZoneV1,
+    RouteML,
+    RouteMetrics,
+    RoutePlan,
+    RoutePoint,
+    RouteProvenance,
+    RouteRequest,
+    RouteSafety,
+    Route,
+    Zone,
     dumps,
     loads,
     read_plan,
@@ -107,7 +107,7 @@ def _plan():
 # --------------------------------------------------------------------------
 # Construtores minimos para testes puros do contrato
 # --------------------------------------------------------------------------
-def _point(dist_m: float = 0.0, **kwargs) -> RoutePointV1:
+def _point(dist_m: float = 0.0, **kwargs) -> RoutePoint:
     base = dict(
         lat=0.0,
         lon=0.0,
@@ -117,10 +117,10 @@ def _point(dist_m: float = 0.0, **kwargs) -> RoutePointV1:
         grade_pct=0.0,
     )
     base.update(kwargs)
-    return RoutePointV1(**base)
+    return RoutePoint(**base)
 
 
-def _metrics(**kwargs) -> RouteMetricsV1:
+def _metrics(**kwargs) -> RouteMetrics:
     base = dict(
         source="assessment",
         distance_m=100.0,
@@ -130,10 +130,10 @@ def _metrics(**kwargs) -> RouteMetricsV1:
         descent_m=0.5,
     )
     base.update(kwargs)
-    return RouteMetricsV1(**base)
+    return RouteMetrics(**base)
 
 
-def _ml(**kwargs) -> RouteMLV1:
+def _ml(**kwargs) -> RouteML:
     base = dict(
         mean_rpe=11.0,
         peak_rpe=13.0,
@@ -145,10 +145,10 @@ def _ml(**kwargs) -> RouteMLV1:
         borg_scale="borg_cr10",
     )
     base.update(kwargs)
-    return RouteMLV1(**base)
+    return RouteML(**base)
 
 
-def _route(route_id: str = "r1", **kwargs) -> RouteV1:
+def _route(route_id: str = "r1", **kwargs) -> Route:
     base = dict(
         id=route_id,
         profile="fastest",
@@ -156,27 +156,27 @@ def _route(route_id: str = "r1", **kwargs) -> RouteV1:
         geometry=(_point(0.0), _point(100.0)),
         metrics=_metrics(),
         ml=_ml(),
-        safety=RouteSafetyV1(state="validated", eligible=True),
-        provenance=RouteProvenanceV1(kind="search", profile="fastest"),
+        safety=RouteSafety(state="validated", eligible=True),
+        provenance=RouteProvenance(kind="search", profile="fastest"),
     )
     base.update(kwargs)
-    return RouteV1(**base)
+    return Route(**base)
 
 
-def _request(**kwargs) -> RouteRequestV1:
+def _request(**kwargs) -> RouteRequest:
     base = dict(origin=ORIGIN, destination=DESTINATION, profile="fastest")
     base.update(kwargs)
-    return RouteRequestV1(**base)
+    return RouteRequest(**base)
 
 
-def _plan_v1(**kwargs) -> RoutePlanV1:
-    bbox = BBoxV1(south=0.0, west=0.0, north=0.002, east=0.002)
+def _plan_contract(**kwargs) -> RoutePlan:
+    bbox = BBox(south=0.0, west=0.0, north=0.002, east=0.002)
     base = dict(
         request=_request(),
         reached=True,
         search_bbox=bbox,
         bbox=bbox,
-        zone=ZoneV1(nodes=4, arcs=4, graph_nodes=4, graph_arcs=4),
+        zone=Zone(nodes=4, arcs=4, graph_nodes=4, graph_arcs=4),
         iterations=7,
         pareto_route_count=1,
         physiological_count=0,
@@ -184,14 +184,14 @@ def _plan_v1(**kwargs) -> RoutePlanV1:
         recommended_route_id="r1",
     )
     base.update(kwargs)
-    return RoutePlanV1(**base)
+    return RoutePlan(**base)
 
 
 # --------------------------------------------------------------------------
 # Round-trip e versao
 # --------------------------------------------------------------------------
 def test_contract_round_trip_is_lossless():
-    plan = _plan_v1()
+    plan = _plan_contract()
     payload = plan.to_dict()
     restored = loads(dumps(plan))
     assert restored.to_dict() == payload
@@ -199,26 +199,26 @@ def test_contract_round_trip_is_lossless():
 
 
 def test_contract_requires_format_and_version():
-    payload = _plan_v1().to_dict()
+    payload = _plan_contract().to_dict()
     payload.pop("format")
     with pytest.raises(RouteContractError):
-        RoutePlanV1.from_dict(payload)
+        RoutePlan.from_dict(payload)
 
-    payload = _plan_v1().to_dict()
+    payload = _plan_contract().to_dict()
     payload["version"] = CONTRACT_VERSION + 1
     with pytest.raises(RouteContractError):
-        RoutePlanV1.from_dict(payload)
+        RoutePlan.from_dict(payload)
 
 
 def test_contract_rejects_unknown_format():
-    payload = _plan_v1().to_dict()
+    payload = _plan_contract().to_dict()
     payload["format"] = "outro.formato"
     with pytest.raises(RouteContractError):
-        RoutePlanV1.from_dict(payload)
+        RoutePlan.from_dict(payload)
 
 
 def test_contract_strict_serialization_rejects_nan():
-    plan = _plan_v1()
+    plan = _plan_contract()
     # ``nan`` nao pode ser produzido pelo construtor, mas o envelope estrito
     # tambem precisa proteger contra mutacao externa do payload.
     payload = plan.to_dict()
@@ -230,7 +230,7 @@ def test_contract_strict_serialization_rejects_nan():
 def test_contract_does_not_invent_elevation():
     point = _point(0.0, ele=None)
     assert point.to_dict()["ele"] is None
-    restored = RoutePointV1.from_dict(point.to_dict())
+    restored = RoutePoint.from_dict(point.to_dict())
     assert restored.ele is None
 
 
@@ -244,12 +244,12 @@ def test_contract_rejects_non_monotonic_distance():
 
 def test_contract_rejects_recommended_route_outside_routes():
     with pytest.raises(RouteContractError):
-        _plan_v1(recommended_route_id="nao-existe")
+        _plan_contract(recommended_route_id="nao-existe")
 
 
 def test_contract_rejects_profile_mismatch():
     with pytest.raises(RouteContractError):
-        _plan_v1(request=_request(profile="shortest"))
+        _plan_contract(request=_request(profile="shortest"))
 
 
 def test_contract_metrics_source_is_declared():
@@ -259,14 +259,14 @@ def test_contract_metrics_source_is_declared():
 
 def test_contract_rejects_duplicate_route_ids():
     with pytest.raises(RouteContractError):
-        _plan_v1(routes=(_route("r1"), _route("r1", recommended=False)))
+        _plan_contract(routes=(_route("r1"), _route("r1", recommended=False)))
 
 
 # --------------------------------------------------------------------------
 # Arquivo e projecao real
 # --------------------------------------------------------------------------
 def test_contract_write_and_read_plan(tmp_path):
-    plan = _plan_v1()
+    plan = _plan_contract()
     path = write_plan(tmp_path / "plan.json", plan)
     restored = read_plan(path)
     assert restored.to_dict() == plan.to_dict()
@@ -276,7 +276,7 @@ def test_real_plan_projects_to_versioned_contract():
     plan = _plan()
     contract = plan.to_contract()
 
-    assert isinstance(contract, RoutePlanV1)
+    assert isinstance(contract, RoutePlan)
     assert contract.format == CONTRACT_FORMAT
     assert contract.version == CONTRACT_VERSION
     assert contract.reached is True

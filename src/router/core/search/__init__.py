@@ -14,7 +14,7 @@ A busca A* multiobjetivo integra estado, dominancia, fronteira e fila:
 A **selecao por perfil** e uma camada independente, posterior a busca:
 
 * ``RouteProfile`` e configuracao declarativa (``profiles.py``);
-* ``Route`` / reconstrucao (``route.py``) e ``ObjectiveEvaluator``
+* ``SearchRoute`` / reconstrucao (``route.py``) e ``ObjectiveEvaluator``
   (``evaluator.py``);
 * diversidade por ``arc_jaccard`` / ``shared_distance_ratio`` (``diversity.py``);
 * ranking lexicografico com tolerancia e score normalizado (``ranking.py``);
@@ -153,7 +153,7 @@ from .ranking import (
     rank_routes,
 )
 from .route import (
-    Route,
+    SearchRoute,
     route_arc_lengths,
     route_from_state,
     routes_from_result,
@@ -233,7 +233,7 @@ __all__ = [
     "RankingComparison",
     "RankingStrategy",
     "RankingTolerance",
-    "Route",
+    "SearchRoute",
     "RouteCandidate",
     "RouteCandidatePool",
     "RouteDeduplicator",

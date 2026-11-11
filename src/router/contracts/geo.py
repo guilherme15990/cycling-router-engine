@@ -12,7 +12,7 @@ LL = tuple[float, float]
 
 
 @dataclass(frozen=True, slots=True)
-class BBoxV1:
+class BBox:
     """Caixa geografica (graus)."""
 
     south: float
@@ -37,7 +37,7 @@ class BBoxV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "BBoxV1":
+    def from_dict(cls, data: Any) -> "BBox":
         item = _mapping(data, "bbox")
         return cls(
             south=_float(item.get("south"), "bbox.south"),  # type: ignore[arg-type]

@@ -2,7 +2,7 @@ from dataclasses import dataclass
 
 import pytest
 from router.core.data.graph.model import RoutingGraph, Node
-from router.core.physics.physical import RouteMetrics
+from router.core.physics import PhysicsRouteMetrics
 from router.core.search import (
     PROFILE_NAMES,
     PROFILE_OBJECTIVES,
@@ -52,7 +52,7 @@ def test_objective_set_values_from_mapping_and_object():
 
     assert objectives.values({"time_s": 10, "distance_m": 5.0}) == (10.0, 5.0)
 
-    metrics = RouteMetrics(time_s=12.0, distance_m=7.5, ascent_m=1.0)
+    metrics = PhysicsRouteMetrics(time_s=12.0, distance_m=7.5, ascent_m=1.0)
     assert objectives.values(metrics) == (12.0, 7.5)
     assert len(objectives) == 2
     assert list(objectives) == ["time_s", "distance_m"]

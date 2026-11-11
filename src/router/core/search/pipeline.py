@@ -4,7 +4,7 @@ O fluxo completo:
 
     ProfileSearchRequest
         -> MultiObjectiveAStar            (fronteira Pareto)
-        -> reconstrucao em Route
+        -> reconstrucao em SearchRoute
         -> ProfileRanker                  (ranking por perfil)
         -> RouteSelector                  (diversidade + fallback)
         -> RouteExplainer                 (justificativa)
@@ -25,7 +25,7 @@ from collections.abc import Hashable
 from dataclasses import dataclass
 
 from router.core.data.graph.model import RoutingGraph
-from router.core.physics.physical.energy_model import BatteryConfig, EnergyModel
+from router.core.physics.energy_model import BatteryConfig, EnergyModel
 from .astar import MultiObjectiveAStar
 from .candidates import RouteCandidatePool, RouteDeduplicator
 from .config import SearchConfig
@@ -183,7 +183,7 @@ def search_profile(
         explicacoes e (quando aplicavel) estimativa energetica por rota.
 
     Example:
-        >>> from search import ProfileSearchRequest, route_profile_for
+        >>> from router.core.search import ProfileSearchRequest, route_profile_for
         >>> request = ProfileSearchRequest(
         ...     origin=query.origin_id,
         ...     destination=query.destination_id,

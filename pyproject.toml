@@ -21,7 +21,6 @@ router = "router.interfaces.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "src" }
-py-modules = ["__main__"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

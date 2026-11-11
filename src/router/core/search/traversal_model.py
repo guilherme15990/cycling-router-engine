@@ -15,14 +15,14 @@ from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from router.core.data.graph.model import Arc
-from router.core.physics.physical.bicycle import BicycleModel
-from router.core.physics.physical.cyclist import CyclistModel
-from router.core.physics.physical.environment import (
+from router.core.physics.bicycle import BicycleModel
+from router.core.physics.cyclist import CyclistModel
+from router.core.physics.environment import (
     DEFAULT_SAFE_MAX_SPEED_MPS,
     Environment,
 )
-from router.core.physics.physical.models import SimulationState, TraversalResult
-from router.core.physics.physical.traversal import PhysicalTraversal
+from router.core.physics.models import SimulationState, TraversalResult
+from router.core.physics.traversal import PhysicalTraversal
 
 
 class _UnknownSpeedSentinel:

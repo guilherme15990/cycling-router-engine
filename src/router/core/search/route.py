@@ -1,6 +1,6 @@
 """Rota reconstruida: sequencia de arcos direcionados + metricas finais.
 
-Etapa **posterior** a busca. Uma ``Route`` e apenas um dado: a busca entrega a
+Etapa **posterior** a busca. Uma ``SearchRoute`` e apenas um dado: a busca entrega a
 fronteira Pareto de destino e a reconstrucao transforma cada label em uma rota
 com metricas finais. A rota nao conhece a fila A* nem recalcula fisica.
 
@@ -14,14 +14,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from router.core.physics.physical.models import ElevationUncertainty, SimulationStatus
+from router.core.physics.models import ElevationUncertainty, SimulationStatus
 
 from .astar import SearchResult
 from .state import SearchState, route_arcs
 
 
 @dataclass(frozen=True, slots=True)
-class Route:
+class SearchRoute:
     """Rota reconstruida: arcos direcionados, comprimentos e metricas.
 
     ``arc_lengths`` e paralelo a ``arc_ids`` (mesmo comprimento quando
@@ -109,9 +109,9 @@ def route_arc_lengths(state: SearchState) -> list[float]:
     return lengths
 
 
-def route_from_state(state: SearchState) -> Route:
-    """Reconstroi uma ``Route`` de uma label de destino."""
-    return Route(
+def route_from_state(state: SearchState) -> SearchRoute:
+    """Reconstroi uma ``SearchRoute`` de uma label de destino."""
+    return SearchRoute(
         arc_ids=tuple(route_arcs(state)),
         time_s=state.time_s,
         distance_m=state.distance_m,
@@ -128,6 +128,6 @@ def route_from_state(state: SearchState) -> Route:
     )
 
 
-def routes_from_result(result: SearchResult) -> tuple[Route, ...]:
+def routes_from_result(result: SearchResult) -> tuple[SearchRoute, ...]:
     """Converte a fronteira de destino de um ``SearchResult`` em rotas."""
     return tuple(route_from_state(label) for label in result.labels)

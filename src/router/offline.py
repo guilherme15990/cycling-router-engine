@@ -92,7 +92,7 @@ def offline(*, allow_loopback: bool = False) -> Iterator[None]:
         OfflineViolation: ao tentar abrir uma conexao bloqueada dentro do bloco.
 
     Example:
-        >>> from offline import offline, is_network_disabled
+        >>> from router.offline import offline, is_network_disabled
         >>> with offline():
         ...     assert is_network_disabled()
         >>> is_network_disabled()

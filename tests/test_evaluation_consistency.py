@@ -25,7 +25,7 @@ from router.core.evaluation import (
 )
 from router.core.data.graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
 from router.core.data.graph.restrictions import AccessRule, TurnRestriction
-from router.core.physics.physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     SimulationState,
@@ -206,9 +206,9 @@ def forbidden_assessment():
 
 
 def candidate(route_id):
-    from router.core.search import Route
+    from router.core.search import SearchRoute
 
-    route = Route(
+    route = SearchRoute(
         arc_ids=("a12", "a23"),
         time_s=1.0,
         distance_m=400.0,

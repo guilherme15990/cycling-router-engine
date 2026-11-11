@@ -23,7 +23,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Protocol, runtime_checkable
 
-from router.core.physics.physiology import HeartRateZoneModel, RiderProfile
+from router.core.physiology import HeartRateZoneModel, RiderProfile
 
 #: Versao do contrato de alvos.
 TARGETS_VERSION = "1"

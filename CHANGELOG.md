@@ -6,6 +6,41 @@ e [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+**ADR-032/033 — estrutura-alvo executada (E1–E8).** A árvore-alvo do ADR-032 foi
+aplicada: `core/physics/physical/*` → `core/physics/*`,
+`core/physics/physiology/` → `core/physiology/`,
+`core/prediction/intelligence/*` → `core/prediction/*` e
+`core/prediction/ml/predictor.py` → `core/prediction/ml.py`; `src/__main__.py` e
+`py-modules` saíram do empacotamento (`router/__main__.py` cobre
+`python -m router`). `router.integration` passou a ser a **implementação única**
+da superfície curada (carga tardia; import de topo apenas de
+`contracts`/`offline`) e `interfaces/integration.py` foi removido — `api.integration`
+continua apontando para `router.integration`. A projeção do contrato saiu de
+`app/planning.py` para `app/plan_view.py`; portas sem consumidor foram removidas
+(`GraphRepository`/`JsonGraphRepository`); a classificação passou a usar
+`RouteAssessmentView`. A CLI foi decomposta (`cli/parser.py`, `cli/render.py`,
+`cli/commands/`) e `app/tooling.py` virou o pacote `app/tooling/` por caso de uso.
+`py.typed` acompanha cada pacote; `tests/test_packaging.py` trava versão única,
+descoberta `router*` e `py.typed`, e o wheel foi construído e inspecionado sem
+`data/`, `.cache/`, `.git/` ou `tests/`. Comportamento de rota e contrato `v1`
+**idênticos** ao baseline. Suíte: **861 testes** (843 + 18). A fachada
+`interfaces/api.py` permanece **congelada** (336 símbolos).
+
+**Revisão de nomes — sufixo `V1` removido do contrato.** A versão do contrato
+passa a viver apenas no campo `version` do envelope, então os nomes públicos
+perderam o sufixo: `RoutePlanV1` → `RoutePlan`, `RouteV1` → `Route`,
+`RouteRequestV1` → `RouteRequest`, `RoutePointV1` → `RoutePoint`,
+`RouteMetricsV1` → `RouteMetrics`, `RouteMLV1` → `RouteML`,
+`ReasonV1` → `Reason`, `RouteSafetyV1` → `RouteSafety`,
+`RouteProvenanceV1` → `RouteProvenance`, `ZoneV1` → `Zone` e `BBoxV1` → `BBox`.
+As classes internas que colidiam com esses nomes ganharam nome próprio:
+`app.planning.RoutePlan` → `RoutePlanResult`, `core.physics.RouteMetrics` →
+`PhysicsRouteMetrics`, `core.search.Route` → `SearchRoute`,
+`core.evaluation.{Reason,RouteSafety}` → `{SafetyReason,RouteSafetyAssessment}`
+e `core.data.BBox` → `GeoBBox`. A fachada `api` segue com **336 símbolos** (alguns
+internos renomeados) e o formato serializado
+(`roteamento.cycling-route-plan`, `version` 1) permanece **inalterado**.
+
 **ADR-031 — Organização de módulos e fronteira pública.** O motor passou a
 viver em um único namespace instalável, `router`, com as cinco
 responsabilidades explícitas no caminho (`core.data`, `core.physics`,
@@ -39,16 +74,16 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
 
 ### Adicionado
 
-- **ADR-032 (proposta) — estrutura-alvo e identidade de pacote** — registra a
-  revisão da árvore do ADR-031: `core/physics/physical/*` →
-  `core/physics/*`, `core/prediction/intelligence/*` → `core/prediction/*`,
+- **ADR-032 (executada) — estrutura-alvo e identidade de pacote** — a revisão da
+  árvore do ADR-031: `core/physics/physical/*` → `core/physics/*`,
+  `core/prediction/intelligence/*` → `core/prediction/*`,
   `core/physics/physiology/` → `core/physiology/` (irmão da física),
   `core/prediction/ml.py` (módulo único), `router.integration` como fonte única
   da superfície curada e `interfaces/api.py` congelada até inventário de
   consumidores. Também fixa pré-condições (medir dependências, testes de
   importação, linha de base de 843 testes/336 símbolos), a estratégia de
   reexportações temporárias e a separação de `.git/`, `.cache/` e `data/` do
-  wheel. **Nenhum código foi movido.** Detalhes em
+  wheel. E1–E8 **executados** (ver a entrada acima); detalhes em
   `docs/adr/032-estrutura-alvo-e-identidade-de-pacote.md`.
 - **ADR-030 Fase 3 — múltiplas paradas e superfície de integração
   (`multi_leg.py`, `integration.py`)** — `plan_routes` encadeia

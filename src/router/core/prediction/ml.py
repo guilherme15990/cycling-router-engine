@@ -1,4 +1,9 @@
-"""Preditor de esforco: protocolo e implementacoes honestas (ADR-025, decisao 07).
+"""Fronteira de inferencia fisiologica: protocolo e implementacoes honestas.
+
+Este modulo (``prediction/ml.py``, ADR-032 D2) e a **fronteira de inferencia**:
+consome ``EffortFeatures`` (produzidas pela fisica) e devolve
+``PhysiologicalPrediction`` (contrato em ``core.physiology``). Nao conhece
+roteamento nem recalcula fisica.
 
 O protocolo ``EffortPredictor`` e a unica dependencia do resto do sistema: a
 fisica entrega ``EffortFeatures`` e recebe uma ``PhysiologicalPrediction``. Um
@@ -18,6 +23,8 @@ estado da previsao e sempre explicito (``PredictionStatus``):
 ``predict_effort`` e o ponto de entrada **guardado**: verifica a compatibilidade
 do contrato e a presenca das entradas exigidas antes de delegar ao preditor,
 sempre devolvendo ``None`` em vez de inventar valores fisiologicos.
+
+Treinar/plugar um modelo calibrado e trabalho futuro; o seam esta pronto.
 """
 
 from __future__ import annotations
@@ -25,8 +32,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar, Protocol, runtime_checkable
 
-from router.core.physics.physical.effort import EFFORT_FEATURES_VERSION, EffortFeatures
-from router.core.physics.physiology import (
+from router.core.physics.effort import EFFORT_FEATURES_VERSION, EffortFeatures
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     BorgScale,
     MetabolicParameters,
@@ -42,6 +49,13 @@ SUPPORTED_EFFORT_SCHEMA_VERSIONS = frozenset({EFFORT_FEATURES_VERSION})
 
 #: Versao de modelo atribuida quando nao ha preditor configurado.
 UNAVAILABLE_MODEL_VERSION = "unavailable"
+
+__all__ = [
+    "EffortPredictor",
+    "MetabolicEnergyPredictor",
+    "UnavailablePredictor",
+    "predict_effort",
+]
 
 
 def missing_inputs(

@@ -1,42 +1,58 @@
-"""Ferramentas de operacao consumidas pela CLI (ADR-031).
+"""Casos de uso de operacao consumidos pela CLI (ADR-031; ADR-033, E6).
 
-Reexporta os pontos de entrada de baixo nivel que a CLI usa (ingestao,
-serializacao, fisica e elevacao). A CLI nunca importa ``router.core.*``
-diretamente.
+Reexporta, **agrupados por caso de uso**, os pontos de entrada de baixo nivel
+que a CLI usa: ingestao (``ingest``), grafo/geometria/snapping (``graph``),
+elevacao (``elevation``), simulacao fisica (``simulation``), predicao
+(``prediction``) e planejamento (``planning``). A CLI nunca importa
+``router.core.*`` diretamente: importa este pacote.
 """
 
 from __future__ import annotations
 
-from router.app.planning import RoutePlan, plan_offline_routes
-from router.contracts import dumps
-from router.core.data.elevation import (
+from router.app.tooling.elevation import (
     ChainElevation,
     OpenTopoDataElevation,
     OsmTagElevation,
     RasterDemElevation,
     SqliteElevationCache,
     TerrariumElevation,
-)
-from router.core.data.elevation.tiles import (
     TerrariumTileError,
     fetch_terrarium_tiles,
 )
-from router.core.data.geo import bbox_size_km, parse_bbox, parse_coord
-from router.core.data.graph.model import Arc
-from router.core.data.graph.serialize import (
+from router.app.tooling.graph import (
+    Arc,
+    SnapError,
+    SnapOptions,
+    bbox_size_km,
+    build_query_graph,
+    dumps,
     load_json,
+    parse_bbox,
+    parse_coord,
     save_geojson,
     save_json,
+    simplify_graph,
     summarize,
+    validate_graph,
 )
-from router.core.data.graph.simplify import simplify_graph
-from router.core.data.graph.validate import validate_graph
-from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
-from router.core.data.osm.parse import DEFAULT_HIGHWAYS, OsmData
-from router.core.data.osm.pbf import read_osm_pbf
-from router.core.data.snapping import SnapError, SnapOptions, build_query_graph
-from router.core.evaluation import EffortPreference
-from router.core.physics.physical import (
+from router.app.tooling.ingest import (
+    DEFAULT_HIGHWAYS,
+    BuildOptions,
+    OsmData,
+    attach_elevation,
+    build_graph,
+    read_osm_pbf,
+)
+from router.app.tooling.planning import RoutePlanResult, plan_offline_routes
+from router.app.tooling.prediction import (
+    INTENSITY_BAND_NAMES,
+    EffortPreference,
+    ModelIncompatibleError,
+    ModelNotFoundError,
+    ModelStore,
+    load_predictor,
+)
+from router.app.tooling.simulation import (
     MIN_SPEED_MPS,
     BicycleModel,
     CyclistModel,
@@ -47,13 +63,6 @@ from router.core.physics.physical import (
     SimulationStatus,
     TraversalResult,
 )
-from router.core.prediction.intelligence import (
-    ModelIncompatibleError,
-    ModelNotFoundError,
-    ModelStore,
-    load_predictor,
-)
-from router.core.prediction.intelligence.intensity import INTENSITY_BAND_NAMES
 
 __all__ = [
     "Arc",
@@ -74,7 +83,7 @@ __all__ = [
     "OsmTagElevation",
     "PhysicalTraversal",
     "RasterDemElevation",
-    "RoutePlan",
+    "RoutePlanResult",
     "SimulationMode",
     "SimulationState",
     "SimulationStatus",

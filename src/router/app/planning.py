@@ -55,25 +55,25 @@ from router.core.evaluation.assessment import (
     assess_candidates,
 )
 from router.core.evaluation.safety import (
-    RouteSafety,
+    RouteSafetyAssessment,
     RouteSafetyState,
     evaluate_candidates,
 )
-from router.core.data.geo import BBox, Coord, bbox_contains, cumulative_distances, query_bbox
+from router.core.data.geo import GeoBBox, Coord, bbox_contains, cumulative_distances, query_bbox
 from router.core.data.graph.model import RoutingGraph
 from router.core.evaluation.classification import (
     EffortPreference,
     RouteClassification,
     classify_routes,
 )
-from router.core.prediction.intelligence.intensity import IntensityEstimate
-from router.core.prediction.ml.predictor import EffortPredictor
-from router.core.physics.physical.bicycle import BicycleModel
-from router.core.physics.physical.cyclist import CyclistModel
-from router.core.physics.physical.environment import Environment
-from router.core.physics.physical.models import SimulationState
-from router.core.physics.physical.traversal import PhysicalTraversal
-from router.core.physics.physiology import (
+from router.core.prediction.intensity import IntensityEstimate
+from router.core.prediction.ml import EffortPredictor
+from router.core.physics.bicycle import BicycleModel
+from router.core.physics.cyclist import CyclistModel
+from router.core.physics.environment import Environment
+from router.core.physics.models import SimulationState
+from router.core.physics.traversal import PhysicalTraversal
+from router.core.physiology import (
     PhysiologicalPrediction,
     PredictionContext,
     PredictionStatus,
@@ -90,17 +90,8 @@ from router.core.search import (
     routes_from_result,
 )
 from router.contracts import (
-    BBoxV1,
-    ReasonV1,
-    RouteMLV1,
-    RouteMetricsV1,
-    RoutePlanV1,
-    RoutePointV1,
-    RouteProvenanceV1,
-    RouteRequestV1,
-    RouteSafetyV1,
-    RouteV1,
-    ZoneV1,
+    RoutePlan,
+    RoutePoint,
 )
 from router.core.data.snapping import QueryGraph, SnapError, SnapOptions, build_query_graph
 
@@ -123,11 +114,11 @@ class PlannedRoute:
     candidate: RouteCandidate
     assessment: RouteAssessment
     classification: RouteClassification
-    safety: RouteSafety
+    safety: RouteSafetyAssessment
     recommended: bool = False
-    #: Perfil de apresentacao/contrato (``RoutePointV1``), preenchido pela
+    #: Perfil de apresentacao/contrato (``RoutePoint``), preenchido pela
     #: orquestracao a partir da geometria do grafo de consulta.
-    geometry: tuple[RoutePointV1, ...] = ()
+    geometry: tuple[RoutePoint, ...] = ()
 
     @property
     def route_id(self) -> str:
@@ -181,7 +172,7 @@ class PlannedRoute:
 
 
 @dataclass(frozen=True, slots=True)
-class RoutePlan:
+class RoutePlanResult:
     """Plano de consulta offline: box, zona e rotas descobertas.
 
     ``search_bbox`` e a zona que a busca percorreu (dimensionada para manter a
@@ -207,8 +198,8 @@ class RoutePlan:
     origin: Coord
     destination: Coord
     profile_id: str
-    search_bbox: BBox
-    bbox: BBox
+    search_bbox: GeoBBox
+    bbox: GeoBBox
     reached: bool
     zone_nodes: int
     zone_arcs: int
@@ -247,118 +238,19 @@ class RoutePlan:
         """Rotas com previsao fisiologica **calibrada** disponivel."""
         return sum(1 for route in self.routes if route.prediction.status.is_available)
 
-    def to_contract(self) -> RoutePlanV1:
+    def to_contract(self) -> RoutePlan:
         """Projeta o resultado interno no contrato publico versionado.
 
-        O contrato e a **unica** representacao de transporte. Ele inclui a
-        geometria por ponto (``RoutePointV1``), as metricas autoritativas da
-        avaliacao, a estimativa de intensidade e o estado de seguranca.
+        A projecao vive em ``router.app.plan_view`` (ADR-033, E3); este metodo
+        apenas delega. O contrato e a **unica** representacao de transporte.
         """
-        recommended = self.recommended
-        request = RouteRequestV1(
-            origin=self.origin,
-            destination=self.destination,
-            profile=self.profile_id,
-        )
-        return RoutePlanV1(
-            request=request,
-            reached=self.reached,
-            search_bbox=_bbox_to_v1(self.search_bbox),
-            bbox=_bbox_to_v1(self.bbox),
-            zone=ZoneV1(
-                nodes=self.zone_nodes,
-                arcs=self.zone_arcs,
-                graph_nodes=self.graph_nodes,
-                graph_arcs=self.graph_arcs,
-            ),
-            iterations=self.iterations,
-            pareto_route_count=self.pareto_route_count,
-            physiological_count=self.physiological_count,
-            routes=tuple(
-                _planned_to_v1(route, profile_id=self.profile_id)
-                for route in self.routes
-            ),
-            rejected=tuple(
-                _planned_to_v1(route, profile_id=self.profile_id)
-                for route in self.rejected
-            ),
-            warnings=self.warnings,
-            recommended_route_id=None if recommended is None else recommended.route_id,
-            truncated=self.truncated,
-            frontier_truncated=self.frontier_truncated,
-            dropped_labels=self.dropped_labels,
-        )
+        from router.app.plan_view import to_contract
+
+        return to_contract(self)
 
     def to_dict(self) -> dict[str, object]:
         """Atalho para ``to_contract().to_dict()`` (payload versionado)."""
         return self.to_contract().to_dict()
-
-
-def _bbox_to_v1(bbox: BBox) -> BBoxV1:
-    south, west, north, east = bbox
-    return BBoxV1(south=south, west=west, north=north, east=east)
-
-
-def _planned_to_v1(route: PlannedRoute, *, profile_id: str) -> "RouteV1":
-    """Converte uma ``PlannedRoute`` no DTO publico ``RouteV1``."""
-    assessment = route.assessment
-    metrics = assessment.metrics
-    intensity = assessment.intensity
-    geometry = route.geometry
-
-    meters_band = [0.0, 0.0, 0.0]
-    for current, following in zip(geometry, geometry[1:]):
-        delta = max(0.0, following.dist_m - current.dist_m)
-        if current.band is not None:
-            meters_band[current.band] += delta
-    max_grade = max((point.grade_pct for point in geometry), default=0.0)
-
-    return RouteV1(
-        id=route.route_id,
-        profile=profile_id,
-        recommended=route.recommended,
-        geometry=geometry,
-        metrics=RouteMetricsV1(
-            source="assessment",
-            distance_m=metrics.distance_m,
-            time_s=metrics.time_s,
-            energy_j=metrics.energy_j,
-            ascent_m=metrics.ascent_m,
-            descent_m=metrics.descent_m,
-            max_grade_pct=max(0.0, max_grade),
-            meters_band=(meters_band[0], meters_band[1], meters_band[2]),
-            contra_m=None,
-            walk_m=None,
-        ),
-        ml=RouteMLV1(
-            mean_rpe=intensity.mean_rpe,
-            peak_rpe=intensity.peak_rpe,
-            calibrated=intensity.calibrated,
-            is_measurement=intensity.is_measurement,
-            band_distance_fraction=dict(intensity.band_distance_fraction),
-            band_duration_fraction=(
-                None
-                if intensity.band_duration_fraction is None
-                else dict(intensity.band_duration_fraction)
-            ),
-            method_id=intensity.method_id,
-            model_version=intensity.model_version,
-            borg_scale=intensity.borg_scale.value,
-        ),
-        safety=RouteSafetyV1(
-            state=route.safety.state.value,
-            eligible=route.safety.eligible,
-            reasons=tuple(
-                ReasonV1(kind=reason.kind.value, detail=reason.detail, arc_id=reason.arc_id)
-                for reason in route.safety.reasons
-            ),
-            advisories=tuple(
-                ReasonV1(kind=reason.kind.value, detail=reason.detail, arc_id=reason.arc_id)
-                for reason in route.safety.advisories
-            ),
-        ),
-        provenance=RouteProvenanceV1(kind="search", profile=profile_id),
-    )
 
 
 def plan_offline_routes(
@@ -384,7 +276,7 @@ def plan_offline_routes(
     growth: float = 1.6,
     max_iterations: int = 8,
     pad_m: float = 80.0,
-) -> RoutePlan:
+) -> RoutePlanResult:
     """Descobre rotas offline entre ``origin`` e ``destination`` e as classifica.
 
     Ordem de eventos espelhada do `toporide` (ADR-028 D7): candidatas (A\\*) ->
@@ -424,7 +316,7 @@ def plan_offline_routes(
         pad_m: Margem (m) somada ao envelope das rotas no box final.
 
     Returns:
-        ``RoutePlan`` com o box (calculado **depois** da ML, a partir das rotas
+        ``RoutePlanResult`` com o box (calculado **depois** da ML, a partir das rotas
         devolvidas), a zona e as rotas (fisica + estimativa de intensidade +
         classificacao + **estado de seguranca**). ``routes`` traz apenas as rotas
         **elegiveis**; as ``REJECTED`` ficam em ``rejected`` (auditoria). A rota
@@ -521,7 +413,7 @@ def plan_offline_routes(
     if not reusable or not frontier_geometries:
         pins_bbox = query_bbox(pins, (), pad_m=pad_m)
         assert pins_bbox is not None
-        return RoutePlan(reached=False, routes=(), bbox=pins_bbox, **base)
+        return RoutePlanResult(reached=False, routes=(), bbox=pins_bbox, **base)
 
     pool = RouteCandidatePool.from_result(result, deduplicator=deduplicator)
     candidates = pool.candidates
@@ -595,7 +487,7 @@ def plan_offline_routes(
             "box final saiu da zona de busca: rota devolvida fora da zona"
         )
 
-    return RoutePlan(
+    return RoutePlanResult(
         reached=result.reached,
         routes=routes,
         rejected=rejected,
@@ -675,7 +567,7 @@ def _route_points(
     query: QueryGraph,
     candidate: RouteCandidate,
     assessment: RouteAssessment,
-) -> tuple[RoutePointV1, ...]:
+) -> tuple[RoutePoint, ...]:
     """Constroi os pontos do contrato para uma rota avaliada.
 
     Usa a geometria do grafo de consulta e os dados **ja calculados**:
@@ -683,7 +575,7 @@ def _route_points(
     ``IntensityEstimate.segment_rpes/segment_bands`` (RPE/faixa por arco).
     Nenhuma equacao nova e introduzida.
     """
-    points: list[RoutePointV1] = []
+    points: list[RoutePoint] = []
     base_distance = 0.0
     intensity = assessment.intensity
     rpes = intensity.segment_rpes
@@ -731,7 +623,7 @@ def _route_points(
                 cumulative[position] / geometry_total if geometry_total > 0.0 else 0.0
             )
             points.append(
-                RoutePointV1(
+                RoutePoint(
                     lat=lat,
                     lon=lon,
                     ele=_elevation_at(elevation_profile, fraction * arc.distance_m),

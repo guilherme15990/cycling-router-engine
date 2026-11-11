@@ -21,7 +21,7 @@ Regras (ADR-029):
   aparece como **advertencia** (``advisories``), nunca como motivo de estado;
 * a **estimativa de intensidade** e sempre uma advertencia
   (``intensity_not_calibrated``, D6) e nunca altera o estado;
-* **toda** rejeicao carrega um ``Reason`` auditavel (D5) — nada e silencioso;
+* **toda** rejeicao carrega um ``SafetyReason`` auditavel (D5) — nada e silencioso;
 * a **ausencia de regra OSM nao e proibicao nem restricao nao resolvida** (D3):
   apenas proibicao explicita ou ``unresolved`` conservador geram ``REJECTED``;
 * **nenhuma** excecao e convertida automaticamente em prova de inviabilidade
@@ -114,7 +114,7 @@ _PHYSIOLOGY_REASONS: dict[str, ReasonKind] = {
 
 
 @dataclass(frozen=True, slots=True)
-class Reason:
+class SafetyReason:
     """Motivo estruturado de um estado (auditavel).
 
     ``kind`` e o codigo estavel; ``detail`` e a evidencia textual; ``arc_id``
@@ -134,7 +134,7 @@ class Reason:
 
 
 @dataclass(frozen=True, slots=True)
-class RouteSafety:
+class RouteSafetyAssessment:
     """Estado de seguranca de uma rota e seus motivos (ADR-029 D2).
 
     ``reasons`` sao os motivos que **determinam** o estado (vazio apenas em
@@ -143,8 +143,8 @@ class RouteSafety:
     """
 
     state: RouteSafetyState
-    reasons: tuple[Reason, ...] = ()
-    advisories: tuple[Reason, ...] = ()
+    reasons: tuple[SafetyReason, ...] = ()
+    advisories: tuple[SafetyReason, ...] = ()
 
     @property
     def eligible(self) -> bool:
@@ -180,16 +180,16 @@ def _describe(decision) -> str:
     return detail
 
 
-def _physiology_reason(code: str) -> Reason:
-    """Converte ``physiology_<status>`` num ``Reason`` informativo."""
+def _physiology_reason(code: str) -> SafetyReason:
+    """Converte ``physiology_<status>`` num ``SafetyReason`` informativo."""
     kind = _PHYSIOLOGY_REASONS.get(code)
     if kind is None:
         # Status fisiologico desconhecido: mantem-se informativo e explicito.
         kind = ReasonKind.PHYSIOLOGY_UNAVAILABLE
-    return Reason(kind, f"previsao fisiologica: {code}")
+    return SafetyReason(kind, f"previsao fisiologica: {code}")
 
 
-def classify_safety(assessment: RouteAssessment) -> RouteSafety:
+def classify_safety(assessment: RouteAssessment) -> RouteSafetyAssessment:
     """Classifica a **seguranca** de uma rota ja avaliada (sem recalcular nada).
 
     Le apenas ``assessment.circulation`` (legalidade), ``assessment.path`` e
@@ -198,10 +198,10 @@ def classify_safety(assessment: RouteAssessment) -> RouteSafety:
     de intensidade entram como **advertencias** (D2/D6) e nao alteram o estado.
 
     Returns:
-        ``RouteSafety`` com estado, motivos determinantes e advertencias.
+        ``RouteSafetyAssessment`` com estado, motivos determinantes e advertencias.
     """
-    reasons: list[Reason] = []
-    advisories: list[Reason] = []
+    reasons: list[SafetyReason] = []
+    advisories: list[SafetyReason] = []
     rejected = False
     degraded = False
 
@@ -213,7 +213,7 @@ def classify_safety(assessment: RouteAssessment) -> RouteSafety:
     unresolved = circulation.unresolved
     if proven:
         reasons.append(
-            Reason(
+            SafetyReason(
                 ReasonKind.CIRCULATION_VIOLATION,
                 _describe(proven[0]),
                 proven[0].restriction_id,
@@ -222,7 +222,7 @@ def classify_safety(assessment: RouteAssessment) -> RouteSafety:
         rejected = True
     if unresolved:
         reasons.append(
-            Reason(
+            SafetyReason(
                 ReasonKind.CIRCULATION_UNRESOLVED,
                 _describe(unresolved[0]),
                 unresolved[0].restriction_id,
@@ -244,12 +244,12 @@ def classify_safety(assessment: RouteAssessment) -> RouteSafety:
     )
     if not finite:
         reasons.append(
-            Reason(ReasonKind.NON_FINITE_METRIC, "metrica fisica nao finita")
+            SafetyReason(ReasonKind.NON_FINITE_METRIC, "metrica fisica nao finita")
         )
         rejected = True
     elif path.final_speed_mps < 0.0:
         reasons.append(
-            Reason(
+            SafetyReason(
                 ReasonKind.NEGATIVE_SPEED,
                 f"velocidade final negativa ({path.final_speed_mps})",
             )
@@ -257,7 +257,7 @@ def classify_safety(assessment: RouteAssessment) -> RouteSafety:
         rejected = True
     if metrics.distance_m <= 0.0:
         reasons.append(
-            Reason(
+            SafetyReason(
                 ReasonKind.NON_POSITIVE_DISTANCE,
                 f"distancia nao positiva ({metrics.distance_m})",
             )
@@ -274,11 +274,11 @@ def classify_safety(assessment: RouteAssessment) -> RouteSafety:
         kind = _DEGRADING_LIMITATIONS.get(code)
         if kind is not None:
             degraded = True
-            reasons.append(Reason(kind, f"limitacao fisica declarada: {code}"))
+            reasons.append(SafetyReason(kind, f"limitacao fisica declarada: {code}"))
 
     # 4) Estimativa de intensidade: sempre informativa (D6).
     advisories.append(
-        Reason(
+        SafetyReason(
             ReasonKind.INTENSITY_NOT_CALIBRATED,
             "estimativa de intensidade computacional e nao calibrada "
             "(RPE/faixas i1..i5; nao e zona cardiaca)",
@@ -291,7 +291,7 @@ def classify_safety(assessment: RouteAssessment) -> RouteSafety:
         state = RouteSafetyState.DEGRADED
     else:
         state = RouteSafetyState.VALIDATED
-    return RouteSafety(state=state, reasons=tuple(reasons), advisories=tuple(advisories))
+    return RouteSafetyAssessment(state=state, reasons=tuple(reasons), advisories=tuple(advisories))
 
 
 @dataclass(frozen=True, slots=True)
@@ -303,7 +303,7 @@ class EvaluatedRoute:
     """
 
     route_id: str
-    safety: RouteSafety
+    safety: RouteSafetyAssessment
     assessment: RouteAssessment | None = None
     recommended: bool = False
 
@@ -400,10 +400,10 @@ def evaluate_candidates(
         route_id = candidate.route_id
         assessment = mapping.get(route_id)
         if assessment is None:
-            safety = RouteSafety(
+            safety = RouteSafetyAssessment(
                 RouteSafetyState.REJECTED,
                 (
-                    Reason(
+                    SafetyReason(
                         ReasonKind.EVALUATION_MISSING,
                         "sem avaliacao fisica/fisiologica disponivel para a rota "
                         "(inelegivel; nao e prova de inviabilidade)",

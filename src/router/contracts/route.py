@@ -19,12 +19,12 @@ from router.contracts._validation import (
     _str,
 )
 from router.contracts.errors import RouteContractError
-from router.contracts.geo import BBoxV1
+from router.contracts.geo import BBox
 from router.contracts.version import CONTRACT_FORMAT, CONTRACT_VERSION
 
 
 @dataclass(frozen=True, slots=True)
-class RouteRequestV1:
+class RouteRequest:
     """Intencao de roteamento ecoada no resultado."""
 
     origin: tuple[float, float]
@@ -48,7 +48,7 @@ class RouteRequestV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RouteRequestV1":
+    def from_dict(cls, data: Any) -> "RouteRequest":
         item = _mapping(data, "request")
         raw_stops = _sequence(item.get("stops", []), "request.stops")
         return cls(
@@ -60,7 +60,7 @@ class RouteRequestV1:
 
 
 @dataclass(frozen=True, slots=True)
-class RoutePointV1:
+class RoutePoint:
     """Ponto do perfil da rota.
 
     ``band`` usa a escala de apresentacao de 3 cores (0 verde, 1 laranja,
@@ -104,7 +104,7 @@ class RoutePointV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RoutePointV1":
+    def from_dict(cls, data: Any) -> "RoutePoint":
         item = _mapping(data, "point")
         return cls(
             lat=_float(item.get("lat"), "point.lat"),  # type: ignore[arg-type]
@@ -124,7 +124,7 @@ class RoutePointV1:
 
 
 @dataclass(frozen=True, slots=True)
-class RouteMetricsV1:
+class RouteMetrics:
     """Metricas agregadas da rota.
 
     ``source`` declara a origem: ``"assessment"`` para o simulador completo
@@ -179,7 +179,7 @@ class RouteMetricsV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RouteMetricsV1":
+    def from_dict(cls, data: Any) -> "RouteMetrics":
         item = _mapping(data, "metrics")
         raw_band = _sequence(item.get("meters_band", [0.0, 0.0, 0.0]), "metrics.meters_band")
         if len(raw_band) != 3:
@@ -203,7 +203,7 @@ class RouteMetricsV1:
 
 
 @dataclass(frozen=True, slots=True)
-class RouteMLV1:
+class RouteML:
     """Estimativa de intensidade (RPE/faixas) — **nao calibrada**.
 
     ``calibrated`` e ``is_measurement`` sao explicitos e sempre ``False`` para
@@ -254,7 +254,7 @@ class RouteMLV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RouteMLV1":
+    def from_dict(cls, data: Any) -> "RouteML":
         item = _mapping(data, "ml")
         raw_duration = item.get("band_duration_fraction")
         return cls(
@@ -277,7 +277,7 @@ class RouteMLV1:
 
 
 @dataclass(frozen=True, slots=True)
-class ReasonV1:
+class Reason:
     """Motivo estruturado de seguranca (auditavel)."""
 
     kind: str
@@ -294,7 +294,7 @@ class ReasonV1:
         return {"kind": self.kind, "detail": self.detail, "arc_id": self.arc_id}
 
     @classmethod
-    def from_dict(cls, data: Any) -> "ReasonV1":
+    def from_dict(cls, data: Any) -> "Reason":
         item = _mapping(data, "reason")
         return cls(
             kind=_str(item.get("kind"), "reason.kind"),
@@ -308,13 +308,13 @@ class ReasonV1:
 
 
 @dataclass(frozen=True, slots=True)
-class RouteSafetyV1:
+class RouteSafety:
     """Estado de seguranca da rota (ADR-029)."""
 
     state: str
     eligible: bool
-    reasons: tuple[ReasonV1, ...] = ()
-    advisories: tuple[ReasonV1, ...] = ()
+    reasons: tuple[Reason, ...] = ()
+    advisories: tuple[Reason, ...] = ()
 
     def __post_init__(self) -> None:
         _str(self.state, "safety.state")
@@ -329,24 +329,24 @@ class RouteSafetyV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RouteSafetyV1":
+    def from_dict(cls, data: Any) -> "RouteSafety":
         item = _mapping(data, "safety")
         return cls(
             state=_str(item.get("state"), "safety.state"),
             eligible=_bool(item.get("eligible"), "safety.eligible"),
             reasons=tuple(
-                ReasonV1.from_dict(reason)
+                Reason.from_dict(reason)
                 for reason in _sequence(item.get("reasons", []), "safety.reasons")
             ),
             advisories=tuple(
-                ReasonV1.from_dict(reason)
+                Reason.from_dict(reason)
                 for reason in _sequence(item.get("advisories", []), "safety.advisories")
             ),
         )
 
 
 @dataclass(frozen=True, slots=True)
-class RouteProvenanceV1:
+class RouteProvenance:
     """Como a rota nasceu (gerador/perfil)."""
 
     kind: str
@@ -360,7 +360,7 @@ class RouteProvenanceV1:
         return {"kind": self.kind, "profile": self.profile}
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RouteProvenanceV1":
+    def from_dict(cls, data: Any) -> "RouteProvenance":
         item = _mapping(data, "provenance")
         return cls(
             kind=_str(item.get("kind"), "provenance.kind"),
@@ -369,17 +369,17 @@ class RouteProvenanceV1:
 
 
 @dataclass(frozen=True, slots=True)
-class RouteV1:
+class Route:
     """Rota no contrato publico."""
 
     id: str
     profile: str
     recommended: bool
-    geometry: tuple[RoutePointV1, ...]
-    metrics: RouteMetricsV1
-    ml: RouteMLV1
-    safety: RouteSafetyV1
-    provenance: RouteProvenanceV1
+    geometry: tuple[RoutePoint, ...]
+    metrics: RouteMetrics
+    ml: RouteML
+    safety: RouteSafety
+    provenance: RouteProvenance
 
     def __post_init__(self) -> None:
         _str(self.id, "route.id")
@@ -407,25 +407,25 @@ class RouteV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RouteV1":
+    def from_dict(cls, data: Any) -> "Route":
         item = _mapping(data, "route")
         return cls(
             id=_str(item.get("id"), "route.id"),
             profile=_str(item.get("profile"), "route.profile"),
             recommended=_bool(item.get("recommended"), "route.recommended"),
             geometry=tuple(
-                RoutePointV1.from_dict(point)
+                RoutePoint.from_dict(point)
                 for point in _sequence(item.get("geometry", []), "route.geometry")
             ),
-            metrics=RouteMetricsV1.from_dict(item.get("metrics")),
-            ml=RouteMLV1.from_dict(item.get("ml")),
-            safety=RouteSafetyV1.from_dict(item.get("safety")),
-            provenance=RouteProvenanceV1.from_dict(item.get("provenance")),
+            metrics=RouteMetrics.from_dict(item.get("metrics")),
+            ml=RouteML.from_dict(item.get("ml")),
+            safety=RouteSafety.from_dict(item.get("safety")),
+            provenance=RouteProvenance.from_dict(item.get("provenance")),
         )
 
 
 @dataclass(frozen=True, slots=True)
-class ZoneV1:
+class Zone:
     """Tamanho da zona de busca versus grafo total."""
 
     nodes: int
@@ -446,7 +446,7 @@ class ZoneV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "ZoneV1":
+    def from_dict(cls, data: Any) -> "Zone":
         item = _mapping(data, "zone")
         return cls(
             nodes=_int(item.get("nodes"), "zone.nodes", minimum=0),
@@ -457,7 +457,7 @@ class ZoneV1:
 
 
 @dataclass(frozen=True, slots=True)
-class RoutePlanV1:
+class RoutePlan:
     """Envelope versionado de uma consulta de rotas.
 
     ``routes`` contem apenas rotas elegiveis; ``rejected`` preserva as
@@ -465,16 +465,16 @@ class RoutePlanV1:
     ``routes`` (ou ``None``).
     """
 
-    request: RouteRequestV1
+    request: RouteRequest
     reached: bool
-    search_bbox: BBoxV1
-    bbox: BBoxV1
-    zone: ZoneV1
+    search_bbox: BBox
+    bbox: BBox
+    zone: Zone
     iterations: int
     pareto_route_count: int
     physiological_count: int
-    routes: tuple[RouteV1, ...] = ()
-    rejected: tuple[RouteV1, ...] = ()
+    routes: tuple[Route, ...] = ()
+    rejected: tuple[Route, ...] = ()
     warnings: tuple[str, ...] = ()
     recommended_route_id: str | None = None
     truncated: bool = False
@@ -543,7 +543,7 @@ class RoutePlanV1:
         }
 
     @classmethod
-    def from_dict(cls, data: Any) -> "RoutePlanV1":
+    def from_dict(cls, data: Any) -> "RoutePlan":
         item = _mapping(data, "route plan")
         fmt = item.get("format")
         version = item.get("version")
@@ -556,11 +556,11 @@ class RoutePlanV1:
                 f"versao desconhecida: {version!r} (esperado {CONTRACT_VERSION!r})"
             )
         return cls(
-            request=RouteRequestV1.from_dict(item.get("request")),
+            request=RouteRequest.from_dict(item.get("request")),
             reached=_bool(item.get("reached"), "reached"),
-            search_bbox=BBoxV1.from_dict(item.get("search_bbox")),
-            bbox=BBoxV1.from_dict(item.get("bbox")),
-            zone=ZoneV1.from_dict(item.get("zone")),
+            search_bbox=BBox.from_dict(item.get("search_bbox")),
+            bbox=BBox.from_dict(item.get("bbox")),
+            zone=Zone.from_dict(item.get("zone")),
             iterations=_int(item.get("iterations"), "iterations", minimum=0),
             pareto_route_count=_int(
                 item.get("pareto_route_count"), "pareto_route_count", minimum=0
@@ -569,11 +569,11 @@ class RoutePlanV1:
                 item.get("physiological_count"), "physiological_count", minimum=0
             ),
             routes=tuple(
-                RouteV1.from_dict(route)
+                Route.from_dict(route)
                 for route in _sequence(item.get("routes", []), "routes")
             ),
             rejected=tuple(
-                RouteV1.from_dict(route)
+                Route.from_dict(route)
                 for route in _sequence(item.get("rejected", []), "rejected")
             ),
             warnings=tuple(

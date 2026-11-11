@@ -1,7 +1,7 @@
 """Avaliacao central dos objetivos de um perfil.
 
 Uma unica implementacao extrai os valores objetivo de uma fonte de metricas
-(``Route``, ``CandidateMetrics`` ou ``RouteCandidate``), para que ranking, selecao e
+(``SearchRoute``, ``CandidateMetrics`` ou ``RouteCandidate``), para que ranking, selecao e
 explicacao leiam as metricas do mesmo jeito. O perfil nao reinterpreta a fisica:
 apenas escolhe quais metricas usar.
 """

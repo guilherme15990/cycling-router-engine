@@ -11,7 +11,7 @@ nao elimina alternativas (isso e papel da diversidade, depois). Duas estrategias
 
 Em ambas as estrategias o desempate final e ``(label_id, route_id)`` — a ordem
 nunca depende da ordem de entrada. O nucleo opera sobre ``RouteCandidate``; a API
-por ``Route`` continua disponivel como conveniencia.
+por ``SearchRoute`` continua disponivel como conveniencia.
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from .evaluator import (
     objective_value,
 )
 from .profiles import RankingStrategy, RankingTolerance, RouteProfile
-from .route import Route
+from .route import SearchRoute
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,7 +52,7 @@ class RankedCandidate:
 class RankedRoute:
     """Compatibilidade: rota ordenada (sem a identidade da candidata)."""
 
-    route: Route
+    route: SearchRoute
     rank: int
     profile_score: float | None = None
 
@@ -65,7 +65,7 @@ class RankedRoute:
 
 
 def profile_score(
-    route: Route,
+    route: SearchRoute,
     profile: RouteProfile,
     *,
     evaluator: ObjectiveEvaluator | None = None,
@@ -137,7 +137,7 @@ def rank_candidates(
 
 
 def rank_routes(
-    routes: Iterable[Route],
+    routes: Iterable[SearchRoute],
     profile: RouteProfile,
     *,
     evaluator: ObjectiveEvaluator | None = None,
@@ -155,11 +155,11 @@ def rank_routes(
 
 
 def order_routes(
-    routes: Iterable[Route],
+    routes: Iterable[SearchRoute],
     profile: RouteProfile,
     *,
     evaluator: ObjectiveEvaluator | None = None,
-) -> list[Route]:
+) -> list[SearchRoute]:
     """Atalho: apenas as rotas, na ordem de preferencia do perfil."""
     return [
         ranked.route

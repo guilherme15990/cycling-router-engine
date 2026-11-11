@@ -11,7 +11,7 @@ Cobrem:
 
 import json
 import pytest
-from router.core.prediction.intelligence import (
+from router.core.prediction import (
     DATASET_FORMAT,
     CyclistId,
     MeasurementQuality,
@@ -25,7 +25,7 @@ from router.core.prediction.intelligence import (
     pseudonymize,
     save_dataset,
 )
-from router.core.physics.physiology import BorgScale
+from router.core.physiology import BorgScale
 
 
 def provenance() -> Provenance:

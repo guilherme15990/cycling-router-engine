@@ -1,7 +1,7 @@
 import pytest
 from router.core.data.graph.model import Arc, Segment
-from router.core.physics.physical import TraversalResult
-from router.core.physics.physical.energy import kinetic_energy_j
+from router.core.physics import TraversalResult
+from router.core.physics.energy import kinetic_energy_j
 from router.core.search import (
     Objective,
     ObjectiveSet,

@@ -33,15 +33,16 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
-from router.core.evaluation.assessment import AssessmentOutcome, RouteAssessment
-from router.core.physics.physiology import DEFAULT_BORG_SCALE, BorgScale
+from router.core.evaluation.assessment import AssessmentOutcome
+from router.core.evaluation.ports import RouteAssessmentView
+from router.core.physiology import DEFAULT_BORG_SCALE, BorgScale
 
-from router.core.prediction.intelligence._validation import (
+from router.core.prediction._validation import (
     finite,
     non_empty_str,
     unit_interval,
 )
-from router.core.prediction.intelligence.intensity import INTENSITY_BAND_NAMES
+from router.core.prediction.intensity import INTENSITY_BAND_NAMES
 
 
 class ClassificationError(ValueError):
@@ -263,7 +264,7 @@ class RouteClassification:
 
 
 def _evaluate_rpe(
-    assessment: RouteAssessment, preference: EffortPreference
+    assessment: RouteAssessmentView, preference: EffortPreference
 ) -> CriterionResult:
     low, high = preference.acceptable_rpe  # type: ignore[misc]
     prediction = assessment.prediction
@@ -297,7 +298,7 @@ def _evaluate_rpe(
 
 
 def _evaluate_zones(
-    assessment: RouteAssessment, preference: EffortPreference
+    assessment: RouteAssessmentView, preference: EffortPreference
 ) -> CriterionResult:
     prediction = assessment.prediction
     distribution = prediction.heart_rate_zone_distribution
@@ -334,7 +335,7 @@ def _evaluate_zones(
 
 
 def _evaluate_intensity_bands(
-    assessment: RouteAssessment, preference: EffortPreference
+    assessment: RouteAssessmentView, preference: EffortPreference
 ) -> CriterionResult:
     """Avalia a fracao da base nas faixas de **intensidade** preferidas.
 
@@ -384,7 +385,7 @@ def _evaluate_intensity_bands(
 
 
 def _evaluate_criteria(
-    assessment: RouteAssessment, preference: EffortPreference | None
+    assessment: RouteAssessmentView, preference: EffortPreference | None
 ) -> tuple[CriterionResult, ...]:
     if preference is None:
         return ()
@@ -399,7 +400,7 @@ def _evaluate_criteria(
 
 
 def classify_route(
-    assessment: RouteAssessment,
+    assessment: RouteAssessmentView,
     preference: EffortPreference | None = None,
 ) -> RouteClassification:
     """Classifica **uma** rota avaliada: esforco previsto x preferencia.
@@ -408,8 +409,8 @@ def classify_route(
     de ``assess_route``. Quando a rota e ``REJECTED``, a preferencia nao e
     avaliada (o veredito geral fica ``UNKNOWN``).
     """
-    if not isinstance(assessment, RouteAssessment):
-        raise ClassificationError("assessment deve ser um RouteAssessment")
+    if not isinstance(assessment, RouteAssessmentView):
+        raise ClassificationError("assessment deve satisfazer RouteAssessmentView")
     if preference is not None and not isinstance(preference, EffortPreference):
         raise ClassificationError("preference deve ser um EffortPreference ou None")
 
@@ -427,7 +428,7 @@ def classify_route(
 
 
 def classify_routes(
-    assessments: Iterable[RouteAssessment],
+    assessments: Iterable[RouteAssessmentView],
     preference: EffortPreference | None = None,
 ) -> tuple[RouteClassification, ...]:
     """Classifica varias rotas **preservando a ordem de entrada**.

@@ -130,7 +130,7 @@ def test_full_local_pipeline_runs_offline(tmp_path):
         assess_route,
         classify_route,
     )
-    from router.core.prediction.intelligence import (
+    from router.core.prediction import (
         CyclistId,
         MeasurementQuality,
         ModelStore,
@@ -142,8 +142,8 @@ def test_full_local_pipeline_runs_offline(tmp_path):
         train_and_save,
     )
     from router.core.data.graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
-    from router.core.physics.physical import BicycleModel, CyclistModel
-    from router.core.physics.physiology import PredictionStatus
+    from router.core.physics import BicycleModel, CyclistModel
+    from router.core.physiology import PredictionStatus
 
     provenance = Provenance(source="test", version="1")
     observations = [

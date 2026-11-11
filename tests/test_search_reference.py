@@ -18,7 +18,7 @@ Ref.: ADR-026 e ``docs/adr/026-auditoria-busca.md`` §9.
 
 import pytest
 from router.core.data.graph.model import Arc, Node, RoutingGraph, Segment
-from router.core.physics.physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     Environment,

@@ -23,7 +23,7 @@ from router.core.data.graph.model import (
     ElevationSample,
 )
 from router.core.data.graph.surface import Surface, SurfaceStatus
-from router.core.physics.physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     Environment,
@@ -37,7 +37,7 @@ from router.core.physics.physical import (
     required_rider_power_w,
     rolling_force_n,
 )
-from router.core.physics.physical.energy import (
+from router.core.physics.energy import (
     kinetic_energy_j,
     potential_energy_j,
     rider_energy_from_wheel_j,

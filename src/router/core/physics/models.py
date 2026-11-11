@@ -365,8 +365,8 @@ class TraversalResult:
             braking_loss_j=max(0.0, self.braking_energy_j),
         )
 
-    def to_metrics(self) -> "RouteMetrics":
-        return RouteMetrics(
+    def to_metrics(self) -> "PhysicsRouteMetrics":
+        return PhysicsRouteMetrics(
             time_s=self.time_s,
             distance_m=self.distance_m,
             ascent_m=self.ascent_m,
@@ -410,7 +410,7 @@ class TraversalResult:
 
 
 @dataclass(frozen=True, slots=True)
-class RouteMetrics:
+class PhysicsRouteMetrics:
     """Metricas acumuladas de uma rota.
 
     A busca Pareto pode somar ``TraversalResult`` sem conhecer as equacoes
@@ -438,7 +438,7 @@ class RouteMetrics:
     def average_speed_kmh(self) -> float:
         return 3.6 * self.average_speed_mps
 
-    def add(self, result: TraversalResult) -> "RouteMetrics":
+    def add(self, result: TraversalResult) -> "PhysicsRouteMetrics":
         battery: float | None = None
         if (
             self.battery_energy_j is not None
@@ -446,7 +446,7 @@ class RouteMetrics:
         ):
             battery = self.battery_energy_j + result.battery_energy_j
 
-        return RouteMetrics(
+        return PhysicsRouteMetrics(
             time_s=self.time_s + result.time_s,
             distance_m=self.distance_m + result.distance_m,
             ascent_m=self.ascent_m + result.ascent_m,
@@ -463,7 +463,7 @@ class RouteMetrics:
     @classmethod
     def from_results(
         cls, results: list[TraversalResult] | tuple[TraversalResult, ...]
-    ) -> "RouteMetrics":
+    ) -> "PhysicsRouteMetrics":
         metrics = cls()
         for result in results:
             metrics = metrics.add(result)
@@ -508,7 +508,7 @@ class TraversalPath:
     """
 
     results: tuple[TraversalResult, ...]
-    metrics: RouteMetrics
+    metrics: PhysicsRouteMetrics
     initial_speed_mps: float
     final_speed_mps: float
     elevation_uncertainty: "ElevationUncertainty | None" = None

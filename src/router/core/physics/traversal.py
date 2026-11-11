@@ -22,7 +22,7 @@ from .cyclist import CyclistModel
 from .arc_profile import ArcProfile, ProfileStep
 from .environment import Environment
 from .models import (
-    RouteMetrics,
+    PhysicsRouteMetrics,
     SimulationState,
     SimulationStatus,
     TraversalPath,
@@ -280,7 +280,7 @@ class PhysicalTraversal:
 
         return TraversalPath(
             results=tuple(results),
-            metrics=RouteMetrics.from_results(results),
+            metrics=PhysicsRouteMetrics.from_results(results),
             initial_speed_mps=(
                 initial_state.speed_mps if initial_state is not None else 0.0
             ),

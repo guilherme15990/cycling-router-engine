@@ -15,9 +15,9 @@ import dataclasses
 import inspect
 import json
 import pytest
-import router.core.physics.physical.effort as effort_module
+import router.core.physics.effort as effort_module
 from router.core.data.graph.model import Arc, ElevationSample, Segment
-from router.core.physics.physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     EFFORT_FEATURES_VERSION,

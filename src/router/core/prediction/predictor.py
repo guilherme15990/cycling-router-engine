@@ -25,8 +25,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from router.core.physics.physical.effort import EFFORT_FEATURES_VERSION, EffortFeatures
-from router.core.physics.physiology import (
+from router.core.physics.effort import EFFORT_FEATURES_VERSION, EffortFeatures
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     BorgScale,
     PhysiologicalPrediction,

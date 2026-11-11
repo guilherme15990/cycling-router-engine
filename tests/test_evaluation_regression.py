@@ -33,9 +33,9 @@ from router.core.data.graph.restrictions import AccessRule
 from router.offline import is_network_disabled, offline
 from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
 from router.core.data.osm.parse import OsmData
-from router.core.physics.physical import BicycleModel, CyclistModel, SimulationState
+from router.core.physics import BicycleModel, CyclistModel, SimulationState
 from router.app.planning import plan_offline_routes
-from router.core.search import Route, RouteCandidate
+from router.core.search import SearchRoute, RouteCandidate
 
 CYCLIST = CyclistModel(
     mass_kg=75.0, max_power_w=600.0, sustainable_power_w=200.0, frontal_area_m2=0.5
@@ -151,7 +151,7 @@ def _assess(*, restrictions=()):
 
 
 def _candidate(route_id):
-    route = Route(
+    route = SearchRoute(
         arc_ids=("a12", "a23"),
         time_s=1.0,
         distance_m=400.0,

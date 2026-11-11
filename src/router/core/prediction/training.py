@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Sequence
 
-from router.core.physics.physical.effort import EFFORT_FEATURES_VERSION
+from router.core.physics.effort import EFFORT_FEATURES_VERSION
 
 from .features import (
     ALL_FEATURE_NAMES,

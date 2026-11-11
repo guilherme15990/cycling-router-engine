@@ -12,7 +12,7 @@ cobrem:
 
 import pytest
 from router.core.data.graph.model import Arc, Segment
-from router.core.physics.physical import TraversalResult
+from router.core.physics import TraversalResult
 from router.core.search import (
     CandidateMetrics,
     DeduplicationMode,
@@ -53,13 +53,13 @@ def route(
     energy_j: float = 1000.0,
     label_id: int = 0,
 ):
-    from router.core.search import Route
+    from router.core.search import SearchRoute
 
     if distance_m is None:
         distance_m = (
             float(sum(lengths)) if lengths else float(len(arc_ids)) * 100.0
         )
-    return Route(
+    return SearchRoute(
         arc_ids=tuple(arc_ids),
         arc_lengths=tuple(lengths),
         time_s=time_s,

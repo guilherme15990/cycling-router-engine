@@ -11,8 +11,8 @@ from collections.abc import Sequence
 from typing import Protocol, runtime_checkable
 
 from router.core.evaluation.assessment import AssessmentOutcome
-from router.core.physics.physiology import PhysiologicalPrediction
-from router.core.prediction.intelligence.intensity import IntensityEstimate
+from router.core.physiology import PhysiologicalPrediction
+from router.core.prediction.intensity import IntensityEstimate
 
 
 @runtime_checkable

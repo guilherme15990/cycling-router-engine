@@ -9,7 +9,7 @@ Cobrem:
 """
 
 import pytest
-from router.core.prediction.intelligence import (
+from router.core.prediction import (
     ConstantModel,
     CyclistId,
     EvaluationError,

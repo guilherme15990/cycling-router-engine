@@ -12,9 +12,10 @@ curada para o consumidor externo. Cobrem:
 
 from __future__ import annotations
 
+from router import integration
 from router.app import multi_leg
-from router.contracts import RoutePlanV1
-from router.interfaces import api, integration
+from router.contracts import RoutePlan
+from router.interfaces import api
 
 
 def test_integration_surface_is_curated():
@@ -50,9 +51,9 @@ def test_plan_routes_is_the_elected_multi_leg_entry_point():
 
 
 def test_integration_exposes_the_public_contract_not_internal_dto():
-    assert integration.RoutePlanV1 is RoutePlanV1
+    assert integration.RoutePlan is RoutePlan
     assert not hasattr(integration, "PlannedRoute")
-    assert not hasattr(integration, "RoutePlan")
+    assert not hasattr(integration, "RoutePlanResult")
 
 
 def test_public_router_integration_is_the_same_surface():

@@ -32,19 +32,19 @@ from enum import Enum
 from typing import TYPE_CHECKING
 
 from router.core.data.graph.model import Arc, GraphError, RoutingGraph
-from router.core.prediction.ml.predictor import EffortPredictor, predict_effort
-from router.core.physics.physical.bicycle import BicycleModel
-from router.core.physics.physical.cyclist import CyclistModel
-from router.core.physics.physical.effort import EffortFeatures, extract_effort_features
-from router.core.physics.physical.environment import Environment
-from router.core.physics.physical.models import (
-    RouteMetrics,
+from router.core.prediction.ml import EffortPredictor, predict_effort
+from router.core.physics.bicycle import BicycleModel
+from router.core.physics.cyclist import CyclistModel
+from router.core.physics.effort import EffortFeatures, extract_effort_features
+from router.core.physics.environment import Environment
+from router.core.physics.models import (
+    PhysicsRouteMetrics,
     SimulationState,
     SimulationStatus,
     TraversalPath,
 )
-from router.core.physics.physical.traversal import PhysicalTraversal
-from router.core.physics.physiology import (
+from router.core.physics.traversal import PhysicalTraversal
+from router.core.physiology import (
     PhysiologicalPrediction,
     PredictionContext,
     RiderProfile,
@@ -57,12 +57,12 @@ from router.core.search.circulation import (
     RouteValidation,
     validate_route,
 )
-from router.core.search.route import Route
+from router.core.search.route import SearchRoute
 
 from .diagnostics import EnergyConsistency, energy_consistency
 
 if TYPE_CHECKING:  # pragma: no cover - apenas para tipagem
-    from router.core.prediction.intelligence.intensity import IntensityEstimate
+    from router.core.prediction.intensity import IntensityEstimate
 
 
 class RouteAssessmentError(ValueError):
@@ -104,7 +104,7 @@ class RouteAssessment:
     energy: EnergyConsistency | None = None
 
     @property
-    def metrics(self) -> RouteMetrics:
+    def metrics(self) -> PhysicsRouteMetrics:
         """Metricas fisicas completas do percurso (fonte: simulador completo)."""
         return self.path.metrics
 
@@ -302,7 +302,7 @@ def assess_route(
 
     # Estimativa de intensidade (ADR-028): computacional e NAO calibrada. Nao
     # preenche a previsao fisiologica; e um artefato distinto e rotulado.
-    from router.core.prediction.intelligence.intensity import estimate_intensity, segments_from_traversal
+    from router.core.prediction.intensity import estimate_intensity, segments_from_traversal
 
     intensity = estimate_intensity(
         segments_from_traversal(path, arcs),
@@ -326,9 +326,9 @@ def assess_route(
 
 
 def assess_search_route(
-    graph: RoutingGraph, route: Route, **kwargs
+    graph: RoutingGraph, route: SearchRoute, **kwargs
 ) -> RouteAssessment:
-    """Avalia uma ``Route`` da busca (Camada 03) pelo simulador completo."""
+    """Avalia uma ``SearchRoute`` da busca (Camada 03) pelo simulador completo."""
     return assess_route(graph, route.arc_ids, **kwargs)
 
 

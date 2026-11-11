@@ -38,17 +38,17 @@ from collections.abc import Hashable
 from dataclasses import dataclass
 
 from router.core.data.graph.model import Arc, RoutingGraph
-from router.core.physics.physical.arc_profile import ArcProfile
-from router.core.physics.physical.bicycle import BicycleModel
-from router.core.physics.physical.cyclist import CyclistModel
-from router.core.physics.physical.environment import Environment
-from router.core.physics.physical.forces import equilibrium_speed_mps, forces_at
-from router.core.physics.physical.models import (
+from router.core.physics.arc_profile import ArcProfile
+from router.core.physics.bicycle import BicycleModel
+from router.core.physics.cyclist import CyclistModel
+from router.core.physics.environment import Environment
+from router.core.physics.forces import equilibrium_speed_mps, forces_at
+from router.core.physics.models import (
     SimulationState,
     TraversalResult,
     classify_status,
 )
-from router.core.physics.physical.speed import MIN_SPEED_MPS
+from router.core.physics.speed import MIN_SPEED_MPS
 
 from .objectives import SearchProfile
 
@@ -342,7 +342,7 @@ def compare_traversals(
     estimador e ``estimate_arc``. ``reference_steps`` conta as avaliacoes de
     passo do simulador (``ceil(distancia / passo)`` equivalente, via perfil).
     """
-    from router.core.physics.physical.traversal import PhysicalTraversal
+    from router.core.physics.traversal import PhysicalTraversal
 
     environment = environment or Environment()
     state = initial_state if initial_state is not None else SimulationState()
@@ -606,7 +606,7 @@ def compare_search_rankings(
     from .astar import MultiObjectiveAStar
     from .objectives import profile_for
     from .traversal_model import PhysicalTraversalModel
-    from router.core.physics.physical.traversal import PhysicalTraversal
+    from router.core.physics.traversal import PhysicalTraversal
 
     environment = environment or Environment()
     resolved = profile_for(profile) if isinstance(profile, str) else profile
