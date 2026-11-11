@@ -5,15 +5,14 @@ O perfil define *o que otimizar* (energia e tempo). O modelo energetico define
 """
 
 import pytest
-
-from graph.model import RoutingGraph, Arc, Segment, Node
-from physical import (
+from router.core.data.graph.model import RoutingGraph, Arc, Segment, Node
+from router.core.physics.physical import (
     BatteryConfig,
     EnergyModel,
     GenericEnergyConfig,
     TraversalResult,
 )
-from search import (
+from router.core.search import (
     PROFILE_CONFIG,
     Objective,
     ProfileSearchRequest,

@@ -1,10 +1,9 @@
 from dataclasses import dataclass
 
 import pytest
-
-from graph.model import RoutingGraph, Node
-from physical import RouteMetrics
-from search import (
+from router.core.data.graph.model import RoutingGraph, Node
+from router.core.physics.physical import RouteMetrics
+from router.core.search import (
     PROFILE_NAMES,
     PROFILE_OBJECTIVES,
     FrontierMap,

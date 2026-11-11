@@ -11,10 +11,9 @@ cobrem:
 """
 
 import pytest
-
-from graph.model import Arc, Segment
-from physical import TraversalResult
-from search import (
+from router.core.data.graph.model import Arc, Segment
+from router.core.physics.physical import TraversalResult
+from router.core.search import (
     CandidateMetrics,
     DeduplicationMode,
     DiversityFallback,
@@ -54,7 +53,7 @@ def route(
     energy_j: float = 1000.0,
     label_id: int = 0,
 ):
-    from search import Route
+    from router.core.search import Route
 
     if distance_m is None:
         distance_m = (
@@ -373,7 +372,7 @@ def test_select_candidates_records_dropped_duplicates_only_via_pool():
     # ``select_candidates`` opera sobre candidatas ja limpas: nao deduplica.
     # Usamos fallback NONE para isolar a diversidade e provar que duas
     # candidatas de mesmo caminho sobrevivem aqui (o dedup e do pool).
-    from search import DiversityConfig, RouteProfile
+    from router.core.search import DiversityConfig, RouteProfile
 
     profile = RouteProfile(
         id="no-div",
@@ -407,7 +406,7 @@ def test_selection_result_threshold_none_when_diversity_none_fallback():
 
 
 def test_diversity_fallback_none_marks_neutrally():
-    from search import DiversityConfig, RouteProfile
+    from router.core.search import DiversityConfig, RouteProfile
 
     profile = RouteProfile(
         id="no-div",

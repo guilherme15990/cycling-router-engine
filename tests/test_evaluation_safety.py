@@ -19,10 +19,8 @@ from __future__ import annotations
 
 import dataclasses
 import math
-
 import pytest
-
-from evaluation import (
+from router.core.evaluation import (
     EnergyConsistency,
     EvaluationReport,
     Reason,
@@ -34,7 +32,7 @@ from evaluation import (
     energy_consistency,
     evaluate_candidates,
 )
-from graph.model import (
+from router.core.data.graph.model import (
     Arc,
     BicycleAccess,
     ElevationSample,
@@ -42,8 +40,8 @@ from graph.model import (
     RoutingGraph,
     Segment,
 )
-from graph.restrictions import AccessRule
-from physical import (
+from router.core.data.graph.restrictions import AccessRule
+from router.core.physics.physical import (
     BicycleModel,
     CyclistModel,
     RouteMetrics,
@@ -51,12 +49,12 @@ from physical import (
     SimulationStatus,
     TraversalPath,
 )
-from physiology import (
+from router.core.physics.physiology import (
     DEFAULT_BORG_SCALE,
     PhysiologicalPrediction,
     PredictionStatus,
 )
-from search import Route, RouteCandidate
+from router.core.search import Route, RouteCandidate
 
 CYCLIST = CyclistModel(
     mass_kg=75.0, max_power_w=600.0, sustainable_power_w=200.0, frontal_area_m2=0.5
@@ -387,7 +385,6 @@ def test_degraded_route_can_be_recommended_with_warning():
 # --------------------------------------------------------------------------
 def test_serialization_roundtrip_is_json_friendly():
     import json
-
     report = evaluate_candidates(
         [_candidate("c1", ("a12", "a23"))],
         assessments={"c1": validated_assessment()},

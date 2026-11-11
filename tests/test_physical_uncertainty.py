@@ -15,16 +15,15 @@ como degradado.
 """
 
 import pytest
-
-from graph.model import (
+from router.core.data.graph.model import (
     BicycleAccess,
     Arc,
     ElevationQuality,
     ElevationSample,
     Segment,
 )
-from graph.surface import Surface, SurfaceStatus
-from physical import (
+from router.core.data.graph.surface import Surface, SurfaceStatus
+from router.core.physics.physical import (
     BicycleModel,
     CyclistModel,
     ElevationUncertainty,

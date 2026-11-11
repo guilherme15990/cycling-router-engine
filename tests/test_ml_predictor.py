@@ -12,18 +12,16 @@ Cobertura exigida:
 
 import ast
 import inspect
-
 import pytest
-
-import ml.predictor as predictor_module
-from graph.model import Arc, ElevationSample, Segment
-from ml import (
+import router.core.prediction.ml.predictor as predictor_module
+from router.core.data.graph.model import Arc, ElevationSample, Segment
+from router.core.prediction.ml import (
     EffortPredictor,
     MetabolicEnergyPredictor,
     UnavailablePredictor,
     predict_effort,
 )
-from physical import (
+from router.core.physics.physical import (
     BicycleModel,
     CyclistModel,
     EffortFeatures,
@@ -32,7 +30,7 @@ from physical import (
     SimulationStatus,
     extract_effort_features,
 )
-from physiology import (
+from router.core.physics.physiology import (
     DEFAULT_BORG_SCALE,
     MetabolicParameters,
     PhysiologicalPrediction,
@@ -265,14 +263,17 @@ def test_predictor_module_does_not_import_routing():
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                absolute.add(alias.name.split(".")[0])
+                absolute.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
-            name = (node.module or "").split(".")[0]
+            name = node.module or ""
             (relative if node.level else absolute).add(name)
 
-    assert "search" not in absolute
     assert relative == set()
-    assert absolute <= {"__future__", "dataclasses", "typing", "physical", "physiology"}
+    assert not any("search" in name for name in absolute)
+    allowed = {"__future__", "dataclasses", "typing"}
+    assert all(
+        name in allowed or name.startswith("router.core.physics") for name in absolute
+    ), absolute
 
 
 # ==========================================================================

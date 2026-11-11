@@ -12,10 +12,8 @@ Cobrem:
 """
 
 import socket
-
 import pytest
-
-from offline import OfflineViolation, is_network_disabled, offline
+from router.offline import OfflineViolation, is_network_disabled, offline
 
 
 # ==========================================================================
@@ -127,23 +125,25 @@ def test_guard_is_reentrant():
 # ==========================================================================
 def test_full_local_pipeline_runs_offline(tmp_path):
     """Treinar -> carregar modelo -> simular -> prever -> classificar, sem rede."""
-    from evaluation import assess_route
-    from intelligence import (
-        CyclistId,
+    from router.core.evaluation import (
         EffortPreference,
+        assess_route,
+        classify_route,
+    )
+    from router.core.prediction.intelligence import (
+        CyclistId,
         MeasurementQuality,
         ModelStore,
         ObservedEffort,
         Provenance,
         TargetKind,
         build_dataset,
-        classify_route,
         load_predictor,
         train_and_save,
     )
-    from graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
-    from physical import BicycleModel, CyclistModel
-    from physiology import PredictionStatus
+    from router.core.data.graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
+    from router.core.physics.physical import BicycleModel, CyclistModel
+    from router.core.physics.physiology import PredictionStatus
 
     provenance = Provenance(source="test", version="1")
     observations = [

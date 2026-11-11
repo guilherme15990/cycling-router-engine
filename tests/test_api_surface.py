@@ -16,11 +16,13 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-import api
-
+from router.interfaces import api
 ROOT = Path(__file__).resolve().parents[1]
 GENERATOR = ROOT / "scripts" / "generate_api_reference.py"
 REFERENCE = ROOT / "docs" / "reference" / "api.md"
+
+#: Contagem congelada da fachada ampla (ADR-031, secao 7, Fase E).
+FROZEN_API_SURFACE = 336
 
 
 def _load_generator():
@@ -34,6 +36,13 @@ def _load_generator():
 def test_all_has_no_duplicates():
     exports = list(api.__all__)
     assert len(exports) == len(set(exports)), "api.__all__ tem duplicatas"
+
+
+def test_wide_facade_is_frozen():
+    assert len(api.__all__) == FROZEN_API_SURFACE, (
+        "a fachada ampla e congelada (ADR-031); adicione simbolos novos em "
+        "router.contracts ou router.integration"
+    )
 
 
 def test_every_exported_symbol_exists():

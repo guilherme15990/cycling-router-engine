@@ -18,12 +18,11 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-import cli
+from router.interfaces import cli
 from _pbf_fixtures import _PbfBuilder
-from elevation import TerrariumElevation
-from elevation_tiles import TerrariumTileError
-from offline import offline
+from router.core.data.elevation import TerrariumElevation
+from router.core.data.elevation.tiles import TerrariumTileError
+from router.offline import offline
 
 
 def _raw(degree: float) -> int:
@@ -88,7 +87,7 @@ def test_build_from_pbf_runs_entirely_offline(tmp_path):
     assert exit_code == 0
     assert out.is_file()
 
-    from graph.serialize import load_json
+    from router.core.data.graph.serialize import load_json
 
     graph = load_json(out)
     assert graph.node_count == 3
@@ -129,7 +128,7 @@ def test_build_from_pbf_applies_highway_filter(tmp_path):
             == 0
         )
 
-    from graph.serialize import load_json
+    from router.core.data.graph.serialize import load_json
 
     assert load_json(out).arc_count == 0
 
@@ -179,7 +178,7 @@ def test_build_from_pbf_attaches_turn_restrictions(tmp_path, capsys):
     assert code == 0
     assert "restricoes de conversao: 1" in capsys.readouterr().out
 
-    from graph.serialize import load_json
+    from router.core.data.graph.serialize import load_json
 
     assert list(load_json(out).turn_restrictions) == ["r500"]
 
@@ -237,7 +236,7 @@ def test_build_with_empty_terrarium_does_not_invent_elevation(tmp_path):
         )
 
     assert exit_code == 0
-    from graph.serialize import load_json, summarize
+    from router.core.data.graph.serialize import load_json, summarize
 
     summary = summarize(load_json(out))
     assert summary["elevation_coverage"] == pytest.approx(0.0)

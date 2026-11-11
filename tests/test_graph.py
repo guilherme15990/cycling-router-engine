@@ -3,29 +3,28 @@ import math
 from pathlib import Path
 
 import pytest
-
-from elevation import (
+from router.core.data.elevation import (
     CallableElevation,
     build_elevation_profile,
     fill_missing,
 )
-from geo import (
+from router.core.data.geo import (
     cumulative_distances,
     haversine_m,
     parse_bbox,
     sample_along,
 )
-from graph.model import RoutingGraph, Arc, Segment, Surface
-from graph.restrictions import parse_conditional_restrictions
-from graph.simplify import SimplifyOptions, simplify_graph
-from graph.surface import (
+from router.core.data.graph.model import RoutingGraph, Arc, Segment, Surface
+from router.core.data.graph.restrictions import parse_conditional_restrictions
+from router.core.data.graph.simplify import SimplifyOptions, simplify_graph
+from router.core.data.graph.surface import (
     SURFACE_PRIORITY,
     SurfaceStatus,
     surface_from_tags,
     surface_observation,
 )
-from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OsmData
+from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
+from router.core.data.osm.parse import OsmData
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tiny_network.json"
 
@@ -203,7 +202,7 @@ def test_graph_structure(payload):
 
 
 def test_oneway_and_bicycle_exceptions(payload):
-    from osm.build import allowed_directions
+    from router.core.data.osm.build import allowed_directions
 
     graph, _ = build_from_fixture(payload)
 
@@ -393,7 +392,7 @@ def test_fill_missing_interpolates_gaps():
 
 
 def test_smoothing_reduces_dem_noise_and_keeps_endpoints():
-    from elevation import smooth_elevations
+    from router.core.data.elevation import smooth_elevations
 
     noisy = [700.0, 700.5, 699.5, 700.4, 699.6, 700.0]
     smoothed = smooth_elevations(noisy, window=3)

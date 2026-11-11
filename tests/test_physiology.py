@@ -12,10 +12,8 @@ Cobertura exigida:
 
 import dataclasses
 import json
-
 import pytest
-
-from physiology import (
+from router.core.physics.physiology import (
     DEFAULT_BORG_SCALE,
     DISTRIBUTION_TOLERANCE,
     PHYSIOLOGY_VERSION,
@@ -29,7 +27,7 @@ from physiology import (
     RiderProfile,
     metabolic_energy_j,
 )
-from physiology.zones import is_normalized, validate_distribution
+from router.core.physics.physiology.zones import is_normalized, validate_distribution
 
 
 # ==========================================================================

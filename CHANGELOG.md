@@ -6,8 +6,26 @@ e [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
-ADR-026 — Optimização, custo e busca (Camada 03) + Camada 05 (avaliação e
-classificação) + **ADR-027 — Camada 04 (Intelligence, ML & Prediction)** e o
+**ADR-031 — Organização de módulos e fronteira pública.** O motor passou a
+viver em um único namespace instalável, `router`, com as cinco
+responsabilidades explícitas no caminho (`core.data`, `core.physics`,
+`core.search`, `core.prediction`, `core.evaluation`), orquestração em `app` e
+adaptadores em `interfaces`. `route_contract.py` foi dividido em
+`router.contracts` (`version`, `geo`, `route`, `serialize`, `errors`) e
+`elevation.py` em `core.data.elevation` (`providers`, `cache`, `offline`,
+`profile`, `tiles`). `intelligence.classification` foi realocado para
+`core.evaluation` (D2), eliminando `intelligence -> evaluation`.
+`interfaces` não importa `core.*`: a fachada ampla (`api`, 336 símbolos,
+congelada) é montada em `app.legacy`, e `integration` reexporta apenas
+`app`/`contracts`/`offline`. `src/` deixou de ter módulos soltos e shims; os
+imports públicos passam a ser `router.contracts` + `router.integration`.
+Novos testes executáveis: `tests/test_architecture.py` (matriz de camadas,
+contratos stdlib-only, interfaces sem núcleo, ausência de shims). Console
+scripts: `roteamento` e `router` apontam para `router.interfaces.cli:main`.
+Suíte: **836 testes** + 4 de arquitetura.
+
+ADR-026 - Otimizacao, custo e busca (Camada 03) + Camada 05 (avaliacao e
+classificacao) + **ADR-027 - Camada 04 (Intelligence, ML & Prediction)** e o
 **caminho de dados offline** + **ADR-028 — Estimativa de intensidade e ordem de
 eventos de ML** + **ADR-029 — Camada 05 (Evaluation & Guardrails)**. **Sem**
 física nova, **sem** algoritmo novo e **sem** parâmetro arbitrário. Sem
@@ -21,6 +39,50 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
 
 ### Adicionado
 
+- **ADR-032 (proposta) — estrutura-alvo e identidade de pacote** — registra a
+  revisão da árvore do ADR-031: `core/physics/physical/*` →
+  `core/physics/*`, `core/prediction/intelligence/*` → `core/prediction/*`,
+  `core/physics/physiology/` → `core/physiology/` (irmão da física),
+  `core/prediction/ml.py` (módulo único), `router.integration` como fonte única
+  da superfície curada e `interfaces/api.py` congelada até inventário de
+  consumidores. Também fixa pré-condições (medir dependências, testes de
+  importação, linha de base de 843 testes/336 símbolos), a estratégia de
+  reexportações temporárias e a separação de `.git/`, `.cache/` e `data/` do
+  wheel. **Nenhum código foi movido.** Detalhes em
+  `docs/adr/032-estrutura-alvo-e-identidade-de-pacote.md`.
+- **ADR-030 Fase 3 — múltiplas paradas e superfície de integração
+  (`multi_leg.py`, `integration.py`)** — `plan_routes` encadeia
+  `plan_offline_routes` por perna (origem → `stops[]` → destino, na ordem
+  informada) e funde os resultados **no núcleo**: geometria contínua sem
+  duplicar a junção, `dist_m` acumulado, métricas somadas (distância, tempo,
+  energia, subida/descida, `meters_band`) e `max_grade_pct` como o maior entre
+  as pernas. `ml` é fundido por peso de distância/tempo e permanece
+  explicitamente **não calibrado**; um valor desconhecido em qualquer perna
+  permanece `None`; sem rota em **qualquer** perna não existe trajeto parcial.
+  Sem paradas, o resultado é idêntico ao da perna única. `integration` é a
+  superfície **curada** para o app (28 símbolos): `plan_routes`,
+  `PROFILE_IDS`, `CyclistModel`/`BicycleModel`, `RoutingGraph` +
+  `load_graph`/`save_graph`, contrato v1, serialização estrita e guard
+  offline; `api.integration` expõe o módulo e `api.__all__` passa a 336
+  símbolos (`plan_routes`, `integration`). `multi_leg`/`integration` entraram
+  em `py-modules` do wheel. **Sem adaptador Python → TypeScript:** o diretório
+  será portado para TypeScript e o algoritmo atual do `toporide` será
+  descartado em favor do A\* multiobjetivo do núcleo. Suíte: **836 testes**.
+  Detalhes em `docs/adr/030-consolidacao-arquitetural.md` (Fase 3).
+- **ADR-030 Fase 2 — contrato público de rota v1 (`route_contract.py`)** —
+  `RoutePlanV1`/`RouteV1`/`RoutePointV1` e blocos (`metrics`, `ml`, `safety`,
+  `provenance`, `request`, `zone`, `bbox`) versionados (`format` + `version`),
+  com `dumps`/`loads` **estritos** (`allow_nan=False`, sem `default=str`) e
+  `write_plan`/`read_plan`. `planning.RoutePlan.to_contract()` projeta o
+  resultado interno; `to_dict()` delega a ele (caminho único) e o CLI
+  (`plan --json`) usa o serializador estrito. A geometria é por ponto
+  (`dist_m` monotônico, `band`/`rpe`/`watts` por arco) e começa/termina nos
+  pinos da consulta. Campos que a engine não calcula (`contra_m`, `walk_m`)
+  ficam `null` — nada é inventado. `IntensityEstimate` ganhou
+  `segment_rpes`/`segment_bands` (paralelos aos trechos) para alimentar a
+  geometria. O contrato foi exportado na fachada (`api`, +19 símbolos) e na
+  referência gerada. Suíte: **823 testes**. Detalhes em
+  `docs/adr/030-consolidacao-arquitetural.md` (§5 e Fase 2).
 - **Observabilidade da fronteira Pareto (correção complementar ao ADR-026)** —
   `SearchResult` ganha `frontier_truncated: bool` e `dropped_labels: int`, que
   sinalizam a poda da fronteira por `max_labels_per_node` (labels **não
@@ -206,8 +268,22 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
   monotônica de `result_status`, incerteza altimétrica, regularização, `stalled`
   e `dismount_used` até `RouteCandidate`.
 
+- `pyproject.toml` — `package-dir = { "" = "src" }` adicionado, de modo que os
+  módulos de topo (`api`, `cli`, `planning`, `geo`, `snapping`, ...) entram no
+  wheel; `pytest.ini` removido e `pythonpath = ["src"]` movido para
+  `[tool.pytest.ini_options]` (fonte única de configuração de teste).
+- `search/config.py` — docstring de `speed_step_mps` corrigida: o campo **é
+  usado** por `SpeedBucketDominance` (não é reserva futura).
+- `search/profiles.py` — `PROFILE_CONFIG` deriva os objetivos Pareto de
+  `PROFILE_OBJECTIVES` (`objectives.py`) via `_profile_objectives()`; a tabela
+  literal duplicada foi removida (ADR-030, F1). Comportamento dos cinco perfis
+  inalterado.
+
 ### Documentação
 
+- `docs/adr/030-consolidacao-arquitetural.md` — auditoria e plano de
+  consolidação; contagens de símbolos (**315**) e links quebrados corrigidos em
+  `docs/reference/quickstart.md` e `docs/reference/README.md`.
 - `docs/adr/026-optimization-custo-e-busca.md`,
   `docs/adr/026-contrato-circulacao.md`, `docs/adr/026-baseline-busca.md` e
   `docs/adr/025-modelo-fisico-e-dinamica-do-ciclista.md` atualizados.
@@ -249,6 +325,11 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
   01–04, o `MultiObjectiveAStar`, o simulador físico e o ML; **não** cria outro
   roteador nem outro motor físico. Numeração: o ADR-028 original (intensidade e
   ordem de ML) é **preservado**; Evaluation & Guardrails passa a **029**.
+- **ADR-030 — Consolidação arquitetural e contrato de integração**:
+  `docs/adr/030-consolidacao-arquitetural.md` (inventário, achados F1–F13 com
+  evidência de código, matriz PRESERVAR/ADAPTAR/COMPLEMENTAR/SUBSTITUIR,
+  contrato `RoutePlan` v1 e plano em fases para o `toporide`). Fase 1 é
+  **somente auditoria**: nenhum código de produção foi alterado.
 - `docs/reference/api.md` regenerado.
 
 ### Testes

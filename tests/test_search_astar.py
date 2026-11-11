@@ -1,16 +1,14 @@
 import math
-
 import pytest
-
-from graph.model import RoutingGraph, Arc, Segment, GraphError, Node
-from physical import (
+from router.core.data.graph.model import RoutingGraph, Arc, Segment, GraphError, Node
+from router.core.physics.physical import (
     BicycleModel,
     CyclistModel,
     Environment,
     PhysicalTraversal,
     TraversalResult,
 )
-from search import (
+from router.core.search import (
     UNKNOWN_SPEED,
     Heuristic,
     LexicographicQueue,
@@ -109,7 +107,7 @@ def test_stub_and_physical_model_satisfy_protocol():
 # Heuristica com fallback
 # --------------------------------------------------------------------------
 def test_heuristic_lower_bounds_fallback_zero():
-    from search import Heuristic
+    from router.core.search import Heuristic
 
     graph = make_graph([("e0", 1, 2)], node_ids=(1, 2))
     heuristic = Heuristic(graph, max_speed_mps=10.0)
@@ -333,7 +331,7 @@ def test_astar_with_physical_traversal_model():
     )
     assert model.mass_kg == pytest.approx(cyclist.mass_kg + bicycle.mass_kg)
 
-    from search import Heuristic
+    from router.core.search import Heuristic
 
     astar = MultiObjectiveAStar(
         graph,

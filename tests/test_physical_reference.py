@@ -15,17 +15,15 @@ Os valores de caracterizacao vem de `docs/adr/025-auditoria-fisica.md` (secao
 """
 
 import math
-
 import pytest
-
-from graph.model import (
+from router.core.data.graph.model import (
     BicycleAccess,
     Arc,
     Segment,
     ElevationSample,
 )
-from graph.surface import Surface, SurfaceStatus
-from physical import (
+from router.core.data.graph.surface import Surface, SurfaceStatus
+from router.core.physics.physical import (
     BicycleModel,
     CyclistModel,
     Environment,
@@ -39,7 +37,7 @@ from physical import (
     required_rider_power_w,
     rolling_force_n,
 )
-from physical.energy import (
+from router.core.physics.physical.energy import (
     kinetic_energy_j,
     potential_energy_j,
     rider_energy_from_wheel_j,

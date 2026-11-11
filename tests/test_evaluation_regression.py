@@ -19,25 +19,23 @@ from __future__ import annotations
 
 import dataclasses
 import math
-
 import pytest
-
-from elevation import CallableElevation
-from evaluation import (
+from router.core.data.elevation import CallableElevation
+from router.core.evaluation import (
     ReasonKind,
     RouteSafetyState,
     assess_route,
     classify_safety,
     evaluate_candidates,
 )
-from graph.model import Arc, ElevationSample, Node, RoutingGraph, Segment
-from graph.restrictions import AccessRule
-from offline import is_network_disabled, offline
-from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OsmData
-from physical import BicycleModel, CyclistModel, SimulationState
-from planning import plan_offline_routes
-from search import Route, RouteCandidate
+from router.core.data.graph.model import Arc, ElevationSample, Node, RoutingGraph, Segment
+from router.core.data.graph.restrictions import AccessRule
+from router.offline import is_network_disabled, offline
+from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
+from router.core.data.osm.parse import OsmData
+from router.core.physics.physical import BicycleModel, CyclistModel, SimulationState
+from router.app.planning import plan_offline_routes
+from router.core.search import Route, RouteCandidate
 
 CYCLIST = CyclistModel(
     mass_kg=75.0, max_power_w=600.0, sustainable_power_w=200.0, frontal_area_m2=0.5

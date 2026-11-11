@@ -16,24 +16,23 @@ circulacao) e a Camada 05 (avaliacao final):
 from __future__ import annotations
 
 import pytest
-
-from evaluation import (
+from router.core.evaluation import (
     RouteSafetyState,
     assess_route,
     assess_search_route,
     classify_safety,
     evaluate_candidates,
 )
-from graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
-from graph.restrictions import AccessRule, TurnRestriction
-from physical import (
+from router.core.data.graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
+from router.core.data.graph.restrictions import AccessRule, TurnRestriction
+from router.core.physics.physical import (
     BicycleModel,
     CyclistModel,
     SimulationState,
     SimulationStatus,
     TraversalResult,
 )
-from search import (
+from router.core.search import (
     MultiObjectiveAStar,
     RouteCandidate,
     route_arcs,
@@ -207,7 +206,7 @@ def forbidden_assessment():
 
 
 def candidate(route_id):
-    from search import Route
+    from router.core.search import Route
 
     route = Route(
         arc_ids=("a12", "a23"),

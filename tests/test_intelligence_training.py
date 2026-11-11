@@ -10,8 +10,7 @@ Cobrem:
 """
 
 import pytest
-
-from intelligence import (
+from router.core.prediction.intelligence import (
     DEFAULT_FEATURE_NAMES,
     CyclistId,
     MeasurementQuality,
@@ -27,8 +26,8 @@ from intelligence import (
     train_constant_baseline,
     train_linear,
 )
-from intelligence.models import ConstantModel, LinearModel, ModelError, fit_constant, fit_linear
-from physical.effort import EFFORT_FEATURES_VERSION
+from router.core.prediction.intelligence.models import ConstantModel, LinearModel, ModelError, fit_constant, fit_linear
+from router.core.physics.physical.effort import EFFORT_FEATURES_VERSION
 
 
 def provenance() -> Provenance:

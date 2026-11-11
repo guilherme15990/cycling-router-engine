@@ -4,11 +4,10 @@ import json
 from pathlib import Path
 
 import pytest
-
-from graph.model import Link, RoutingGraph
-from graph.serialize import graph_from_dict, graph_to_dict
-from osm.build import BuildOptions, build_graph
-from osm.parse import OsmData
+from router.core.data.graph.model import Link, RoutingGraph
+from router.core.data.graph.serialize import graph_from_dict, graph_to_dict
+from router.core.data.osm.build import BuildOptions, build_graph
+from router.core.data.osm.parse import OsmData
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tiny_network.json"
 
@@ -103,7 +102,7 @@ def test_link_section_absent_is_rebuilt(graph):
 
 def test_add_bidirectional_returns_arcs_and_registers_link():
     graph = RoutingGraph()
-    from graph.model import Arc, Node, Segment
+    from router.core.data.graph.model import Arc, Node, Segment
 
     graph.add_node(Node(id=1, lat=0.0, lon=0.0))
     graph.add_node(Node(id=2, lat=0.001, lon=0.0))

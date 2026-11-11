@@ -12,21 +12,21 @@ Cobrem:
 """
 
 import pytest
-
-from intelligence import (
+from router.core.evaluation import (
+    AssessmentOutcome,
     ClassificationError,
     EffortPreference,
     PreferenceVerdict,
     RouteClassification,
+    assess_route,
     classify_route,
     classify_routes,
 )
-from evaluation import AssessmentOutcome, assess_route
-from graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
-from graph.restrictions import AccessRule
-from ml import UnavailablePredictor
-from physical import BicycleModel, CyclistModel
-from physiology import (
+from router.core.data.graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
+from router.core.data.graph.restrictions import AccessRule
+from router.core.prediction.ml import UnavailablePredictor
+from router.core.physics.physical import BicycleModel, CyclistModel
+from router.core.physics.physiology import (
     DEFAULT_BORG_SCALE,
     PhysiologicalPrediction,
     PredictionStatus,
@@ -230,7 +230,7 @@ def test_zone_preference_unknown_without_distribution():
 def _with_intensity(distribution, *, duration_distribution=None):
     from dataclasses import replace
 
-    from intelligence.intensity import IntensityEstimate
+    from router.core.prediction.intelligence.intensity import IntensityEstimate
 
     estimate = IntensityEstimate(
         borg_scale=DEFAULT_BORG_SCALE,

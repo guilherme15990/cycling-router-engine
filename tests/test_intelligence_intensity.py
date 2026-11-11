@@ -10,12 +10,10 @@ from __future__ import annotations
 
 import json
 import math
-
 import pytest
-
-from physical.models import RouteMetrics, TraversalPath, TraversalResult
-from physiology import DEFAULT_BORG_SCALE
-from intelligence.intensity import (
+from router.core.physics.physical.models import RouteMetrics, TraversalPath, TraversalResult
+from router.core.physics.physiology import DEFAULT_BORG_SCALE
+from router.core.prediction.intelligence.intensity import (
     DEFAULT_INTENSITY_COEFFICIENTS,
     INTENSITY_BAND_DEFINITION,
     INTENSITY_BAND_EDGES,
@@ -214,7 +212,7 @@ def test_estimate_rejects_bad_fraction_dict():
 
 
 def test_estimate_uses_scale_bounds_for_cr10():
-    from physiology import BorgScale
+    from router.core.physics.physiology import BorgScale
 
     estimate = estimate_intensity(
         (_segment(rider_energy_j=1000.0),),
@@ -244,7 +242,7 @@ def _path(results: list[TraversalResult]) -> TraversalPath:
 
 
 def test_segments_from_traversal_builds_grade_and_traffic():
-    from intelligence.intensity import segments_from_traversal
+    from router.core.prediction.intelligence.intensity import segments_from_traversal
 
     results = [
         TraversalResult(
@@ -284,7 +282,7 @@ def test_segments_from_traversal_builds_grade_and_traffic():
 
 
 def test_segments_from_traversal_rejects_mismatched_lengths():
-    from intelligence.intensity import segments_from_traversal
+    from router.core.prediction.intelligence.intensity import segments_from_traversal
 
     results = [
         TraversalResult(

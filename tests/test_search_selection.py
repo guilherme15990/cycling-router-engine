@@ -1,8 +1,7 @@
 import pytest
-
-from graph.model import Arc, Segment
-from physical import TraversalResult
-from search import (
+from router.core.data.graph.model import Arc, Segment
+from router.core.physics.physical import TraversalResult
+from router.core.search import (
     DiversityConfig,
     DiversityFallback,
     DiversityMetric,
@@ -92,7 +91,7 @@ def label_for(
 def small_profile(*, fallback=None, max_similarity: float = 0.7) -> RouteProfile:
     diversity = DiversityConfig(max_similarity=max_similarity)
     if fallback is not None:
-        from search import DiversityRelaxation
+        from router.core.search import DiversityRelaxation
 
         diversity = DiversityConfig(
             max_similarity=max_similarity,
