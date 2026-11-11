@@ -246,6 +246,26 @@ def test_frontier_manager_truncates_per_key():
     assert manager.total_labels == 1
     assert short.active is False  # pior lexicograficamente (tempo maior)
     assert manager.frontier(dominance.key(quick)) == (quick,)
+    # A poda e observavel — nao silenciosa.
+    assert manager.frontier_truncated is True
+    assert manager.dropped_labels == 1
+    assert manager.to_dict()["dropped_labels"] == 1
+    assert manager.to_dict()["frontier_truncated"] is True
+
+
+def test_frontier_manager_dominance_discard_is_not_counted_as_truncation():
+    """Descarte por dominancia **nao** conta como poda de fronteira."""
+    dominance = make_dominance(step_mps=2.0)
+    manager = FrontierManager(dominance, max_labels_per_key=5)
+
+    better = make_state(1, speed_mps=1.0, time_s=100.0, distance_m=500.0)
+    worse = make_state(1, speed_mps=1.5, time_s=110.0, distance_m=550.0)
+
+    manager.insert(better)
+    assert manager.insert(worse) is False  # dominada, descartada
+
+    assert manager.dropped_labels == 0
+    assert manager.frontier_truncated is False
 
 
 def test_frontier_manager_labels_at_and_active():

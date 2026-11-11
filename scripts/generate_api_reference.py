@@ -405,9 +405,9 @@ LAYERS: list[tuple[str, str, list[str]]] = [
         "Fonte geografica local: leitor OSM.PBF",
         "Leitor **offline** de `OpenStreetMap PBF` (`.osm.pbf`), em Python puro "
         "(sem protobuf/osmium), com leitura em duas passagens de memoria "
-        "limitada. E a fonte geografica **local** exigida pelo ADR-027 §0 "
-        "(lacuna O1); a ingestao via Overpass continua sendo **preparacao** "
-        "de rede, fora do caminho de execucao.",
+        "limitada. E a unica fonte geografica do motor (ADR-027 §0): le vias, "
+        "nos e relacoes `type=restriction` de um arquivo local, sem ingestao "
+        "online.",
         [
             "PbfError",
             "PbfHeader",

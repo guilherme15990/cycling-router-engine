@@ -1,8 +1,8 @@
-"""Ingestao de dados do OpenStreetMap via Overpass **ou** OSM.PBF local.
+"""Ingestao de dados do OpenStreetMap a partir de arquivos **locais** (``.osm.pbf``).
 
 O leitor PBF (``osm.pbf``) opera **offline** — e a fonte geografica local
-exigida pelo ADR-027 §0 (lacuna O1). A ingestao via ``OverpassClient`` continua
-sendo **preparacao** (rede), fora do caminho de execucao.
+exigida pelo ADR-027 §0 (lacuna O1). Nao ha ingestao online: o motor consome
+arquivos ``.osm.pbf`` obtidos previamente (fora do caminho de execucao).
 """
 
 from .build import (
@@ -13,26 +13,30 @@ from .build import (
     allowed_directions,
     bicycle_access,
 )
-from .overpass import OverpassClient, OverpassError, build_query
-from .parse import OverpassData, RawNode, RawWay
+from .parse import (
+    DEFAULT_HIGHWAYS,
+    OsmData,
+    RawNode,
+    RawRelation,
+    RawWay,
+)
 from .pbf import PbfError, PbfHeader, PbfStats, read_header, read_osm_pbf
 
 __all__ = [
     "BuildOptions",
     "BuildStats",
-    "OverpassClient",
-    "OverpassData",
-    "OverpassError",
+    "DEFAULT_HIGHWAYS",
+    "OsmData",
     "PbfError",
     "PbfHeader",
     "PbfStats",
     "RawNode",
+    "RawRelation",
     "RawWay",
     "allowed_directions",
     "attach_elevation",
     "bicycle_access",
     "build_graph",
-    "build_query",
     "read_header",
     "read_osm_pbf",
 ]

@@ -107,6 +107,15 @@ class ProfileSearchResponse:
 
     ``energy`` traz a estimativa energetica por rota (alinhada por indice),
     presente quando o perfil usa energia, ha modelo configurado ou bateria.
+
+    Sinais de completude da busca (independentes de ``selection``):
+
+    * ``truncated`` — busca interrompida por ``max_expansions``;
+    * ``frontier_truncated`` / ``dropped_labels`` — ``max_labels_per_key``
+      removeu labels nao dominadas (poda de fronteira).
+
+    ``selection.dropped_duplicates`` e outra coisa: deduplicacao de candidatas
+    **apos** a busca.
     """
 
     profile_id: str
@@ -116,6 +125,9 @@ class ProfileSearchResponse:
     explanations: tuple[RouteExplanation, ...] = ()
     energy: tuple[RouteEnergyEstimate, ...] = ()
     reached: bool = False
+    truncated: bool = False
+    frontier_truncated: bool = False
+    dropped_labels: int = 0
 
     @property
     def count(self) -> int:
@@ -126,6 +138,9 @@ class ProfileSearchResponse:
             "profile_id": self.profile_id,
             "reached": self.reached,
             "pareto_route_count": self.pareto_route_count,
+            "truncated": self.truncated,
+            "frontier_truncated": self.frontier_truncated,
+            "dropped_labels": self.dropped_labels,
             "selection": self.selection.to_dict(),
             "routes": [route.to_dict() for route in self.routes],
             "explanations": [
@@ -235,6 +250,9 @@ def search_profile(
         explanations=explanations,
         energy=energy,
         reached=result.reached,
+        truncated=result.truncated,
+        frontier_truncated=result.frontier_truncated,
+        dropped_labels=result.dropped_labels,
     )
 
 

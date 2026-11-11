@@ -8,7 +8,7 @@ import pytest
 from graph.model import Link, RoutingGraph
 from graph.serialize import graph_from_dict, graph_to_dict
 from osm.build import BuildOptions, build_graph
-from osm.parse import OverpassData
+from osm.parse import OsmData
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tiny_network.json"
 
@@ -16,7 +16,7 @@ FIXTURE = Path(__file__).parent / "fixtures" / "tiny_network.json"
 @pytest.fixture
 def graph():
     payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    built, _ = build_graph(OverpassData.from_payload(payload), BuildOptions())
+    built, _ = build_graph(OsmData.from_payload(payload), BuildOptions())
     return built
 
 

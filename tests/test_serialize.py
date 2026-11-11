@@ -18,7 +18,7 @@ from graph.simplify import simplify_graph
 from graph.surface import SurfaceStatus
 from graph.validate import validate_graph
 from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OverpassData
+from osm.parse import OsmData
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tiny_network.json"
 
@@ -57,14 +57,14 @@ def elev():
 @pytest.fixture
 def graph():
     payload = json.loads(FIXTURE.read_text(encoding="utf-8"))
-    built, _ = build_graph(OverpassData.from_payload(payload), BuildOptions())
+    built, _ = build_graph(OsmData.from_payload(payload), BuildOptions())
     attach_elevation(built, elev(), spacing_m=20.0)
     return built
 
 
 @pytest.fixture
 def multi_segment_graph():
-    built, _ = build_graph(OverpassData.from_payload(CHAIN), BuildOptions())
+    built, _ = build_graph(OsmData.from_payload(CHAIN), BuildOptions())
     attach_elevation(built, elev(), spacing_m=20.0)
     simplified, _ = simplify_graph(built)
     return simplified

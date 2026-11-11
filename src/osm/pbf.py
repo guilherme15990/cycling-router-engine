@@ -1,16 +1,17 @@
 """Leitura de arquivos OpenStreetMap no formato PBF (``.osm.pbf``).
 
 Implementacao em Python puro (somente biblioteca padrao) do subconjunto do
-formato PBF necessario para reproduzir o que o cliente Overpass retorna:
-apenas as ``way`` s com ``highway`` aceito e os nos por elas referenciados.
+formato PBF necessario a construcao do grafo: as ``way`` s com ``highway``
+aceito, os nos por elas referenciados e as relacoes de restricao de conversao
+(``type=restriction``).
 
 O arquivo e lido em duas passagens *streaming*, de modo que o consumo de
-memoria fique limitado ao numero de vias selecionadas e seus nos, sem nunca
-carregar o arquivo inteiro:
+memoria fique limitado ao numero de vias selecionadas, seus nos e as relacoes
+de restricao, sem nunca carregar o arquivo inteiro:
 
 1. percorre os ``PrimitiveBlock`` lendo as ``way`` s e selecionando as que
    possuem ``highway`` aceito (e ``area != yes``), coletando os ids dos nos
-   referenciados;
+   referenciados, e lendo as ``Relation`` s, mantendo as de ``type=restriction``;
 2. percorre novamente o arquivo lendo ``Node``/``DenseNodes`` e mantendo
    apenas os ids necessarios.
 
@@ -31,8 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator
 
-from .overpass import DEFAULT_HIGHWAYS
-from .parse import OverpassData, RawNode, RawWay
+from .parse import DEFAULT_HIGHWAYS, OsmData, RawNode, RawRelation, RawWay
 
 __all__ = [
     "PbfError",
@@ -89,6 +89,7 @@ class PbfStats:
     ways_selected: int
     nodes_seen: int
     nodes_selected: int
+    relations_seen: int = 0
 
 
 # ---------------------------------------------------------------------------
@@ -418,6 +419,65 @@ def _iter_group_ways(group: bytes, strings: list[str]) -> Iterator[RawWay]:
             yield _parse_way(value, strings)  # type: ignore[arg-type]
 
 
+# Tipos de membro de uma ``Relation`` (osmformat.proto: Relation.MemberType).
+_MEMBER_TYPES = {0: "node", 1: "way", 2: "relation"}
+
+
+def _parse_relation(data: bytes, strings: list[str]) -> RawRelation:
+    """Decodifica uma mensagem ``Relation`` de um ``PrimitiveGroup``.
+
+    ``keys``/``vals`` sao indices na ``StringTable`` (``uint32``); ``memids``
+    e *delta coded* (``sint64``, zigzag); ``roles_sid`` sao indices de string.
+    """
+    relation_id = 0
+    keys: list[int] = []
+    vals: list[int] = []
+    roles: list[int] = []
+    memids_raw: list[int] = []
+    types: list[int] = []
+
+    for field, wire, value in _iter_fields(data):
+        if field == 1 and wire == 0:
+            relation_id = int(value)  # type: ignore[arg-type]
+        elif field == 2:
+            _extend_packed(keys, wire, value)
+        elif field == 3:
+            _extend_packed(vals, wire, value)
+        elif field == 8:
+            _extend_packed(roles, wire, value)
+        elif field == 9:
+            _extend_packed(memids_raw, wire, value)
+        elif field == 10:
+            _extend_packed(types, wire, value)
+
+    refs = _accumulate_zigzag(memids_raw)
+    size = len(strings)
+    members: list[dict[str, object]] = []
+    for index, ref in enumerate(refs):
+        role_index = roles[index] if index < len(roles) else 0
+        role = strings[role_index] if role_index < size else ""
+        type_code = types[index] if index < len(types) else 0
+        members.append(
+            {
+                "type": _MEMBER_TYPES.get(type_code, "node"),
+                "ref": ref,
+                "role": role,
+            }
+        )
+
+    return RawRelation(
+        id=relation_id,
+        members=tuple(members),
+        tags=_tags_from_keys_vals(strings, keys, vals),
+    )
+
+
+def _iter_group_relations(group: bytes, strings: list[str]) -> Iterator[RawRelation]:
+    for field, wire, value in _iter_fields(group):
+        if field == 4 and wire == 2:
+            yield _parse_relation(value, strings)  # type: ignore[arg-type]
+
+
 def _decode_plain_node(
     data: bytes,
     strings: list[str],
@@ -550,34 +610,38 @@ def read_osm_pbf(
     *,
     highways: tuple[str, ...] | None = None,
     with_stats: bool = False,
-) -> OverpassData | tuple[OverpassData, PbfStats]:
-    """Le um ``.osm.pbf`` e monta um :class:`OverpassData`.
+) -> OsmData | tuple[OsmData, PbfStats]:
+    """Le um ``.osm.pbf`` e monta um :class:`OsmData`.
 
-    Reproduz a semantica de :meth:`OverpassClient.fetch`:
+    Regras de selecao:
 
     * mantem toda ``way`` cujo ``highway`` esteja em ``highways`` (por padrao
       :data:`DEFAULT_HIGHWAYS`) e cujo ``area`` nao seja ``yes``;
     * mantem exatamente os nos referenciados por essas vias, com suas tags
       (necessarias depois para ``ele=*``);
+    * mantem as relacoes cujo ``type`` seja ``restriction`` (restricoes de
+      conversao; o ``build`` as normaliza via ``turn_restriction_from_relation``);
     * preserva o id original e a lista ordenada completa de refs de cada via.
 
     Args:
         path: Caminho do arquivo ``.osm.pbf``.
-        highways: Valores aceitos de ``highway=*``. ``None`` usa o mesmo
-            conjunto do cliente Overpass (:data:`DEFAULT_HIGHWAYS`).
+        highways: Valores aceitos de ``highway=*``. ``None`` usa o conjunto
+            padrao (:data:`DEFAULT_HIGHWAYS`).
         with_stats: Quando ``True``, devolve ``(data, stats)``.
 
     Returns:
-        O :class:`OverpassData` (ou ``(data, PbfStats)`` se ``with_stats``).
+        O :class:`OsmData` (ou ``(data, PbfStats)`` se ``with_stats``).
     """
     allowed = frozenset(DEFAULT_HIGHWAYS if highways is None else highways)
     source = Path(path)
 
-    # ----- Passagem 1: seleciona as vias e coleta os nos referenciados -----
+    # ----- Passagem 1: vias selecionadas, nos referenciados e restricoes ---
     ways: list[RawWay] = []
+    relations: list[RawRelation] = []
     needed: set[int] = set()
     blobs = 0
     ways_seen = 0
+    relations_seen = 0
 
     for blob_type, blob in _iter_blobs(source):
         if blob_type != "OSMData":
@@ -595,6 +659,11 @@ def read_osm_pbf(
                     continue
                 ways.append(way)
                 needed.update(way.nodes)
+            for relation in _iter_group_relations(group, block.strings):
+                relations_seen += 1
+                if relation.tags.get("type") != "restriction":
+                    continue
+                relations.append(relation)
 
     # ----- Passagem 2: le os nos e mantem apenas os necessarios ------------
     nodes: dict[int, RawNode] = {}
@@ -615,7 +684,7 @@ def read_osm_pbf(
                 block.lon_offset,
             )
 
-    data = OverpassData(nodes=nodes, ways=ways)
+    data = OsmData(nodes=nodes, ways=ways, relations=relations)
     if with_stats:
         return data, PbfStats(
             blobs=blobs,
@@ -623,5 +692,6 @@ def read_osm_pbf(
             ways_selected=len(ways),
             nodes_seen=nodes_seen,
             nodes_selected=len(nodes),
+            relations_seen=relations_seen,
         )
     return data

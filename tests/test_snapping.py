@@ -16,7 +16,7 @@ from graph.simplify import simplify_graph
 from graph.surface import Surface
 from graph.validate import validate_graph
 from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OverpassData
+from osm.parse import OsmData
 from snapping import (
     SnapError,
     SnapOptions,
@@ -73,7 +73,7 @@ ONEWAY = {
 
 
 def build_chain(simplify: bool = True, elevation: bool = True) -> RoutingGraph:
-    graph, _ = build_graph(OverpassData.from_payload(CHAIN), BuildOptions())
+    graph, _ = build_graph(OsmData.from_payload(CHAIN), BuildOptions())
     if elevation:
         attach_elevation(
             graph,
@@ -88,7 +88,7 @@ def build_chain(simplify: bool = True, elevation: bool = True) -> RoutingGraph:
 
 
 def build_oneway(simplify: bool = True) -> RoutingGraph:
-    graph, _ = build_graph(OverpassData.from_payload(ONEWAY), BuildOptions())
+    graph, _ = build_graph(OsmData.from_payload(ONEWAY), BuildOptions())
     if simplify:
         graph, _ = simplify_graph(graph)
     return graph

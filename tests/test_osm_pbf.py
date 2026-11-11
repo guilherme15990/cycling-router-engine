@@ -15,8 +15,8 @@ from pathlib import Path
 import pytest
 
 from _pbf_fixtures import _PbfBuilder, _deg, _fbytes, _fvarint
-from osm.overpass import DEFAULT_HIGHWAYS
-from osm.parse import OverpassData
+from osm.build import build_graph
+from osm.parse import DEFAULT_HIGHWAYS, OsmData
 from osm.pbf import PbfError, PbfStats, read_header, read_osm_pbf
 
 
@@ -87,7 +87,7 @@ def test_roundtrip_dense_nodes_coords_and_tags(tmp_path: Path) -> None:
 
     data = read_osm_pbf(path)
 
-    assert isinstance(data, OverpassData)
+    assert isinstance(data, OsmData)
     assert set(data.nodes) == {1, 2, 3}
     assert data.nodes[1].lat == pytest.approx(_deg(10000))
     assert data.nodes[1].lon == pytest.approx(_deg(20000))
@@ -114,6 +114,93 @@ def test_way_preserves_id_refs_and_order(tmp_path: Path) -> None:
     assert way.id == 42
     assert way.nodes == (3, 1, 4, 2)
     assert way.tags == {"highway": "track", "surface": "gravel"}
+
+
+# ---------------------------------------------------------------------------
+# Relacoes de restricao de conversao (``type=restriction``)
+# ---------------------------------------------------------------------------
+def test_reads_restriction_relation_members_and_order(tmp_path: Path) -> None:
+    path = (
+        _PbfBuilder(tmp_path)
+        .header()
+        .data(
+            dense=[(1, 0, 0, {}), (2, 0, 0, {}), (3, 0, 0, {})],
+            ways=[
+                (10, (1, 2), {"highway": "residential"}),
+                (11, (2, 3), {"highway": "residential"}),
+            ],
+            relations=[
+                (
+                    500,
+                    [(1, 10, "from"), (0, 2, "via"), (1, 11, "to")],
+                    {"type": "restriction", "restriction": "no_left_turn"},
+                )
+            ],
+        )
+        .write()
+    )
+
+    data = read_osm_pbf(path)
+    assert len(data.relations) == 1
+    relation = data.relations[0]
+    assert relation.id == 500
+    assert relation.tags == {"type": "restriction", "restriction": "no_left_turn"}
+    assert relation.members == (
+        {"type": "way", "ref": 10, "role": "from"},
+        {"type": "node", "ref": 2, "role": "via"},
+        {"type": "way", "ref": 11, "role": "to"},
+    )
+
+
+def test_non_restriction_relation_is_ignored(tmp_path: Path) -> None:
+    path = (
+        _PbfBuilder(tmp_path)
+        .header()
+        .data(
+            dense=[(1, 0, 0, {}), (2, 0, 0, {})],
+            ways=[(10, (1, 2), {"highway": "residential"})],
+            relations=[
+                (600, [(1, 10, "")], {"type": "route", "route": "bicycle"})
+            ],
+        )
+        .write()
+    )
+
+    data, stats = read_osm_pbf(path, with_stats=True)
+    assert data.relations == []
+    assert stats.relations_seen == 1
+
+
+def test_build_graph_attaches_turn_restriction_from_relation(tmp_path: Path) -> None:
+    path = (
+        _PbfBuilder(tmp_path)
+        .header()
+        .data(
+            dense=[(1, 19000, 0, {}), (2, 18900, 10, {}), (3, 18800, 20, {})],
+            ways=[
+                (10, (1, 2), {"highway": "residential"}),
+                (11, (2, 3), {"highway": "residential"}),
+            ],
+            relations=[
+                (
+                    500,
+                    [(1, 10, "from"), (0, 2, "via"), (1, 11, "to")],
+                    {"type": "restriction", "restriction": "no_left_turn"},
+                )
+            ],
+        )
+        .write()
+    )
+
+    graph, stats = build_graph(read_osm_pbf(path))
+
+    assert stats.turn_restrictions == 1
+    assert list(graph.turn_restrictions) == ["r500"]
+    restriction = graph.get_turn_restriction("r500")
+    assert restriction.from_way_id == 10
+    assert restriction.to_way_id == 11
+    assert restriction.via_node_id == 2
+    assert restriction.restriction_type == "no_left_turn"
 
 
 def test_coordinates_respect_granularity_and_offset(tmp_path: Path) -> None:

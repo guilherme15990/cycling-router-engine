@@ -2,10 +2,10 @@
 
 Cobrem (ADR-027 §0):
 
-* ``build --pbf`` monta o grafo a partir de um ``.osm.pbf`` **local**, sem
-  Overpass; e roda **inteiro** com a rede desabilitada (``offline()``) — prova
-  de que o caminho de execucao nao acessa a internet;
-* sem ``--bbox`` nem ``--pbf``, o comando falha de forma explicita;
+* ``build --pbf`` monta o grafo a partir de um ``.osm.pbf`` **local** (sem
+  ingestao online); e roda **inteiro** com a rede desabilitada (``offline()``) —
+  prova de que o caminho de execucao nao acessa a internet;
+* sem ``--pbf``, o comando falha de forma explicita;
 * ``--elevation terrarium`` exige ``--tiles-dir`` e constroi o provedor
   **offline** correto;
 * ``fetch-dem`` e a etapa de **preparo de rede** (download de tiles), testada
@@ -61,7 +61,7 @@ def tiny_pbf(tmp_path: Path, name: str = "tiny.osm.pbf") -> Path:
 # ==========================================================================
 # Fonte OSM local + execucao offline
 # ==========================================================================
-def test_build_without_bbox_or_pbf_fails_explicitly():
+def test_build_without_pbf_fails_explicitly():
     assert cli.main(["build", "--elevation", "none"]) == 2
 
 
@@ -132,6 +132,56 @@ def test_build_from_pbf_applies_highway_filter(tmp_path):
     from graph.serialize import load_json
 
     assert load_json(out).arc_count == 0
+
+
+def test_build_from_pbf_attaches_turn_restrictions(tmp_path, capsys):
+    # Uma relacao type=restriction no PBF vira restricao de conversao no grafo
+    # salvo (provisao offline das restricoes que a busca sabe aplicar).
+    pbf = (
+        _PbfBuilder(tmp_path, name="restriction.osm.pbf")
+        .header(writing_program="cli-test")
+        .data(
+            dense=[
+                (1, _raw(-17.790), _raw(-50.920), {}),
+                (2, _raw(-17.791), _raw(-50.921), {}),
+                (3, _raw(-17.792), _raw(-50.922), {}),
+            ],
+            ways=[
+                (100, (1, 2), {"highway": "residential"}),
+                (101, (2, 3), {"highway": "residential"}),
+            ],
+            relations=[
+                (
+                    500,
+                    [(1, 100, "from"), (0, 2, "via"), (1, 101, "to")],
+                    {"type": "restriction", "restriction": "no_left_turn"},
+                )
+            ],
+        )
+        .write()
+    )
+    out = tmp_path / "graph.json"
+
+    with offline():
+        code = cli.main(
+            [
+                "build",
+                "--pbf",
+                str(pbf),
+                "--elevation",
+                "none",
+                "--no-simplify",
+                "--out",
+                str(out),
+            ]
+        )
+
+    assert code == 0
+    assert "restricoes de conversao: 1" in capsys.readouterr().out
+
+    from graph.serialize import load_json
+
+    assert list(load_json(out).turn_restrictions) == ["r500"]
 
 
 # ==========================================================================

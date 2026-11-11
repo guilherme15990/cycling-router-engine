@@ -25,7 +25,7 @@ from graph.surface import (
     surface_observation,
 )
 from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OverpassData
+from osm.parse import OsmData
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tiny_network.json"
 
@@ -83,7 +83,7 @@ def payload() -> dict:
 
 
 def build_from_fixture(payload, **options):
-    data = OverpassData.from_payload(payload)
+    data = OsmData.from_payload(payload)
     return build_graph(data, BuildOptions(**options))
 
 

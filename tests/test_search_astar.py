@@ -237,6 +237,8 @@ def test_astar_max_expansions_truncates():
     assert result.truncated is True
     assert not result.reached
     assert result.expanded == 1
+    # Interrupcao por expansao nao e poda de fronteira.
+    assert (result.frontier_truncated, result.dropped_labels) == (False, 0)
 
     enough = MultiObjectiveAStar(
         graph,
@@ -249,6 +251,53 @@ def test_astar_max_expansions_truncates():
     assert ok.truncated is False
     assert ok.reached
     assert ok.expanded == 2
+    assert (ok.frontier_truncated, ok.dropped_labels) == (False, 0)
+
+
+def test_astar_frontier_and_expansion_caps_are_independent_signals():
+    """``max_expansions`` e ``max_labels_per_key`` sao indicadores independentes.
+
+    Um grafo com dois arcos paralelos ``1->2`` em **trade-off** (mesmo bucket)
+    permite que a poda de fronteira atue; uma cadeia longa permite que o limite
+    de expansao atue. Cada config liga **so** o seu proprio sinal, e a
+    combinacao liga os dois.
+    """
+    graph = make_graph(
+        [("a12a", 1, 2), ("a12b", 1, 2), ("a23", 2, 3), ("a34", 3, 4)],
+        node_ids=(1, 2, 3, 4),
+    )
+    table = {
+        "a12a": {"time_s": 90.0, "ascent_m": 100.0},
+        "a12b": {"time_s": 100.0, "ascent_m": 50.0},
+        "a23": {"time_s": 100.0},
+        "a34": {"time_s": 100.0},
+    }
+
+    def run(**cfg):
+        astar = MultiObjectiveAStar(
+            graph, StubTraversal(table), "fastest", config=SearchConfig(**cfg)
+        )
+        return astar.search(1, 4)
+
+    # Só a poda de fronteira: a busca continua completa.
+    only_frontier = run(max_labels_per_node=1)
+    assert only_frontier.frontier_truncated is True
+    assert only_frontier.dropped_labels >= 1
+    assert only_frontier.truncated is False
+
+    # Só o limite de expansao: a fronteira nao e podada.
+    only_expansions = run(max_expansions=1)
+    assert only_expansions.truncated is True
+    assert (only_expansions.frontier_truncated, only_expansions.dropped_labels) == (
+        False,
+        0,
+    )
+
+    # Ambos ligados: os dois sinais aparecem juntos e permanecem distinguiveis.
+    both = run(max_expansions=1, max_labels_per_node=1)
+    assert both.truncated is True
+    assert both.frontier_truncated is True
+    assert both.dropped_labels >= 1
 
 
 def test_astar_validation():

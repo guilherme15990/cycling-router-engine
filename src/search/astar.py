@@ -137,6 +137,15 @@ class SearchResult:
     deterministica (valores objetivo do perfil, depois ``label_id``). A
     reconstrucao das rotas usa ``parent``/``incoming_arc_id`` via
     ``arc_sequences()``.
+
+    Sinais de completude (independentes):
+
+    * ``truncated`` — a busca foi **interrompida** por ``max_expansions`` (a
+      fronteira de destino pode estar incompleta);
+    * ``frontier_truncated`` / ``dropped_labels`` — ``max_labels_per_key``
+      removeu labels **nao dominadas** dentro de uma chave, sem interromper a
+      busca. Nao confundir com ``truncated`` nem com a deduplicacao posterior
+      de candidatas (``dropped_duplicates``, outra camada).
     """
 
     origin: Hashable
@@ -146,6 +155,8 @@ class SearchResult:
     expanded: int = 0
     generated: int = 0
     truncated: bool = False
+    frontier_truncated: bool = False
+    dropped_labels: int = 0
 
     @property
     def reached(self) -> bool:
@@ -171,6 +182,8 @@ class SearchResult:
             "expanded": self.expanded,
             "generated": self.generated,
             "truncated": self.truncated,
+            "frontier_truncated": self.frontier_truncated,
+            "dropped_labels": self.dropped_labels,
             "labels": [label.to_dict() for label in self.labels],
         }
 
@@ -199,8 +212,14 @@ class MultiObjectiveAStar:
 
     Os controles de ``config`` (``max_expansions``, ``max_labels_per_node``)
     sao de **desempenho**: podem interromper a busca ou remover labels nao
-    dominadas. Quando ``max_expansions`` interrompe, o resultado fica marcado
-    com ``truncated=True``.
+    dominadas. Os dois efeitos sao **sinalizados de forma independente** no
+    resultado:
+
+    * ``max_expansions`` interrompe a busca -> ``truncated=True``;
+    * ``max_labels_per_node`` remove labels nao dominadas por chave ->
+      ``frontier_truncated=True`` e ``dropped_labels`` > 0.
+
+    Nenhum dos dois se confunde com a deduplicacao posterior de candidatas.
 
     Os guardrails de circulacao (ADR-026) filtram a expansao apenas quando ha
     **restricao registrada** (acesso ou conversao); sem nenhuma, a busca e
@@ -359,6 +378,8 @@ class MultiObjectiveAStar:
             expanded=expanded,
             generated=generated,
             truncated=truncated,
+            frontier_truncated=manager.frontier_truncated,
+            dropped_labels=manager.dropped_labels,
         )
 
     # -------------------------------------------------------------- interno

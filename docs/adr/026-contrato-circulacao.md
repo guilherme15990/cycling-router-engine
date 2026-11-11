@@ -33,6 +33,12 @@
 Nenhuma dessas entidades é reescrita; o contrato apenas define **quando** e
 **como** são consultadas.
 
+> **Provisão (atualização).** As `TurnRestriction` entram no grafo **no build
+> offline**: o leitor `osm.pbf` lê as relações `type=restriction` e o
+> `build_graph` as anexa a `RoutingGraph.turn_restrictions` (a ingestão online
+> via Overpass foi removida). Sem relações no arquivo, o conjunto é vazio e o
+> guardrail é **inerte por dados** (§1).
+
 ### 2.2 Duas decisões de circulação
 
 O guardrail expõe **duas** perguntas, ambas devolvendo um veredito tri-estado:

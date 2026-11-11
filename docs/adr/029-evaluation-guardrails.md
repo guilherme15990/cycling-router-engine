@@ -9,7 +9,8 @@
   cada incremento entrou com **teste + justificação + comparação com baseline**.
 - **Data:** 2026-11-11
 - **Base auditada:** motor `0.18.0`, suíte com **743 testes** (antes) →
-  **798 testes** (após a fase 2).
+  **798 testes** (após a fase 2) → **805 testes** (após o incremento de
+  observabilidade da fronteira, §11).
 - **Referências:** ADR-024 (grafo/restrições), ADR-025 (física), ADR-026
   (busca/guardrails, `026-contrato-circulacao.md`), ADR-027 (Intelligence/ML),
   ADR-028 (intensidade — `028-intensidade-e-ordem-ml.md`).
@@ -450,7 +451,7 @@ em `EvaluationReport.warnings`. (4) `evaluate_candidates` não recebe
 | A11 | Consumo sem recálculo | `evaluate_candidates` **não** re-simula; `assessment` é o **mesmo objeto** (`is`) |
 | A12 | Mesmo gerador, mesmas checagens | rota de cache/ML passa por `classify_safety` idêntico (I6) |
 | A13 | Rede desabilitada | fluxo completo roda com `offline()`; saída reprodutível (I7) |
-| A14 | Regressão | baselines S1–S7 **inalterados**; suíte verde (**798 testes**) |
+| A14 | Regressão | baselines S1–S7 **inalterados**; suíte verde (**805 testes**, §11) |
 
 ---
 
@@ -471,7 +472,8 @@ em `EvaluationReport.warnings`. (4) `evaluate_candidates` não recebe
 
 > Cada incremento: **teste + justificação + comparação com baseline**. Os
 > incrementos **1–7** foram **implementados**; o resultado é a suíte com
-> **798 testes** (743 antes da fase 2).
+> **798 testes** (743 antes da fase 2). O incremento **complementar** de
+> observabilidade da fronteira (§11) leva a suíte a **805 testes**.
 
 | Inc. | Entrega | Testes | Estado |
 | --- | --- | --- | --- |
@@ -545,3 +547,68 @@ Todas respondidas pelas **decisões vinculantes D1–D8** (§2.0):
 - Diversidade intrínseca da fronteira (ADR-026 §4).
 - Modelo fisiológico calibrado (ADR-027) — mantém-se a contrato de ausência.
 - Zonas cardíacas (nunca derivadas da estimativa de intensidade).
+
+---
+
+## 11. Observabilidade complementar — completude da busca (correção ao ADR-026)
+
+Os guardrails do ADR-029 governam a **recomendação** (estado de segurança). Uma
+lacuna **complementar** foi encontrada no ADR-026: a poda da fronteira por
+`max_labels_per_node` (chave `(nó, bucket)`) removia labels **não dominadas** sem
+qualquer sinal no resultado — a mesma classe de risco ("perda de completude
+silenciosa") que o ADR-029 combate na apresentação.
+
+Foi implementado um incremento **aditivo e retrocompatível**, sem tocar física,
+ML, custo ou política de dominância:
+
+| Efeito | Campo no resultado | Onde nasce |
+| --- | --- | --- |
+| Busca **interrompida** por `max_expansions` | `truncated` (inalterado) | `MultiObjectiveAStar.search` |
+| Fronteira **podada** por `max_labels_per_node` | `frontier_truncated`, `dropped_labels` | `FrontierManager` (contador só em `_truncate`) |
+| Candidatas **deduplicadas** após a busca | `dropped_duplicates` (inalterado) | `candidates.py` / `selection.py` |
+
+Os três indicadores são **independentes** e **não** se confundem. Os novos campos
+propagam até `SearchResult`, `ProfileSearchResponse`, `RoutePlan` e a CLI
+(avisos explícitos). `FrontierManager` (caminho do A\*) e `ParetoFrontier`
+(caminho legado via `FrontierMap`) têm contadores **coerentes** e sem dupla
+contagem — o descarte normal por dominância **não** é contado como poda.
+
+> **Caveat de leitura.** `truncated=False` **e** `frontier_truncated=False`
+> significam apenas que **nenhum dos dois limites atuou** — **não** provam
+> completude nem otimalidade **global** (o bucket de velocidade segue sendo uma
+> aproximação; a fila esvazia sob os caps e a heurística correntes). São
+> condições **necessárias, não suficientes**.
+
+`epsilon_dominance` permanece **inativo** no caminho principal
+(`SpeedBucketDominance` não aplica epsilon); sua condição está documentada no
+ADR-026 como controle **reservado**, sem alterar a semântica de dominância agora.
+
+Referências: `docs/adr/026-optimization-custo-e-busca.md` (Decisão 2),
+`docs/adr/026-baseline-busca.md` (S4/S5 e Interpretação, item 2),
+`tests/test_search_reference.py`, `tests/test_search_astar.py`,
+`tests/test_search_state.py`, `tests/test_search.py`.
+
+---
+
+## 12. Verificação de fechamento — decisões de segurança (D2–D6)
+
+Checagem de que cada decisão de segurança está **implementada** e **testada**.
+Não há decisão dependente de estado externo: o núcleo (`evaluation/safety.py`) é
+**puro** e consome apenas `RouteAssessment` já calculado.
+
+| # | Item verificado | Código | Evidência (testes) |
+| --- | --- | --- | --- |
+| 1 | `RouteSafetyState` **independente** de `AssessmentOutcome` | `RouteSafetyState`, `classify_safety`, `RouteAssessment.outcome` | `test_evaluation_safety.py`: `test_state_is_independent_from_assessment_outcome`, `test_calibrated_physiology_does_not_upgrade_or_downgrade`, `test_proven_physical_infeasibility_rejects`, `test_absence_of_calibrated_physiology_is_advisory_not_state` |
+| 2 | `evaluate_candidates` **sem recalcular** física/fisiologia | `evaluate_candidates` recebe `assessments` (mapa) e **não** tem parâmetro de física/fisiologia | `test_evaluation_safety.py::test_evaluate_candidates_reuses_existing_assessment` (identidade `is`), `test_evaluation_consistency.py::test_evaluate_candidates_preserves_eligible_order` |
+| 3 | `recommended=None` quando **não há elegível** | `_select_recommended` (primeira `eligible`) e `EvaluationReport` | `test_evaluation_safety.py::test_no_eligible_route_recommends_none`, `test_evaluation_consistency.py::test_all_ineligible_recommends_none`, `test_evaluation_regression.py::test_re_no_eligible_route_keeps_rejected_for_audit`, `::test_rf_no_ineligible_route_is_ever_recommended` |
+| 4 | Rejeição **auditável** de circulação proibida/não resolvida | `classify_safety` (`CIRCULATION_VIOLATION`/`CIRCULATION_UNRESOLVED`), preservadas em `rejected` | `test_evaluation_safety.py`: `test_explicit_forbidden_rule_rejects`, `test_unresolved_restriction_rejects_with_distinct_reason`, `test_absence_of_rule_is_not_prohibition_nor_unresolved`, `test_every_rejection_carries_a_reason`; `test_evaluation_regression.py` R-a/R-c |
+| 5 | Propagação de **incerteza** e **intensidade não calibrada** | `RouteAssessment.limitations`, `RouteSafety.advisories`, CLI | `test_evaluation_safety.py`: `test_absence_of_calibrated_physiology_is_advisory_not_state`, `test_intensity_estimate_is_always_advisory`, `test_degraded_simulation_degrades_but_stays_eligible`, `test_dismount_degrades_but_stays_eligible`; `test_evaluation_assessment.py` (limitations/intensidade); `test_planning.py::test_plan_every_route_receives_intensity_estimate` e o teste da saída de texto da CLI |
+
+**Separação de relatórios (não confundir).** O `EvaluationReport` conserva os
+**diagnósticos de segurança** (`reasons`/`advisories`/`limitations`), enquanto os
+**indicadores de completude da busca** (`truncated`/`frontier_truncated`/
+`dropped_labels`) vivem em `RoutePlan`/`ProfileSearchResponse` (§11). A interface
+(CLI) apresenta ambos: `seguranca:` + `intensidade (nao calibrada)` por rota, e os
+avisos de poda/interrupção.
+
+**Suíte:** **805 testes** verdes, totalmente **offline**.

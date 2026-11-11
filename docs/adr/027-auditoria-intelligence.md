@@ -69,7 +69,7 @@ Grep por `urllib|requests|http|socket|urlopen|endpoint|https://` em `src/`:
 
 | Componente | Faz rede? | Endpoint / mecanismo | Alternativa local |
 | --- | :---: | --- | --- |
-| `osm/overpass.py` (`OverpassClient`) | **Sim** | `DEFAULT_ENDPOINTS` (overpass-api.de / kumi.systems) via `urllib.request.urlopen` (L128); **cache em disco** (`cache_dir`, L84-L93) | Nenhuma hoje (ver §1.2) |
+| `osm/overpass.py` (`OverpassClient`) | **Removido** | — (ingestão online eliminada) | `osm/pbf.py` (`read_osm_pbf`, `.osm.pbf` local) |
 | `elevation.py` (`OpenTopoDataElevation`) | **Sim** | `https://api.opentopodata.org/v1` via `urllib.request.urlopen` (L214) | `RasterDemElevation` (GeoTIFF local) |
 | `elevation.py` (`RasterDemElevation`) | Não | `rasterio.open` de arquivo local (L259) | — (é a alternativa local) |
 | `elevation.py` (`SqliteElevationCache`, `MemoElevation`, `ConstantElevation`, `OsmTagElevation`, `CallableElevation`) | Não | cache em disco / memória / função | — |
@@ -84,17 +84,22 @@ simular → buscar → extrair features → prever → classificar) **já é liv
 rede**. A rede existe **apenas** na **geração/preparação do grafo** (Camada 01),
 que a norma considera um passo anterior com dados locais (OSM.PBF + DEM local).
 
+> **Atualização.** O `OverpassClient` (`osm/overpass.py`) foi **removido**: a
+> geração do grafo passou a ser 100% offline a partir de `.osm.pbf` (`osm.pbf`),
+> que lê vias, nós e relações `type=restriction`. A rede remanescente em `src/`
+> é só a **preparação de elevação** (`OpenTopoDataElevation`/tiles Terrarium).
+
 ### 1.2 Lacunas do requisito offline
 
 | # | Lacuna | Gravidade |
 | - | --- | --- |
-| O1 | **Não há leitor de OSM.PBF.** A única ingestão é `OverpassClient` (rede) → `osm/build.py`. Não há `osmium`/`pyrosm`/`pbf` em `pyproject.toml` | **Alta** (requisito cita OSM.PBF local) |
+| O1 | ~~**Não há leitor de OSM.PBF.**~~ **Resolvido:** `osm.pbf` é a fonte offline; a ingestão online via `OverpassClient` foi **removida** | ~~**Alta**~~ |
 | O2 | **Não há armazenamento/carregamento de modelo.** Nenhum `load_model`/`save_model`/registro/artefato (grep sem resultados) | **Bloqueante** (ML local) |
 | O3 | **Não há versionamento de modelo persistido** (só a string `model_version`) | Alta |
 | O4 | **Não há compatibilidade verificável `EffortFeatures` × modelo** no carregamento (o contrato recusa schema no *uso*, via `CONTRACT_INCOMPATIBLE`, mas não há checagem no *carregamento*) | Alta |
 | O5 | **Não há trilha "rede desabilitada" nos testes** (nenhum teste que falhe se houver acesso à rede) | **Alta** (exigido) |
 | O6 | **Não há modo/guard "offline"** explícito nem política que **proíba** download em execução | Média |
-| O7 | **Cache Overpass/elevação pode existir, mas o fetch não é bloqueado** quando ausente | Média |
+| O7 | **Cache de elevação pode existir, mas o fetch não é bloqueado** quando ausente | Média |
 
 Nenhuma dessas lacunas foi introduzida agora: são ausências de infraestrutura,
 coerentes com o escopo deliberado do ADR-025 (§11). Elas são **pré-requisito** do
@@ -453,7 +458,7 @@ Classificação: **P** = PRESERVAR, **A** = ADAPTAR, **C** = COMPLEMENTAR,
 | `search/ranking.py`, `evaluator.py`, `selection.py`, `explanation.py`, `profiles.py` | **P** | — | Preferência separada da física; não acoplar predição |
 | `graph/serialize.py` (persistência do grafo) | **P** | reutilizar o padrão versionado para artefatos locais | Já versiona e recusa versão desconhecida |
 | `physical/energy_model.py` (níveis de energia) | **P** (vocabulário distinto) | — | Energia **elétrica**, não fisiológica |
-| `osm/overpass.py`, `elevation.OpenTopoDataElevation` | **P** (fora da execução) | manter como **preparação** (Camada 01); uso no runtime depende de dados locais | Rede só na geração do grafo |
+| `elevation.OpenTopoDataElevation` | **P** (fora da execução) | manter como **preparação** (Camada 01) | Rede só na geração de elevação (o `OverpassClient` foi removido) |
 | **Leitor de OSM.PBF local** | **C** | novo (lacuna O1) | Requisito: fonte geográfica local |
 | **Armazenamento/registro de modelo local + versionamento + carregamento offline + checagem de compatibilidade** | **C** | novo (lacunas O2–O4) | Requisito: modelos locais versionados |
 | **Observações reais + identidade pseudonimizada + alvos** | **C** | novo (reutilizar padrão `version`+`provenance`) | Decisões 1–2 |

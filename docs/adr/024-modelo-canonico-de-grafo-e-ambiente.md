@@ -109,19 +109,24 @@ travessia é significativa.
 
 ### Estado da implementação (representação × cumprimento)
 
-Esta entrega **representa e preserva** as restrições; ela **não as aplica**:
+Esta entrega **representa e preserva** as restrições. Quando este ADR foi
+escrito, ela **não as aplicava**. Estado **atualizado**:
 
-- `turn_restriction_from_relation()` normaliza relações `type=restriction`, mas
-  **ainda não é integrado ao build** (`osm/build.py`).
-- nenhuma lógica de busca/validação avalia `TurnRestriction` ou condicionais.
-- portanto **não se pode afirmar que o guardrail já protege contra conversões
-  proibidas**. A ausência de avaliação na busca é uma lacuna declarada, não uma
-  garantia implícita.
+- **Provisão — fechada.** `turn_restriction_from_relation()` passou a ser
+  integrado ao `osm/build.py`: o leitor `osm.pbf` lê relações `type=restriction`
+  e o `build_graph` as anexa a `RoutingGraph.turn_restrictions`. A ingestão
+  online via Overpass foi **removida** (fonte: arquivo `.osm.pbf` local).
+- **Cumprimento — fechado no ADR-026.** Os guardrails de circulação avaliam
+  `TurnRestriction` **e** condicionais durante a geração de caminhos
+  (`026-contrato-circulacao.md` §4-§6), tanto nas rotas tradicionais quanto na
+  geração orientada por ML. Condição não avaliável ⇒ **política conservadora
+  explícita** (nunca "permitido por padrão").
 
-Quando a avaliação for implementada, o guardrail deverá validar **tanto as rotas
-tradicionais quanto a rota gerada pelo ML** — as duas compartilham o mesmo
-contrato de circulação. Condição não avaliável ⇒ **política conservadora
-explícita** (nunca "permitido por padrão").
+> **Registro histórico.** No estado original deste ADR, a representação existia
+> mas **nada a aplicava**: `turn_restriction_from_relation()` não era integrado
+> ao build e nenhuma lógica de busca/validação avaliava `TurnRestriction`. A
+> ausência de avaliação era uma **lacuna declarada**, não uma garantia
+> implícita.
 
 ### Invariantes
 

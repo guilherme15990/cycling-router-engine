@@ -1028,7 +1028,7 @@ Parametros de execucao da busca.
 ### `SearchResult`
 
 ```python
-class SearchResult(origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: SearchProfile, labels: tuple[SearchState, ...], expanded: int = 0, generated: int = 0, truncated: bool = False)
+class SearchResult(origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: SearchProfile, labels: tuple[SearchState, ...], expanded: int = 0, generated: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0)
 ```
 
 Fronteira Pareto de destino devolvida por ``MultiObjectiveAStar``.
@@ -1470,7 +1470,7 @@ Pedido de busca para um perfil concreto.
 ### `ProfileSearchResponse`
 
 ```python
-class ProfileSearchResponse(profile_id: str, routes: tuple[SelectedRoute, ...], pareto_route_count: int, selection: SelectionMetadata, explanations: tuple[RouteExplanation, ...] = (), energy: tuple[RouteEnergyEstimate, ...] = (), reached: bool = False)
+class ProfileSearchResponse(profile_id: str, routes: tuple[SelectedRoute, ...], pareto_route_count: int, selection: SelectionMetadata, explanations: tuple[RouteExplanation, ...] = (), energy: tuple[RouteEnergyEstimate, ...] = (), reached: bool = False, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0)
 ```
 
 Resposta: rotas selecionadas + explicacoes alinhadas por indice.
@@ -1788,7 +1788,7 @@ Uma rota descoberta, com fisica completa, previsao e classificacao.
 ### `RoutePlan`
 
 ```python
-class RoutePlan(origin: tuple[float, float], destination: tuple[float, float], profile_id: str, search_bbox: tuple[float, float, float, float], bbox: tuple[float, float, float, float], reached: bool, zone_nodes: int, zone_arcs: int, graph_nodes: int, graph_arcs: int, iterations: int, routes: tuple[planning.PlannedRoute, ...] = (), rejected: tuple[planning.PlannedRoute, ...] = (), warnings: tuple[str, ...] = (), pareto_route_count: int = 0, truncated: bool = False, preference: EffortPreference | None = None)
+class RoutePlan(origin: tuple[float, float], destination: tuple[float, float], profile_id: str, search_bbox: tuple[float, float, float, float], bbox: tuple[float, float, float, float], reached: bool, zone_nodes: int, zone_arcs: int, graph_nodes: int, graph_arcs: int, iterations: int, routes: tuple[planning.PlannedRoute, ...] = (), rejected: tuple[planning.PlannedRoute, ...] = (), warnings: tuple[str, ...] = (), pareto_route_count: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, preference: EffortPreference | None = None)
 ```
 
 Plano de consulta offline: box, zona e rotas descobertas.
@@ -1831,7 +1831,7 @@ Desabilita conexoes de rede enquanto o contexto estiver ativo.
 
 ## Fonte geografica local: leitor OSM.PBF
 
-Leitor **offline** de `OpenStreetMap PBF` (`.osm.pbf`), em Python puro (sem protobuf/osmium), com leitura em duas passagens de memoria limitada. E a fonte geografica **local** exigida pelo ADR-027 §0 (lacuna O1); a ingestao via Overpass continua sendo **preparacao** de rede, fora do caminho de execucao.
+Leitor **offline** de `OpenStreetMap PBF` (`.osm.pbf`), em Python puro (sem protobuf/osmium), com leitura em duas passagens de memoria limitada. E a unica fonte geografica do motor (ADR-027 §0): le vias, nos e relacoes `type=restriction` de um arquivo local, sem ingestao online.
 
 ### `PbfError`
 
@@ -1852,7 +1852,7 @@ Metadados do bloco ``OSMHeader``.
 ### `PbfStats`
 
 ```python
-class PbfStats(blobs: int, ways_seen: int, ways_selected: int, nodes_seen: int, nodes_selected: int)
+class PbfStats(blobs: int, ways_seen: int, ways_selected: int, nodes_seen: int, nodes_selected: int, relations_seen: int = 0)
 ```
 
 Contadores da leitura (auditoria do que foi percorrido/selecionado).
@@ -1868,10 +1868,10 @@ Le o ``OSMHeader`` do arquivo e devolve seus metadados.
 ### `read_osm_pbf`
 
 ```python
-read_osm_pbf(path: str | pathlib.Path, *, highways: tuple[str, ...] | None = None, with_stats: bool = False) -> OverpassData | tuple[OverpassData, PbfStats]
+read_osm_pbf(path: str | pathlib.Path, *, highways: tuple[str, ...] | None = None, with_stats: bool = False) -> OsmData | tuple[OsmData, PbfStats]
 ```
 
-Le um ``.osm.pbf`` e monta um :class:`OverpassData`.
+Le um ``.osm.pbf`` e monta um :class:`OsmData`.
 
 ## Elevacao local: Terrarium (offline)
 

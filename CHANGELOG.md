@@ -21,15 +21,26 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
 
 ### Adicionado
 
+- **Observabilidade da fronteira Pareto (correção complementar ao ADR-026)** —
+  `SearchResult` ganha `frontier_truncated: bool` e `dropped_labels: int`, que
+  sinalizam a poda da fronteira por `max_labels_per_node` (labels **não
+  dominadas** removidas dentro de uma chave `(nó, bucket)`). `FrontierManager`
+  conta as labels removidas em `_truncate` (e **só** aí), com
+  `frontier_truncated` e `to_dict`; `ParetoFrontier`/`FrontierMap` ganham
+  contador coerente (`dropped_for_size`/`dropped_labels`). O descarte normal por
+  **dominância** **não** é contado. Os indicadores propagam até
+  `ProfileSearchResponse` e `RoutePlan` (com avisos na CLI).
+  `SearchResult.truncated` permanece **exclusivo** de `max_expansions` e **não**
+  se confunde com `dropped_duplicates` (deduplicação de candidatas pós-busca).
 - `offline.py` — guard de rede (`offline()`, `is_network_disabled()`,
   `OfflineViolation`): **proíbe** conexões de saída durante a execução e falha de
   forma **explícita** (nunca silenciosa); reentrante; opção `allow_loopback` para
   serviço local. É a garantia executável do requisito mandatório do ADR-027 §0.
 - `osm/pbf.py` — leitor **local** de `OpenStreetMap PBF` (`.osm.pbf`) em Python
-  puro (sem protobuf/osmium), leitura em duas passagens de memória limitada,
-  `read_osm_pbf`/`read_header`/`PbfStats`, com a **mesma semântica** de
-  `OverpassClient.fetch` (filtro `highway=*`, `area != yes`, apenas nós
-  referenciados). É a **fonte geográfica local** exigida pelo ADR-027 §0.
+  puro (sem protobuf/osmium), leitura em duas passagens de memória limitada:
+  `read_osm_pbf`/`read_header`/`PbfStats`. Seleciona as vias com `highway` aceito
+  (`area != yes`), os nós referenciados **e** as relações `type=restriction`
+  (restrições de conversão). É a **única fonte geográfica** do motor (ADR-027 §0).
 - `elevation_tiles.py` — preparo de rede dos tiles **Terrarium** (download
   idempotente para `{z}/{x}/{y}.png`, gravação atômica); a leitura é feita
   **offline** por `elevation.TerrariumElevation` (decodificação PNG em Python
@@ -122,16 +133,37 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
   **advertências** que **não** alteram o estado. `EnergyConsistency`/
   `energy_consistency` agregam o balanço energético **já calculado** pelo
   simulador (sem equação nova).
-- CLI — `build --pbf CAMINHO.osm.pbf` (fonte **offline**; dispensa `--bbox` e
-  Overpass), `build --elevation terrarium --tiles-dir DIR [--tiles-zoom Z]` e o
-  comando `fetch-dem` (preparo **de rede** dos tiles Terrarium).
+- CLI — `build --pbf CAMINHO.osm.pbf` (fonte **offline**; única ingestão),
+  `build --elevation terrarium --tiles-dir DIR [--tiles-zoom Z]` e o comando
+  `fetch-dem` (preparo **de rede** dos tiles Terrarium).
+
+### Removido
+
+- `osm/overpass.py` — o cliente **Overpass** (`OverpassClient`, `build_query`,
+  `DEFAULT_ENDPOINTS`, `OverpassError`) foi **removido**: não há ingestão online.
+  A fonte geográfica é o arquivo `.osm.pbf` local (`osm.pbf`); `DEFAULT_HIGHWAYS`
+  migrou para `osm/parse.py` e o `build` da CLI perdeu
+  `--bbox`/`--overpass`/`--timeout` (exige `--pbf`).
 
 ### Alterado
 
+- `search/frontier.py`, `search/astar.py`, `search/pipeline.py`, `planning.py` e
+  `cli.py` — sinais de completude da busca (`frontier_truncated`/`dropped_labels`)
+  expostos e propagados; `truncated` **inalterado** (exclusivo de
+  `max_expansions`). A CLI imprime **aviso explícito** quando a fronteira é podada
+  ou a busca é interrompida.
 - `osm/__init__.py` — exporta o leitor PBF (`PbfError`, `PbfHeader`,
-  `PbfStats`, `read_header`, `read_osm_pbf`).
-- `cli.py` — `--bbox` deixa de ser obrigatório (exigido apenas sem `--pbf`);
-  `--elevation` ganha `terrarium`; novo comando `fetch-dem`.
+  `PbfStats`, `read_header`, `read_osm_pbf`), `OsmData`/`RawRelation` e
+  `DEFAULT_HIGHWAYS`; **não** exporta mais nada de Overpass.
+- `osm/build.py` — `build_graph` passa a **anexar as restrições de conversão**:
+  converte cada relação `type=restriction` com `turn_restriction_from_relation` e
+  registra em `RoutingGraph.turn_restrictions`; `BuildStats` ganha
+  `turn_restrictions` (a CLI imprime o total quando > 0).
+- `osm/parse.py` — `OverpassData` renomeado para **`OsmData`**; novo
+  `RawRelation` e leitura de elementos `type=relation` no `from_payload`
+  (parser offline do JSON OSM `{elements:[...]}`, preservado).
+- `cli.py` — `build` passa a exigir `--pbf` (fonte `.osm.pbf` local, sem
+  ingestão online); `--elevation` ganha `terrarium`; novo comando `fetch-dem`.
 - `api.py` — reexporta offline guard, OSM.PBF, Terrarium, `elevation_tiles`, o
   envelope de consulta (`geo`/`envelope`), a consulta offline completa
   (`planning`), os 69 símbolos da Camada 04 (`intelligence`), os 14 da
@@ -179,6 +211,16 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
 - `docs/adr/026-optimization-custo-e-busca.md`,
   `docs/adr/026-contrato-circulacao.md`, `docs/adr/026-baseline-busca.md` e
   `docs/adr/025-modelo-fisico-e-dinamica-do-ciclista.md` atualizados.
+- `docs/adr/026-optimization-custo-e-busca.md` (Decisão 2),
+  `docs/adr/026-baseline-busca.md` (S4/S5, Interpretação) e
+  `docs/adr/026-auditoria-busca.md` (§3.1) **reconciliados**: distinguem
+  **interrupção de busca** (`truncated`), **poda de fronteira**
+  (`frontier_truncated`/`dropped_labels`) e **deduplicação de candidatas**
+  (`dropped_duplicates`); `epsilon_dominance` documentado como **reservado**
+  (aceito/validado, porém **inativo** no A\*).
+  `docs/adr/029-evaluation-guardrails.md` §11 registra a observabilidade
+  complementar. `docs/reference/api.md` regenerado (**315 símbolos**;
+  assinaturas de `SearchResult`/`ProfileSearchResponse`/`RoutePlan`).
 - **ADR-027 — Camada 04 (Intelligence, ML & Prediction)**:
   `docs/adr/027-auditoria-intelligence.md` (inventário, as seis decisões,
   matriz PRESERVAR/ADAPTAR/COMPLEMENTAR/SUBSTITUIR, análise de lacunas,
@@ -215,8 +257,9 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
   `tests/test_search_guardrails.py` (16) e `tests/test_evaluation_assessment.py`
   (23).
 - Caminho offline e Camada 04: `tests/test_offline.py` (11),
-  `tests/test_osm_pbf.py` (19), `tests/test_elevation_terrarium.py`,
-  `tests/test_cli_offline.py` (8), `tests/_intelligence_fixtures.py`,
+  `tests/test_osm_pbf.py` (22, inclui relações `type=restriction` → grafo),
+  `tests/test_elevation_terrarium.py`,
+  `tests/test_cli_offline.py` (9, inclui restrição de conversão no PBF), `tests/_intelligence_fixtures.py`,
   `tests/_pbf_fixtures.py`, `tests/test_intelligence_observations.py` (21),
   `tests/test_intelligence_model_store.py` (13),
   `tests/test_intelligence_training.py` (16),
@@ -233,7 +276,13 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
   e reprodutibilidade). `tests/test_api_surface.py` (4) trava a sincronia entre
   `api.__all__`, as camadas do gerador e `docs/reference/api.md`.
 - Envelope de consulta (zona de busca offline): `tests/test_geo_envelope.py`
-  (25). Suíte: **798 testes**.
+  (25). Suíte: **809 testes**.
+- Observabilidade da fronteira (ADR-026): S5 em `tests/test_search_reference.py`
+  passa a exigir `frontier_truncated=True` e `dropped_labels>=1` (S1–S4
+  permanecem `False`/`0`); `tests/test_search_astar.py` prova que
+  `max_expansions` e `max_labels_per_key` são **independentes**;
+  `tests/test_search_state.py` e `tests/test_search.py` verificam os contadores e
+  que descartes por **dominância** não são contados como poda.
 
 ## [0.18.0] - 2026-11-11
 

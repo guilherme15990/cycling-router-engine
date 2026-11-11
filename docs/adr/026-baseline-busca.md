@@ -33,7 +33,8 @@ B = `time 300 s · dist 3000 m · asc 0 m · E 6000 J · v 5 m/s`.
 | `electric` (energy, time) | **[A]** | A domina B |
 
 Métricas de desempenho: `expanded = 3`, `generated = 4`, `truncated = False`
-(idênticas em todos os perfis deste grafo).
+(idênticas em todos os perfis deste grafo). Indicadores de poda inativos:
+`frontier_truncated = False`, `dropped_labels = 0`.
 
 ### S2 — label estritamente dominada é podada
 
@@ -51,20 +52,23 @@ a dominância só compara labels **dentro do mesmo bucket**.
 ### S4 — limite de expansão interrompe e marca `truncated`
 
 S1 com `max_expansions = 1`: `reached = False`, `count = 0`,
-`truncated = True`, `expanded = 1`, `generated = 2`.
+`truncated = True`, `expanded = 1`, `generated = 2`. A interrupção **não** é poda
+de fronteira: `frontier_truncated = False`, `dropped_labels = 0`.
 
 ### S5 — `max_labels_per_node` corta por chave `(nó, bucket)`
 
 Dois arcos paralelos `1→2` (`a12a`, `a12b`) chegam ao **mesmo nó e bucket** com
 trade-off sob (time, ascent): nem um domina o outro.
 
-| Config | Fronteira | expanded / generated |
-| --- | --- | --- |
-| sem limite | **[A(t=190), B(t=200)]** | 3 / 4 |
-| `max_labels_per_node = 1` | **[A(t=190)]** | 2 / 3 |
+| Config | Fronteira | expanded / generated | `frontier_truncated` / `dropped_labels` |
+| --- | --- | --- | --- |
+| sem limite | **[A(t=190), B(t=200)]** | 3 / 4 | `False` / `0` |
+| `max_labels_per_node = 1` | **[A(t=190)]** | 2 / 3 | `True` / `≥ 1` |
 
 O corte mantém o melhor **lexicográfico** pela ordem do perfil — controle de
-**desempenho**, não garantia de otimalidade (auditoria §3).
+**desempenho**, não garantia de otimalidade (auditoria §3). A poda passa a ser
+**sinalizada** (`frontier_truncated`/`dropped_labels`), sem alterar
+`SearchResult.truncated` (que continua exclusivo de `max_expansions`).
 
 ### S6 — caracterização com o modelo físico real
 
@@ -92,10 +96,17 @@ Duas execuções de S1 produzem fronteiras idênticas (ordem incluída).
 Este baseline fixa três coisas que os guardrails (etapa 2) **não podem** quebrar:
 
 1. a **fronteira Pareto** por perfil (conjunto **e** ordem) nos cenários S1–S3;
-2. o efeito **explícito** dos limites de desempenho (S4, S5), sempre sinalizado
-   (`truncated`, `dropped_duplicates`);
+2. o efeito **explícito** dos limites de desempenho (S4, S5), **cada um com seu
+   sinal**: `truncated` para a interrupção por `max_expansions`;
+   `frontier_truncated`/`dropped_labels` para a poda da fronteira por
+   `max_labels_per_node`. Não confundir com `dropped_duplicates`, que é a
+   **deduplicação de candidatas** (etapa posterior à busca, S7);
 3. a **não comparabilidade entre buckets** (S3), que os guardrails terão de
    respeitar ao introduzir contexto legal (ver `026-contrato-circulacao.md` §5).
+
+> **Caveat.** `truncated=False` e `frontier_truncated=False` apenas atestam que
+> **nenhum limite atuou**; **não** provam completude ou otimalidade global (o
+> bucket de velocidade permanece uma aproximação).
 
 ## Validação de inércia (etapa comportamental do ADR-026)
 
@@ -105,6 +116,11 @@ congelado acima. Prova:
 
 - `tests/test_search_reference.py` (13 testes) passa **sem alteração** — S1–S7
   idênticos (fronteira, ordem, `expanded`, `generated`, `truncated`).
+
+> Nota posterior: o incremento de observabilidade da fronteira **acrescentou
+> asserções** dos novos campos (`frontier_truncated`/`dropped_labels`) a S1–S7,
+> mas **nenhum valor congelado** (fronteira, ordem, `expanded`, `generated`,
+> `truncated`) mudou.
 - O guardrail é **guiado pelos dados**: sem `arc.restrictions` nem
   `graph.turn_restrictions`, `_guardrails_active = False` e `constrained_nodes = {}`
   → a dominância mantém a chave `(nó, bucket)` e a expansão não consulta o contrato.

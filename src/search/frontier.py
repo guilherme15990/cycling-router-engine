@@ -45,6 +45,9 @@ class ParetoFrontier:
         self._on_discard = on_discard
         self._items: list[Any] = []
         self._values: list[tuple[float, ...]] = []
+        # Itens removidos por ``max_size`` (controle de desempenho), **nao** por
+        # dominancia. Exposto para nao silenciar a perda de completude.
+        self.dropped_for_size = 0
 
     # -------------------------------------------------------------- consulta
     @property
@@ -114,6 +117,7 @@ class ParetoFrontier:
         return {
             "objectives": list(self.objectives.objectives),
             "size": len(self._items),
+            "dropped_for_size": self.dropped_for_size,
             "values": [list(values) for values in self._values],
         }
 
@@ -158,6 +162,7 @@ class ParetoFrontier:
                 kept_items.append(item)
                 kept_values.append(values)
             else:
+                self.dropped_for_size += 1
                 self._discard(item)
         self._items = kept_items
         self._values = kept_values
@@ -219,11 +224,19 @@ class FrontierMap:
     def total_items(self) -> int:
         return sum(len(frontier) for frontier in self._frontiers.values())
 
+    @property
+    def dropped_labels(self) -> int:
+        """Itens removidos por ``max_labels_per_node`` (soma das fronteiras)."""
+        return sum(
+            frontier.dropped_for_size for frontier in self._frontiers.values()
+        )
+
     def to_dict(self) -> dict[str, object]:
         return {
             "objectives": list(self.objectives.objectives),
             "nodes": len(self._frontiers),
             "labels": self.total_items,
+            "dropped_labels": self.dropped_labels,
             "frontiers": {
                 str(node_key): frontier.to_dict()
                 for node_key, frontier in self._frontiers.items()
@@ -257,11 +270,20 @@ class FrontierManager:
         self.max_labels_per_key = max_labels_per_key
         self._on_discard = on_discard
         self._frontiers: dict[Hashable, list[Any]] = {}
+        # Labels removidas por ``max_labels_per_key`` (controle de desempenho),
+        # **nao** por dominancia normal. Distinto de ``max_expansions``, que
+        # interrompe a busca. Exposto para nao silenciar a perda de completude.
+        self.dropped_labels = 0
 
     # -------------------------------------------------------------- consulta
     @property
     def key_count(self) -> int:
         return len(self._frontiers)
+
+    @property
+    def frontier_truncated(self) -> bool:
+        """True se ``max_labels_per_key`` removeu alguma label nao dominada."""
+        return self.dropped_labels > 0
 
     def key_of(self, state: Any) -> Hashable:
         return self.dominance.key(state)
@@ -329,6 +351,8 @@ class FrontierManager:
         return {
             "keys": len(self._frontiers),
             "labels": self.total_labels,
+            "dropped_labels": self.dropped_labels,
+            "frontier_truncated": self.frontier_truncated,
             "objectives": list(self.dominance.objectives.objectives),
         }
 
@@ -352,5 +376,6 @@ class FrontierManager:
         kept_ids = {id(label) for label in kept}
         for label in labels:
             if id(label) not in kept_ids:
+                self.dropped_labels += 1
                 self._discard(label)
         return kept

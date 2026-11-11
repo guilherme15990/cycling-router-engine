@@ -34,7 +34,7 @@ from graph.model import Arc, ElevationSample, Node, RoutingGraph, Segment
 from graph.restrictions import AccessRule
 from offline import is_network_disabled, offline
 from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OverpassData
+from osm.parse import OsmData
 from physical import BicycleModel, CyclistModel, SimulationState
 from planning import plan_offline_routes
 from search import Route, RouteCandidate
@@ -88,7 +88,7 @@ def _network(*, restrict_direct: bool) -> dict:
 
 def _graph(*, restrict_direct: bool) -> RoutingGraph:
     graph, _ = build_graph(
-        OverpassData.from_payload(_network(restrict_direct=restrict_direct)),
+        OsmData.from_payload(_network(restrict_direct=restrict_direct)),
         BuildOptions(),
     )
     attach_elevation(
@@ -267,7 +267,7 @@ def test_re_no_eligible_route_keeps_rejected_for_audit():
 def test_re_no_reachable_route_leaves_routes_empty():
     # Rede sem conexao: nada inventado, ``recommended`` ausente.
     graph, _ = build_graph(
-        OverpassData.from_payload(
+        OsmData.from_payload(
             {
                 "elements": [
                     {"type": "node", "id": 1, "lat": 0.0, "lon": 0.0},

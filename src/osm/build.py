@@ -8,7 +8,8 @@ Pipeline desta camada:
 3. derivar sentido de circulacao (``oneway``, ``oneway:bicycle``, rotatoria);
 4. calcular comprimento real com haversine;
 5. derivar superficie das tags (``surface``, ``tracktype``);
-6. opcionalmente anexar elevacao por perfil amostrado ao longo do arco.
+6. anexar as restricoes de conversao das relacoes OSM (``type=restriction``);
+7. opcionalmente anexar elevacao por perfil amostrado ao longo do arco.
 """
 
 from __future__ import annotations
@@ -19,9 +20,12 @@ from typing import Iterable, Sequence
 
 from geo import Coord, bbox_of, line_length_m
 from graph.model import BicycleAccess, RoutingGraph, Arc, Segment, Node
-from graph.restrictions import parse_conditional_restrictions
+from graph.restrictions import (
+    parse_conditional_restrictions,
+    turn_restriction_from_relation,
+)
 from graph.surface import Surface, surface_from_tags, surface_observation
-from .parse import OverpassData, RawNode, RawWay
+from .parse import OsmData, RawNode, RawWay
 
 DEFAULT_ALLOWED_HIGHWAYS: frozenset[str] = frozenset(
     {
@@ -100,6 +104,8 @@ class BuildStats:
         skipped_missing_nodes: Trechos descartados por nos ausentes no payload.
         skipped_short: Trechos descartados por comprimento abaixo do minimo.
         skipped_loops: Trechos descartados por comecar e terminar no mesmo no.
+        turn_restrictions: Restricoes de conversao (``type=restriction``)
+            anexadas ao grafo a partir das relacoes OSM.
     """
 
     ways_total: int
@@ -108,6 +114,7 @@ class BuildStats:
     skipped_missing_nodes: int
     skipped_short: int
     skipped_loops: int
+    turn_restrictions: int = 0
 
 
 class _BuildReport:
@@ -118,6 +125,7 @@ class _BuildReport:
         self.skipped_missing_nodes = 0
         self.skipped_short = 0
         self.skipped_loops = 0
+        self.turn_restrictions = 0
 
     def as_stats(self) -> BuildStats:
         return BuildStats(
@@ -127,6 +135,7 @@ class _BuildReport:
             skipped_missing_nodes=self.skipped_missing_nodes,
             skipped_short=self.skipped_short,
             skipped_loops=self.skipped_loops,
+            turn_restrictions=self.turn_restrictions,
         )
 
 
@@ -271,17 +280,18 @@ def _split_way(way: RawWay, splits: set[int]) -> list[tuple[int, ...]]:
 # Montagem
 # --------------------------------------------------------------------------
 def build_graph(
-    data: OverpassData,
+    data: OsmData,
     options: BuildOptions | None = None,
 ) -> tuple[RoutingGraph, BuildStats]:
     """Monta o grafo topologico (sem elevacao amostrada).
 
     Seleciona as ``way`` s ciclaveis, corta-as nos cruzamentos, deriva sentido
-    de circulacao, superficie e restricoes, e calcula o comprimento real por
-    haversine. A elevacao fica para :func:`attach_elevation`.
+    de circulacao, superficie e restricoes, anexa as restricoes de conversao
+    (relacoes ``type=restriction``) e calcula o comprimento real por haversine.
+    A elevacao fica para :func:`attach_elevation`.
 
     Args:
-        data: Nos e vias lidos do Overpass (``OverpassData``).
+        data: Nos, vias e relacoes lidos do OSM (``OsmData``).
         options: Opcoes de selecao e corte. Usa ``BuildOptions()`` se omitido.
 
     Returns:
@@ -289,9 +299,9 @@ def build_graph(
         contadores de :class:`BuildStats`.
 
     Example:
-        >>> from osm.overpass import OverpassClient
+        >>> from osm.pbf import read_osm_pbf
         >>> from osm.build import build_graph
-        >>> data = OverpassClient(cache_dir=".cache").fetch((-23.56, -46.65, -23.54, -46.62))  # doctest: +SKIP
+        >>> data = read_osm_pbf("mapa.osm.pbf")  # doctest: +SKIP
         >>> graph, stats = build_graph(data)  # doctest: +SKIP
         >>> graph.node_count, graph.arc_count  # doctest: +SKIP
         (99, 177)
@@ -407,6 +417,20 @@ def build_graph(
                 "ways_used": len(selected),
             }
         )
+
+    # ----- Restricoes de conversao (relacoes ``type=restriction``) ----------
+    for relation in data.relations:
+        restriction = turn_restriction_from_relation(
+            {
+                "id": relation.id,
+                "tags": relation.tags,
+                "members": relation.members,
+            }
+        )
+        if restriction is None:
+            continue
+        graph.add_turn_restriction(restriction)
+        report.turn_restrictions += 1
 
     return graph, report.as_stats()
 

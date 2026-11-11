@@ -26,7 +26,7 @@ from intelligence import EffortPreference
 from ml import UnavailablePredictor
 from offline import is_network_disabled, offline
 from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OverpassData
+from osm.parse import OsmData
 from physical import BicycleModel, CyclistModel
 from physiology import (
     DEFAULT_BORG_SCALE,
@@ -83,7 +83,7 @@ DESTINATION = (0.002, 0.002)
 
 
 def _graph():
-    graph, _ = build_graph(OverpassData.from_payload(_NETWORK), BuildOptions())
+    graph, _ = build_graph(OsmData.from_payload(_NETWORK), BuildOptions())
     attach_elevation(
         graph,
         CallableElevation(
@@ -208,6 +208,46 @@ def test_plan_recommended_route_id_in_dict():
     payload = plan.to_dict()
     assert payload["recommended_route_id"] == plan.routes[0].route_id
     assert payload["routes"][0]["recommended"] is True
+
+
+# --------------------------------------------------------------------------
+# Completude da busca: indicadores preservados no relatorio e expostos na CLI
+# --------------------------------------------------------------------------
+def test_plan_to_dict_preserves_search_completeness_indicators():
+    """O relatorio final (JSON) conserva os indicadores de completude."""
+    payload = _plan().to_dict()
+    # Sem caps configurados, nenhum limite atuou (nenhum sinal ligado).
+    assert payload["truncated"] is False
+    assert payload["frontier_truncated"] is False
+    assert payload["dropped_labels"] == 0
+
+
+def test_print_plan_warns_when_frontier_is_pruned(capsys):
+    import dataclasses
+
+    from cli import _print_plan
+
+    pruned = dataclasses.replace(
+        _plan(), frontier_truncated=True, dropped_labels=3
+    )
+    _print_plan(pruned)
+    out = capsys.readouterr().out
+    # A poda da fronteira nao fica silenciosa na interface.
+    assert "fronteira podada" in out
+    assert "3 label" in out
+    assert "max_labels_per_node" in out
+
+
+def test_print_plan_warns_when_search_is_interrupted(capsys):
+    import dataclasses
+
+    from cli import _print_plan
+
+    interrupted = dataclasses.replace(_plan(), truncated=True)
+    _print_plan(interrupted)
+    out = capsys.readouterr().out
+    assert "interrompida" in out
+    assert "max_expansions" in out
 
 
 def test_plan_every_route_receives_intensity_estimate():
@@ -376,6 +416,11 @@ def test_cli_plan_text_output(tmp_path, capsys):
     assert code == 0
     assert "rotas descobertas" in captured.out
     assert "zona de busca" in captured.out
+    # A interface expoe o estado de seguranca e rotula a intensidade como
+    # nao calibrada (ADR-029 D2/D6, ADR-028).
+    assert "seguranca:" in captured.out
+    assert "intensidade (nao calibrada)" in captured.out
+    assert "[recomendada]" in captured.out
 
 
 def test_cli_plan_rpe_bounds_must_be_paired(tmp_path, capsys):

@@ -61,16 +61,20 @@ consolidado na §3.
 
 A auditoria [`027-auditoria-intelligence.md`](027-auditoria-intelligence.md) §1
 mapeia, por `grep`, toda a rede em `src/`: ela está **confinada à preparação de
-dados da Camada 01** (`osm/overpass.py` → `OverpassClient`; `elevation.py` →
-`OpenTopoDataElevation`). O **caminho de execução** (carregar grafo local →
-simular → buscar → extrair features → prever → classificar) **já é livre de
-rede**.
+dados da Camada 01** (`elevation.py` → `OpenTopoDataElevation`). O **caminho de
+execução** (carregar grafo local → simular → buscar → extrair features → prever
+→ classificar) **já é livre de rede**.
+
+> **Atualização.** A ingestão online via `OverpassClient` (`osm/overpass.py`) foi
+> **removida**: a única fonte geográfica do motor é o arquivo `.osm.pbf` local
+> (`osm.pbf`), que lê vias, nós **e** relações `type=restriction`. A rede
+> remanescente em `src/` está só nos provedores de **elevação** (preparação).
 
 ### 0.3 Lacunas do requisito offline (a tratar)
 
 | # | Lacuna | Gravidade | Onde |
 | - | --- | --- | --- |
-| O1 | **Sem leitor de OSM.PBF local** (só ingestão via Overpass/rede) | Alta | Camada 01 / §5 |
+| O1 | **Leitor de OSM.PBF local** — **resolvido** (`osm.pbf` é a fonte offline; a ingestão online via Overpass foi removida) | ~~Alta~~ | Camada 01 / §5 |
 | O2 | **Sem armazenamento/carregamento de modelo local** | Bloqueante | Decisão 4 / §5 |
 | O3 | **Sem versionamento persistido de modelo** (só a string `model_version`) | Alta | Decisão 4 |
 | O4 | **Sem checagem de compatibilidade `EffortFeatures` × modelo no carregamento** | Alta | Decisão 4 |
@@ -569,10 +573,11 @@ classificação permanece `PHYSICAL_ONLY`. Isso **não** é uma pendência a
 - **Qualquer** dependência de rede na execução: buscar, simular, carregar modelo,
   prever e classificar permanecem **locais** (§0); é proibido introduzir download
   automático de modelo ou dado.
-- Manter `OverpassClient`/`OpenTopoDataElevation` como **preparação** da Camada 01
-  (fora do caminho de execução); a operação offline completa exige o **leitor de
-  OSM.PBF local** e DEM local (inc. 8, lacuna O1), mas **não** exige remover esses
-  provedores de preparação.
+- A Camada 01 foi consolidada **offline**: o leitor de OSM.PBF local (`osm.pbf`)
+  é a única ingestão geográfica e a ingestão via `OverpassClient` foi
+  **removida**; `OpenTopoDataElevation` permanece só como **preparação** de
+  elevação (fora do caminho de execução), com alternativas locais
+  (`RasterDemElevation`/Terrarium).
 
 > **Entregáveis da fase 1:** este ADR e a auditoria
 > [`027-auditoria-intelligence.md`](027-auditoria-intelligence.md) —

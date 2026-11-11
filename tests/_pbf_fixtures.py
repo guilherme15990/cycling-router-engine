@@ -134,7 +134,34 @@ def _encode_node(node_id, lat_raw, lon_raw, tags, strings: _Strings) -> bytes:
     return body
 
 
-def _group(plain=(), dense=None, ways=()) -> bytes:
+def _encode_relation(relation_id, members, tags, strings: _Strings) -> bytes:
+    """``members`` = sequencia de ``(type_code, ref, role)``.
+
+    ``type_code`` segue ``Relation.MemberType``: ``0=NODE``, ``1=WAY``,
+    ``2=RELATION``. ``memids`` e *delta coded* (zigzag); ``roles_sid`` sao
+    indices na ``StringTable``.
+    """
+    keys = [strings.add(key) for key in tags]
+    vals = [strings.add(value) for value in tags.values()]
+
+    body = _fvarint(1, relation_id)
+    if keys:
+        body += _packed(2, keys)
+        body += _packed(3, vals)
+
+    roles = [strings.add(role) for _, _, role in members]
+    if roles:
+        body += _packed(8, roles)
+    refs = [ref for _, ref, _ in members]
+    if refs:
+        body += _packed(9, [_zigzag(delta) for delta in _deltas(refs)])
+    types = [type_code for type_code, _, _ in members]
+    if types:
+        body += _packed(10, types)
+    return body
+
+
+def _group(plain=(), dense=None, ways=(), relations=()) -> bytes:
     body = b""
     for node in plain:
         body += _fbytes(1, node)
@@ -142,6 +169,8 @@ def _group(plain=(), dense=None, ways=()) -> bytes:
         body += _fbytes(2, dense)
     for way in ways:
         body += _fbytes(3, way)
+    for relation in relations:
+        body += _fbytes(4, relation)
     return body
 
 
@@ -212,6 +241,7 @@ class _PbfBuilder:
         dense=(),
         plain=(),
         ways=(),
+        relations=(),
         granularity: int = 100,
         lat_offset: int = 0,
         lon_offset: int = 0,
@@ -229,16 +259,27 @@ class _PbfBuilder:
             )
             for way in ways
         ]
+        encoded_relations = [
+            _encode_relation(rel[0], rel[1], rel[2], self.strings)
+            for rel in relations
+        ]
         encoded_plain = [_encode_node(*node, self.strings) for node in plain]
 
         if separate_groups:
             groups = []
             if encoded_plain or dense_payload is not None:
                 groups.append(_group(plain=encoded_plain, dense=dense_payload))
-            if encoded_ways:
-                groups.append(_group(ways=encoded_ways))
+            if encoded_ways or encoded_relations:
+                groups.append(_group(ways=encoded_ways, relations=encoded_relations))
         else:
-            groups = [_group(plain=encoded_plain, dense=dense_payload, ways=encoded_ways)]
+            groups = [
+                _group(
+                    plain=encoded_plain,
+                    dense=dense_payload,
+                    ways=encoded_ways,
+                    relations=encoded_relations,
+                )
+            ]
 
         block = _primitive_block(
             self.strings, groups, granularity, lat_offset, lon_offset

@@ -10,7 +10,8 @@ Mapa das camadas
 
 * **Grafo ciclavel** (``graph.*``): modelo, superficie, restricoes,
   simplificacao, validacao e serializacao (JSON/GeoJSON).
-* **OSM** (``osm.*``): download via Overpass, parsing e construcao do grafo.
+* **OSM** (``osm.*``): leitura offline de ``.osm.pbf``, parsing e construcao
+  do grafo ciclavel.
 * **Elevacao** (``elevation``): provedores de altitude, cache e perfil
   amostrado ao longo do arco.
 * **Snapping** (``snapping``): grafo temporario de consulta para origem e

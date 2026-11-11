@@ -70,20 +70,20 @@ for route in response.routes:
     )
 ```
 
-### Construir o grafo a partir do OSM
+### Construir o grafo a partir do OSM (offline)
 
 ```python
-from elevation import OpenTopoDataElevation
+from elevation import TerrariumElevation
 from osm.build import attach_elevation, build_graph
-from osm.overpass import OverpassClient
+from osm.pbf import read_osm_pbf
 
-# bbox = (sul, oeste, norte, leste)
-data = OverpassClient(cache_dir=".cache").fetch((-23.56, -46.65, -23.54, -46.62))
+# Fonte geografica local (arquivo .osm.pbf); sem ingestao online.
+data = read_osm_pbf("dados.osm.pbf")
 graph, stats = build_graph(data)
 print(stats.ways_selected, "vias", graph.node_count, "nos", graph.edge_count, "arestas")
 
-# Elevacao por perfil amostrado (requer rede; omita se estiver offline).
-attach_elevation(graph, OpenTopoDataElevation(dataset="srtm30m"))
+# Elevacao por perfil amostrado a partir de tiles Terrarium locais.
+attach_elevation(graph, TerrariumElevation("data/dem", zoom=12))
 ```
 
 ---

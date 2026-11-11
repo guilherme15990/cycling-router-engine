@@ -91,7 +91,8 @@ violaria a norma do projeto (nada de constantes/pesos mágicos).
 **Decisão.** O estado de busca carrega o **mínimo** para simular o próximo arco:
 `PhysicalState(speed_mps, kinetic_energy_j derivada)`. A dominância compara labels
 **somente no mesmo nó e no mesmo bucket de velocidade**; a explosão é contida por
-`max_labels_per_node` (por chave) e `max_expansions`, sempre sinalizados.
+`max_labels_per_node` (por chave) e `max_expansions`, **cada um com seu próprio
+sinal** (ver Contrato).
 
 **Justificativa (auditoria §3).** Preserva a continuidade dinâmica (ADR-025 dec. 1)
 sem duplicar o estado canônico; o bucket é a aproximação central e já é
@@ -103,9 +104,31 @@ documentado como tal.
   velocidade; a energia cinética é **derivada** (`from_speed`).
 - O bucket é a **única** aproximação de estado; a mesma política vale na chave da
   fronteira e na dominância.
-- Controles de desempenho (`max_labels_per_node`, `max_expansions`,
-  `epsilon_dominance`) **podem** remover rotas não dominadas; isso deve ficar
-  **exposto** (`truncated`, `dropped_duplicates`).
+- Controles de desempenho **podem** remover rotas não dominadas; isso **deve**
+  ficar **exposto**, com sinais **distintos** por natureza do efeito (não os
+  confundir com deduplicação de candidatas, que é etapa posterior):
+  - `max_expansions` **interrompe** a busca → `SearchResult.truncated`;
+  - `max_labels_per_node` (por chave) **poda** labels não dominadas na fronteira
+    → `SearchResult.frontier_truncated` e `SearchResult.dropped_labels` (> 0).
+- **Caveat de leitura (não confundir ausência de sinal com prova de ótimo).**
+  `truncated=False` **e** `frontier_truncated=False` significam apenas que
+  **nenhum dos dois limites atuou**; **não** provam completude nem otimalidade
+  **global**. A exploração termina quando a fila ativa esvazia sob os caps e a
+  heurística correntes, e a granularidade do bucket (`speed_step_mps`) continua
+  uma **aproximação** deliberada (auditoria §3.3). Os dois sinais são
+  **necessários, não suficientes** para afirmar corretude da fronteira.
+- `epsilon_dominance` é um controle **reservado**: aceito e validado em
+  `SearchConfig`, mas **inativo** no caminho do `MultiObjectiveAStar` (a
+  `SpeedBucketDominance` usada por padrão não aplica epsilon). Ver “Ponto em
+  aberto”.
+
+> **Reconciliação (incremento de observabilidade da fronteira).** A redação
+> anterior dizia “sempre sinalizados (`truncated`, `dropped_duplicates`)”. A
+> `dropped_duplicates` mede **outra** coisa — a deduplicação do pool de candidatas
+> **após** a busca (`candidates.py`/`pipeline.py`/`selection.py`) — e **nunca**
+> refletiu a poda por `max_labels_per_node`, que era **silenciosa**. O incremento
+> implementou o sinal que faltava (`frontier_truncated`/`dropped_labels`). A
+> implementação prevalece e a divergência fica aqui registrada.
 
 **Achado registrado (auditoria §3.2).** O critério de parada é exaustivo (a fila
 ativa esvazia; o destino não é expandido). Logo, **a admissibilidade da heurística
@@ -115,6 +138,34 @@ como proteção (Decisão 3).
 
 **Lacuna a fechar.** Quantificar o efeito de `speed_step_mps` na fronteira
 (baseline, §6).
+
+**Ponto em aberto — `epsilon_dominance` (avaliado neste incremento).**
+
+O campo `SearchConfig.epsilon_dominance` é aceito e validado, mas **não tem
+efeito** no caminho principal: `MultiObjectiveAStar` constrói
+`SpeedBucketDominance(self.profile.objective_set, speed_step_mps=..., arrival_class_nodes=...)`
+**sem** epsilon, e essa regra de dominância **não** consome epsilon. Quem aplica
+epsilon de fato é `ParetoFrontier`/`FrontierMap` (caminho legado), via
+`epsilon_dominates` (`objectives.py`).
+
+Decisão deste incremento (**sem alterar a semântica de dominância agora**):
+
+- **Documentar** o estado (feito aqui);
+- **não** ligar epsilon ao `SpeedBucketDominance` neste incremento (mudaria a
+  política de dominância, fora do escopo de observabilidade);
+- **não** transformar `epsilon_dominance > 0` em erro **ainda**: seria uma
+  mudança de comportamento que precisa de tratamento próprio (teste + baseline +
+  nota de migração).
+
+Diferença de classe de risco: `epsilon_dominance` **inativo** não causa **perda
+de completude** (não remove nada); é um **no-op silencioso** de uma configuração
+declarada. Já a poda por `max_labels_per_node` **removia** labels não dominadas em
+silêncio — essa é a lacuna que este incremento fecha.
+
+**Follow-up (rastreável).** Ou (a) ligar `epsilon_dominance` ao
+`SpeedBucketDominance`, com evidência de efeito no baseline; ou (b) recusar
+explicitamente `epsilon_dominance > 0` enquanto não suportado (erro claro em vez
+de no-op). Ambas exigem entrega própria.
 
 ### Decisão 3 — Heurística
 

@@ -28,7 +28,7 @@ from graph.restrictions import (
 from graph.serialize import graph_from_dict, graph_to_dict
 from graph.simplify import simplify_graph
 from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OverpassData
+from osm.parse import OsmData
 from physical.arc_profile import ArcProfile
 from snapping import SpatialSnapper
 
@@ -326,7 +326,7 @@ _CHAIN = {
 
 
 def _chain_graph(simplify=False, elevation=False):
-    graph, _ = build_graph(OverpassData.from_payload(_CHAIN), BuildOptions())
+    graph, _ = build_graph(OsmData.from_payload(_CHAIN), BuildOptions())
     if elevation:
         attach_elevation(
             graph,

@@ -135,6 +135,8 @@ def test_s1_frontier_per_profile():
     assert r.reached and r.count == 2
     assert _frontier(r) == [S1_A, S1_B]
     assert (r.expanded, r.generated, r.truncated) == (3, 4, False)
+    # Sem corte de fronteira: indicadores inativos.
+    assert (r.frontier_truncated, r.dropped_labels) == (False, 0)
 
 
 def test_s1_shortest_collapses_to_shortest_path():
@@ -176,6 +178,8 @@ def test_s2_dominated_direct_arc_is_pruned():
     assert r.count == 1
     assert _frontier(r) == [S1_A]
     assert (r.expanded, r.generated) == (2, 3)
+    # Descarte por dominancia NAO e poda de fronteira.
+    assert (r.frontier_truncated, r.dropped_labels) == (False, 0)
 
 
 # --------------------------------------------------------------------------
@@ -198,6 +202,7 @@ def test_s3_labels_in_different_speed_buckets_are_both_kept():
     r = _search(S3_GRAPH, S3_TABLE, "fastest")
     assert r.count == 2
     assert _frontier(r) == [S1_A, (("a14", "a43"), 200.0, 2000.0, 100.0, 0.0, 4000.0, 10.0)]
+    assert (r.frontier_truncated, r.dropped_labels) == (False, 0)
 
 
 # --------------------------------------------------------------------------
@@ -208,6 +213,8 @@ def test_s4_max_expansions_truncates_before_reaching_destination():
     assert r.truncated is True
     assert r.reached is False and r.count == 0
     assert (r.expanded, r.generated) == (1, 2)
+    # Interrupcao nao e poda de fronteira: o outro indicador fica inativo.
+    assert (r.frontier_truncated, r.dropped_labels) == (False, 0)
 
 
 # --------------------------------------------------------------------------
@@ -229,12 +236,17 @@ def test_s5_without_cap_both_non_dominated_labels_survive():
     r = _search(S5_GRAPH, S5_TABLE, "fastest")
     assert r.count == 2 and _frontier(r) == [S5_A, S5_B]
     assert (r.expanded, r.generated) == (3, 4)
+    assert (r.frontier_truncated, r.dropped_labels) == (False, 0)
 
 
 def test_s5_max_labels_per_node_keeps_lexicographic_best():
     r = _search(S5_GRAPH, S5_TABLE, "fastest", max_labels_per_node=1)
     assert r.count == 1 and _frontier(r) == [S5_A]
     assert (r.expanded, r.generated) == (2, 3)
+    # A poda da fronteira passa a ser **sinalizada** (nao silenciosa).
+    assert r.truncated is False
+    assert r.frontier_truncated is True
+    assert r.dropped_labels >= 1
 
 
 # --------------------------------------------------------------------------
@@ -261,6 +273,7 @@ def test_s6_physical_model_characterization():
 
     assert r.reached and r.count == 1
     assert (r.expanded, r.generated, r.truncated) == (3, 4, False)
+    assert (r.frontier_truncated, r.dropped_labels) == (False, 0)
     label = r.labels[0]
     assert tuple(route_arcs(label)) == ("a12", "a23")
     assert label.distance_m == pytest.approx(2000.0)
@@ -291,6 +304,9 @@ def test_s7_search_profile_end_to_end():
     assert response.selection.diversity_relaxed is False
     assert response.selection.dropped_duplicates == 0
     assert response.selection.threshold_used == pytest.approx(0.7)
+    # A resposta de pipeline tambem expoe os sinais de completude.
+    assert (response.truncated, response.frontier_truncated) == (False, False)
+    assert response.dropped_labels == 0
 
 
 # --------------------------------------------------------------------------

@@ -188,6 +188,34 @@ def test_frontier_truncates_by_max_size():
 
     assert len(frontier) == 2
     assert dropped.active is False
+    # A remocao por ``max_size`` e contabilizada (nao silenciosa).
+    assert frontier.dropped_for_size == 1
+    assert frontier.to_dict()["dropped_for_size"] == 1
+
+
+def test_frontier_max_size_does_not_count_dominance_discards():
+    objectives = ObjectiveSet("t", ("time_s", "distance_m"))
+    frontier = ParetoFrontier(objectives, max_size=2)
+
+    best = Label(1.0, 3.0, 0.0)
+    worse = Label(4.0, 5.0, 0.0)  # dominada por ``best``
+
+    frontier.insert(best)
+    assert frontier.insert(worse) is False  # descarte por dominancia
+
+    assert frontier.dropped_for_size == 0
+
+
+def test_frontier_map_aggregates_dropped_labels():
+    objectives = ObjectiveSet("t", ("time_s", "distance_m"))
+    frontiers = FrontierMap(objectives, max_labels_per_node=1)
+
+    frontiers.insert("n1", Label(1.0, 3.0, 0.0))
+    frontiers.insert("n1", Label(2.0, 2.0, 0.0))  # nao dominada -> podada
+    frontiers.insert("n2", Label(5.0, 5.0, 0.0))
+
+    assert frontiers.dropped_labels == 1
+    assert frontiers.to_dict()["dropped_labels"] == 1
 
 
 def test_frontier_map_separates_keys():

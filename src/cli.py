@@ -2,7 +2,6 @@
 
 Exemplos:
 
-    roteamento build --bbox -23.56,-46.66,-23.54,-46.62 --out centro.json
     roteamento build --pbf dados.osm.pbf --elevation terrarium --tiles-dir data/dem
     roteamento fetch-dem --bbox -18.35,-51.73,-17.09,-50.36 --zoom 12 --out data/dem
     roteamento stats centro.json
@@ -35,7 +34,7 @@ from graph.serialize import load_json, save_geojson, save_json, summarize
 from graph.simplify import simplify_graph
 from graph.validate import validate_graph
 from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.overpass import DEFAULT_ENDPOINTS, DEFAULT_HIGHWAYS, OverpassClient
+from osm.parse import DEFAULT_HIGHWAYS
 from osm.pbf import read_osm_pbf
 from physical import (
     BicycleModel,
@@ -85,22 +84,14 @@ def _build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     build = subparsers.add_parser(
-        "build", help="baixa dados do OSM e monta o grafo ciclavel"
-    )
-    build.add_argument(
-        "--bbox",
-        default=None,
-        help=(
-            "sul,oeste,norte,leste em graus decimais (formato Overpass); "
-            "opcional (e ignorado) quando --pbf e informado"
-        ),
+        "build", help="monta o grafo ciclavel a partir de um .osm.pbf local"
     )
     build.add_argument(
         "--pbf",
         default=None,
         help=(
             "arquivo OpenStreetMap .osm.pbf local — fonte geografica offline "
-            "(dispensa Overpass e --bbox)"
+            "(obrigatorio)"
         ),
     )
     build.add_argument("--out", default="graph.json", help="arquivo JSON de saida")
@@ -149,11 +140,6 @@ def _build_parser() -> argparse.ArgumentParser:
         ),
     )
     build.add_argument(
-        "--overpass",
-        default=DEFAULT_ENDPOINTS[0],
-        help=f"endpoint Overpass (padrao: {DEFAULT_ENDPOINTS[0]})",
-    )
-    build.add_argument(
         "--highways",
         default=None,
         help="lista de highway=* separada por virgula (padrao: rede ciclavel urbana)",
@@ -167,7 +153,6 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     build.add_argument("--cache-dir", default=str(DEFAULT_CACHE_DIR))
     build.add_argument("--no-cache", action="store_true")
-    build.add_argument("--timeout", type=int, default=180, help="timeout do Overpass (s)")
     build.set_defaults(handler=cmd_build)
 
     fetch_dem = subparsers.add_parser(
@@ -177,7 +162,7 @@ def _build_parser() -> argparse.ArgumentParser:
     fetch_dem.add_argument(
         "--bbox",
         required=True,
-        help="sul,oeste,norte,leste em graus decimais (formato Overpass)",
+        help="sul,oeste,norte,leste em graus decimais",
     )
     fetch_dem.add_argument(
         "--zoom",
@@ -533,9 +518,9 @@ def _build_parser() -> argparse.ArgumentParser:
 # Comandos
 # --------------------------------------------------------------------------
 def cmd_build(args: argparse.Namespace) -> int:
-    if not args.pbf and not args.bbox:
+    if not args.pbf:
         print(
-            "erro: informe --bbox (Overpass) ou --pbf (arquivo OSM .pbf local)",
+            "erro: informe --pbf (arquivo OSM .pbf local); a ingestao e offline",
             file=sys.stderr,
         )
         return 2
@@ -546,26 +531,17 @@ def cmd_build(args: argparse.Namespace) -> int:
         else DEFAULT_HIGHWAYS
     )
 
-    if args.pbf:
-        print(f"OSM.PBF local: {args.pbf}")
-        try:
-            data = read_osm_pbf(args.pbf, highways=highways)
-        except Exception as exc:
-            print(f"erro: {exc}", file=sys.stderr)
-            return 1
-    else:
-        bbox = parse_bbox(args.bbox)
-        cache_dir = None if args.no_cache else Path(args.cache_dir)
-        client = OverpassClient(
-            endpoint=args.overpass,
-            cache_dir=cache_dir,
-            timeout_s=float(args.timeout),
-        )
-        print(f"Overpass: {args.overpass}")
-        print(f"bbox: {bbox}")
-        data = client.fetch(bbox, highways=highways, timeout_s=args.timeout)
+    print(f"OSM.PBF local: {args.pbf}")
+    try:
+        data = read_osm_pbf(args.pbf, highways=highways)
+    except Exception as exc:
+        print(f"erro: {exc}", file=sys.stderr)
+        return 1
 
-    print(f"OSM: {len(data.nodes)} nos, {len(data.ways)} vias")
+    print(
+        f"OSM: {len(data.nodes)} nos, {len(data.ways)} vias, "
+        f"{len(data.relations)} relacoes de restricao"
+    )
 
     options = BuildOptions(
         allow_footway=args.allow_footway,
@@ -581,6 +557,8 @@ def cmd_build(args: argparse.Namespace) -> int:
         print(f"  ignorados por nos ausentes: {build_stats.skipped_missing_nodes}")
     if build_stats.skipped_short:
         print(f"  ignorados por comprimento minimo: {build_stats.skipped_short}")
+    if build_stats.turn_restrictions:
+        print(f"  restricoes de conversao: {build_stats.turn_restrictions}")
 
     provider = _make_provider(args, data)
     if provider is None:
@@ -967,17 +945,17 @@ def _make_provider(args: argparse.Namespace, data: object):
             )
         provider = TerrariumElevation(args.tiles_dir, zoom=args.tiles_zoom)
     elif args.elevation == "opentopodata":
-        from osm.parse import OverpassData
+        from osm.parse import OsmData
 
-        assert isinstance(data, OverpassData)
+        assert isinstance(data, OsmData)
         provider = ChainElevation(
             OsmTagElevation.from_nodes(data.nodes.values()),
             OpenTopoDataElevation(),
         )
     else:  # osm
-        from osm.parse import OverpassData
+        from osm.parse import OsmData
 
-        assert isinstance(data, OverpassData)
+        assert isinstance(data, OsmData)
         provider = OsmTagElevation.from_nodes(data.nodes.values())
 
     if args.no_cache:
@@ -1039,6 +1017,17 @@ def _print_plan(plan: RoutePlan) -> None:
         f"rotas descobertas: {total_routes} "
         f"(fronteira Pareto={plan.pareto_route_count}{trunc})"
     )
+    if plan.frontier_truncated:
+        print(
+            f"aviso: fronteira podada por max_labels_per_node "
+            f"({plan.dropped_labels} label(s) nao dominada(s) removida(s)) — "
+            "a completude da fronteira nao esta garantida"
+        )
+    if plan.truncated:
+        print(
+            "aviso: busca interrompida por max_expansions — "
+            "a fronteira de destino pode estar incompleta"
+        )
     if plan.rejected_count:
         print(
             f"  viaveis: {plan.count} | excluidas: {plan.rejected_count} "

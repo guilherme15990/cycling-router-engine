@@ -181,6 +181,11 @@ class RoutePlan:
     ``recommended`` e o "pick" (primeira rota **elegivel** na ordem do perfil) —
     **nunca** uma rota rejeitada; e ``None`` quando nao ha nenhuma elegivel.
     ``warnings`` explicitam degradacao da recomendada e ausencia de rota elegivel.
+
+    Completude da busca (observabilidade, ADR-026/ADR-029): ``truncated`` sinaliza
+    interrupcao por ``max_expansions``; ``frontier_truncated``/``dropped_labels``
+    sinalizam poda da fronteira por ``max_labels_per_key`` (labels nao dominadas
+    removidas). Nao se confundem com deduplicacao de candidatas.
     """
 
     origin: Coord
@@ -199,6 +204,8 @@ class RoutePlan:
     warnings: tuple[str, ...] = ()
     pareto_route_count: int = 0
     truncated: bool = False
+    frontier_truncated: bool = False
+    dropped_labels: int = 0
     preference: EffortPreference | None = None
 
     @property
@@ -232,6 +239,8 @@ class RoutePlan:
             "profile": self.profile_id,
             "reached": self.reached,
             "truncated": self.truncated,
+            "frontier_truncated": self.frontier_truncated,
+            "dropped_labels": self.dropped_labels,
             "iterations": self.iterations,
             "search_bbox": _bbox_to_dict(self.search_bbox),
             "bbox": _bbox_to_dict(self.bbox),
@@ -492,6 +501,8 @@ def plan_offline_routes(
         bbox=final_bbox,
         pareto_route_count=len(result.labels),
         truncated=bool(result.truncated),
+        frontier_truncated=bool(result.frontier_truncated),
+        dropped_labels=int(result.dropped_labels),
         **base,
     )
 

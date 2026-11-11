@@ -119,7 +119,7 @@ def point_at_fraction(coords: Sequence[Coord], fraction: float) -> Coord:
 
 
 def parse_bbox(text: str) -> tuple[float, float, float, float]:
-    """Aceita ``sul,oeste,norte,leste`` (formato Overpass)."""
+    """Aceita ``sul,oeste,norte,leste``."""
     parts = [chunk.strip() for chunk in text.split(",")]
     if len(parts) != 4:
         raise ValueError("bbox deve ter 4 valores: sul,oeste,norte,leste")

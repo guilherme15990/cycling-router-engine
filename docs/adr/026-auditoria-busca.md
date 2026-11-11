@@ -192,6 +192,14 @@ agregação escalar **apenas** para ranking/seleção — nunca para a física.
   (interrompe e marca `truncated=True`, `astar.py` L284-L289), `epsilon_dominance`
   (dominância tolerante, `objectives.py` L100-L128).
 
+> **Atualização (incremento de observabilidade).** Na redação original, a poda
+> por `max_labels_per_node` era **silenciosa**; só `max_expansions` marcava
+> `truncated`. O incremento passou a sinalizar a poda com campos próprios
+> (`frontier_truncated`/`dropped_labels`, de `FrontierManager`), **sem** alterar
+> `truncated`. `epsilon_dominance` segue **inativo** no A\* (a
+> `SpeedBucketDominance` padrão não recebe epsilon e `MultiObjectiveAStar` a
+> constrói sem epsilon). Ver `026-optimization-custo-e-busca.md` (Decisão 2).
+
 ### 3.2 Achado A — o critério de parada é exaustivo
 
 O laço principal **não** para ao alcançar o destino: labels de destino nunca são
