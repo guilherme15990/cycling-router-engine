@@ -13,9 +13,8 @@ segundo modo em que o grafo inteiro seja percorrido). Cobrem:
 from __future__ import annotations
 
 import pytest
-
-from envelope import adaptive_zone, graph_for_bbox, scale_bbox
-from geo import (
+from router.core.data.envelope import adaptive_zone, graph_for_bbox, scale_bbox
+from router.core.data.geo import (
     auto_box_pads,
     bbox_contains,
     bbox_intersects,
@@ -29,7 +28,7 @@ from geo import (
     query_bbox,
     union_bbox,
 )
-from graph.model import Arc, Node, RoutingGraph, Segment
+from router.core.data.graph.model import Arc, Node, RoutingGraph, Segment
 
 
 # --------------------------------------------------------------------------

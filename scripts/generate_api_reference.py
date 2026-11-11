@@ -20,7 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-import api  # noqa: E402
+from router.interfaces import api  # noqa: E402
 
 # Ordem e texto das camadas. Os nomes vem exatamente de ``api.__all__``.
 LAYERS: list[tuple[str, str, list[str]]] = [
@@ -85,7 +85,7 @@ LAYERS: list[tuple[str, str, list[str]]] = [
             "ArcProfile",
             "Environment",
             "PhysicalTraversal",
-            "RouteMetrics",
+            "PhysicsRouteMetrics",
             "SimulationMode",
             "SimulationState",
             "SimulationStatus",
@@ -268,7 +268,7 @@ LAYERS: list[tuple[str, str, list[str]]] = [
         "Busca: reconstrucao e avaliacao de rotas",
         "Reconstrucao da fronteira em rotas e avaliacao de objetivos.",
         [
-            "Route",
+            "SearchRoute",
             "evaluate",
             "evaluate_metrics",
             "evaluate_route",
@@ -362,9 +362,9 @@ LAYERS: list[tuple[str, str, list[str]]] = [
             "EnergyConsistency",
             "EvaluatedRoute",
             "EvaluationReport",
-            "Reason",
+            "SafetyReason",
             "ReasonKind",
-            "RouteSafety",
+            "RouteSafetyAssessment",
             "RouteSafetyState",
             "classify_safety",
             "energy_consistency",
@@ -384,8 +384,49 @@ LAYERS: list[tuple[str, str, list[str]]] = [
         "nunca um valor inventado.",
         [
             "PlannedRoute",
-            "RoutePlan",
+            "RoutePlanResult",
             "plan_offline_routes",
+        ],
+    ),
+    (
+        "Integracao com o aplicativo (ADR-030, Fase 3)",
+        "Superficie **curada** para o consumidor externo: `plan_routes` resolve "
+        "multi-pernas (`stops`) no nucleo e devolve o envelope `RoutePlan`; "
+        "`integration` reexporta poucos nomes (contrato, grafo, modelos de "
+        "entrada e guard offline) e preserva um caminho por operacao.",
+        [
+            "plan_routes",
+            "integration",
+        ],
+    ),
+    (
+        "Contrato publico de rota (v1)",
+        "Fronteira de **transporte** do motor (ADR-030): tipos versionados, "
+        "serializaveis e independentes dos DTOs internos. O envelope e "
+        "**estrito** (`format`/`version` obrigatorios, `allow_nan=False`, sem "
+        "`default=str`), a ausencia e explicita (`None`) e a geometria vem por "
+        "ponto (`dist_m` monotonico). `snake_case` no Python/JSON; adaptadores "
+        "traduzem para `camelCase`.",
+        [
+            "CONTRACT_FORMAT",
+            "CONTRACT_VERSION",
+            "INTENSITY_BANDS",
+            "RouteContractError",
+            "BBox",
+            "RouteRequest",
+            "RoutePoint",
+            "RouteMetrics",
+            "RouteML",
+            "Reason",
+            "RouteSafety",
+            "RouteProvenance",
+            "Route",
+            "Zone",
+            "RoutePlan",
+            "dumps",
+            "loads",
+            "write_plan",
+            "read_plan",
         ],
     ),
     (
@@ -590,6 +631,7 @@ LAYERS: list[tuple[str, str, list[str]]] = [
 
 # Resumos curtos para constantes de modulo (valores, nao classes/funcoes).
 CONSTANT_NOTES: dict[str, str] = {
+    "integration": "Modulo de integracao: superficie curada para o app (ADR-030 Fase 3).",
     "OSM_SURFACE_MAP": "Mapeia valores de ``surface=*`` do OSM para ``Surface``.",
     "OSM_TRACKTYPE_MAP": "Mapeia ``tracktype=grade1..grade5`` para ``Surface``.",
     "OBSERVED_ELEVATION_QUALITIES": "Estados de elevacao sustentados por fonte (medida, DEM ou declarada).",

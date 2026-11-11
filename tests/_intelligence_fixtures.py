@@ -8,8 +8,8 @@ verdade fisiologica (ADR-027, decisao 1).
 
 from __future__ import annotations
 
-from physical.effort import EffortFeatures
-from physical.models import SimulationStatus
+from router.core.physics.effort import EffortFeatures
+from router.core.physics.models import SimulationStatus
 
 #: Features fisicas "sempre presentes" usadas como base dos testes.
 BASE_FEATURES: dict[str, float] = {

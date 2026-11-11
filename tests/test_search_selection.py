@@ -1,15 +1,14 @@
 import pytest
-
-from graph.model import Arc, Segment
-from physical import TraversalResult
-from search import (
+from router.core.data.graph.model import Arc, Segment
+from router.core.physics import TraversalResult
+from router.core.search import (
     DiversityConfig,
     DiversityFallback,
     DiversityMetric,
     Objective,
     RankingStrategy,
     RankingTolerance,
-    Route,
+    SearchRoute,
     RouteProfile,
     SearchResult,
     SelectionConfig,
@@ -43,12 +42,12 @@ def route(
     descent_m: float = 20.0,
     energy_j: float = 1000.0,
     label_id: int = 0,
-) -> Route:
+) -> SearchRoute:
     if distance_m is None:
         distance_m = (
             float(sum(lengths)) if lengths else float(len(arc_ids)) * 100.0
         )
-    return Route(
+    return SearchRoute(
         arc_ids=tuple(arc_ids),
         arc_lengths=tuple(lengths),
         time_s=time_s,
@@ -92,7 +91,7 @@ def label_for(
 def small_profile(*, fallback=None, max_similarity: float = 0.7) -> RouteProfile:
     diversity = DiversityConfig(max_similarity=max_similarity)
     if fallback is not None:
-        from search import DiversityRelaxation
+        from router.core.search import DiversityRelaxation
 
         diversity = DiversityConfig(
             max_similarity=max_similarity,

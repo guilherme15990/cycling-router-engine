@@ -1,23 +1,21 @@
 import json
-
 import pytest
-
-from cli import main
-from elevation import CallableElevation
-from graph.model import (
+from router.interfaces.cli import main
+from router.core.data.elevation import CallableElevation
+from router.core.data.graph.model import (
     BicycleAccess,
     RoutingGraph,
     Arc,
     Segment,
     Node,
 )
-from graph.serialize import graph_from_dict, graph_to_dict, load_json, save_json
-from graph.simplify import simplify_graph
-from graph.surface import Surface
-from graph.validate import validate_graph
-from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OsmData
-from snapping import (
+from router.core.data.graph.serialize import graph_from_dict, graph_to_dict, load_json, save_json
+from router.core.data.graph.simplify import simplify_graph
+from router.core.data.graph.surface import Surface
+from router.core.data.graph.validate import validate_graph
+from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
+from router.core.data.osm.parse import OsmData
+from router.core.data.snapping import (
     SnapError,
     SnapOptions,
     SpatialSnapper,

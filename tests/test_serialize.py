@@ -2,10 +2,9 @@ import json
 from pathlib import Path
 
 import pytest
-
-from cli import main
-from elevation import CallableElevation
-from graph.serialize import (
+from router.interfaces.cli import main
+from router.core.data.elevation import CallableElevation
+from router.core.data.graph.serialize import (
     graph_from_dict,
     graph_to_dict,
     load_json,
@@ -14,11 +13,11 @@ from graph.serialize import (
     summarize,
     to_geojson,
 )
-from graph.simplify import simplify_graph
-from graph.surface import SurfaceStatus
-from graph.validate import validate_graph
-from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OsmData
+from router.core.data.graph.simplify import simplify_graph
+from router.core.data.graph.surface import SurfaceStatus
+from router.core.data.graph.validate import validate_graph
+from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
+from router.core.data.osm.parse import OsmData
 
 FIXTURE = Path(__file__).parent / "fixtures" / "tiny_network.json"
 
@@ -165,7 +164,7 @@ def test_validate_clean_graph(graph):
 
 
 def test_validate_detects_broken_graph(graph):
-    from graph.model import Node
+    from router.core.data.graph.model import Node
 
     graph.add_node(Node(id=999, lat=0.0, lon=0.0))
     issues = validate_graph(graph)

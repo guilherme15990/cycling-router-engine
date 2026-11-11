@@ -15,11 +15,9 @@ refinamento registrado em ``docs/adr/025-auditoria-fisica.md`` (secao 7.1).
 """
 
 import math
-
 import pytest
-
-from graph.model import Arc, ElevationSample, Segment
-from physical import (
+from router.core.data.graph.model import Arc, ElevationSample, Segment
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     Environment,

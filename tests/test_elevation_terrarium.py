@@ -11,9 +11,8 @@ import zlib
 from pathlib import Path
 
 import pytest
-
-from elevation import ElevationError, TerrariumElevation
-from elevation_tiles import lonlat_to_tile, tiles_for_bbox
+from router.core.data.elevation import ElevationError, TerrariumElevation
+from router.core.data.elevation.tiles import lonlat_to_tile, tiles_for_bbox
 
 ZOOM = 12
 TILE_X, TILE_Y = 1468, 2253
@@ -321,7 +320,7 @@ def test_truncated_png_raises(tmp_path: Path) -> None:
 # Configuracao do provedor
 # --------------------------------------------------------------------------
 def test_resolution_and_quality_with_fixed_zoom(tmp_path: Path) -> None:
-    from graph.model import ElevationQuality
+    from router.core.data.graph.model import ElevationQuality
 
     provider = TerrariumElevation(tmp_path, zoom=12)
 

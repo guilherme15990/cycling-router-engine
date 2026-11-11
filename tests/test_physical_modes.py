@@ -18,13 +18,11 @@ exposicao do regime regularizado.
 """
 
 import json
-
 import pytest
-
-from cli import main
-from graph.model import Arc, ElevationSample, Node, RoutingGraph, Segment
-from graph.serialize import save_json
-from physical import (
+from router.interfaces.cli import main
+from router.core.data.graph.model import Arc, ElevationSample, Node, RoutingGraph, Segment
+from router.core.data.graph.serialize import save_json
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     Environment,

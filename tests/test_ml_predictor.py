@@ -12,18 +12,16 @@ Cobertura exigida:
 
 import ast
 import inspect
-
 import pytest
-
-import ml.predictor as predictor_module
-from graph.model import Arc, ElevationSample, Segment
-from ml import (
+import router.core.prediction.ml as predictor_module
+from router.core.data.graph.model import Arc, ElevationSample, Segment
+from router.core.prediction.ml import (
     EffortPredictor,
     MetabolicEnergyPredictor,
     UnavailablePredictor,
     predict_effort,
 )
-from physical import (
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     EffortFeatures,
@@ -32,7 +30,7 @@ from physical import (
     SimulationStatus,
     extract_effort_features,
 )
-from physiology import (
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     MetabolicParameters,
     PhysiologicalPrediction,
@@ -256,8 +254,8 @@ def test_prediction_does_not_mutate_features():
 def test_predictor_module_does_not_import_routing():
     """A inferencia nao conhece o roteamento.
 
-    Ela depende apenas da fisica (``physical.effort``) e do contrato
-    fisiologico (``physiology``). Assim, vale para qualquer rota — tradicional
+    Ela depende apenas da fisica (``core.physics.effort``) e do contrato
+    fisiologico (``core.physiology``). Assim, vale para qualquer rota — tradicional
     ou gerada por ML — sem alterar a busca.
     """
     tree = ast.parse(inspect.getsource(predictor_module))
@@ -265,14 +263,20 @@ def test_predictor_module_does_not_import_routing():
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             for alias in node.names:
-                absolute.add(alias.name.split(".")[0])
+                absolute.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
-            name = (node.module or "").split(".")[0]
+            name = node.module or ""
             (relative if node.level else absolute).add(name)
 
-    assert "search" not in absolute
     assert relative == set()
-    assert absolute <= {"__future__", "dataclasses", "typing", "physical", "physiology"}
+    assert not any("search" in name for name in absolute)
+    allowed = {"__future__", "dataclasses", "typing"}
+    assert all(
+        name in allowed
+        or name.startswith("router.core.physics")
+        or name.startswith("router.core.physiology")
+        for name in absolute
+    ), absolute
 
 
 # ==========================================================================

@@ -13,11 +13,9 @@ Cobrem:
 
 import ast
 import inspect
-
 import pytest
-
-import evaluation.assessment as assessment_module
-from evaluation import (
+import router.core.evaluation.assessment as assessment_module
+from router.core.evaluation import (
     AssessmentOutcome,
     RouteAssessmentError,
     assess_candidate,
@@ -25,17 +23,17 @@ from evaluation import (
     assess_route,
     assess_search_route,
 )
-from graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
-from graph.restrictions import AccessRule
-from ml import MetabolicEnergyPredictor, UnavailablePredictor
-from physical import BicycleModel, CyclistModel, SimulationStatus
-from physiology import (
+from router.core.data.graph.model import Arc, BicycleAccess, ElevationSample, Node, RoutingGraph, Segment
+from router.core.data.graph.restrictions import AccessRule
+from router.core.prediction.ml import MetabolicEnergyPredictor, UnavailablePredictor
+from router.core.physics import BicycleModel, CyclistModel, SimulationStatus
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     MetabolicParameters,
     PhysiologicalPrediction,
     PredictionStatus,
 )
-from search import Route, RouteCandidate
+from router.core.search import SearchRoute, RouteCandidate
 
 CYCLIST = CyclistModel(
     mass_kg=75.0, max_power_w=600.0, sustainable_power_w=200.0, frontal_area_m2=0.5
@@ -292,7 +290,7 @@ def test_assessment_is_deterministic():
 # Integracao com as estruturas da busca (Camada 03)
 # --------------------------------------------------------------------------
 def test_assess_search_route_uses_route_arcs():
-    route = Route(
+    route = SearchRoute(
         arc_ids=("a12", "a23"),
         time_s=1.0,
         distance_m=400.0,
@@ -307,8 +305,8 @@ def test_assess_search_route_uses_route_arcs():
 def test_assess_candidates_preserves_order():
     graph = two_arc_graph()
     routes = [
-        Route(arc_ids=("a12", "a23"), time_s=1.0, distance_m=400.0, ascent_m=0.0, descent_m=0.0, energy_j=1.0),
-        Route(arc_ids=("a12",), time_s=1.0, distance_m=200.0, ascent_m=0.0, descent_m=0.0, energy_j=1.0, label_id=1),
+        SearchRoute(arc_ids=("a12", "a23"), time_s=1.0, distance_m=400.0, ascent_m=0.0, descent_m=0.0, energy_j=1.0),
+        SearchRoute(arc_ids=("a12",), time_s=1.0, distance_m=200.0, ascent_m=0.0, descent_m=0.0, energy_j=1.0, label_id=1),
     ]
     candidates = [RouteCandidate.from_route(route) for route in routes]
     assessments = assess_candidates(graph, candidates, cyclist=CYCLIST, bicycle=BICYCLE)
@@ -319,7 +317,7 @@ def test_assess_candidates_preserves_order():
 
 def test_assess_candidate_matches_assess_route():
     graph = two_arc_graph()
-    route = Route(arc_ids=("a12", "a23"), time_s=1.0, distance_m=400.0, ascent_m=0.0, descent_m=0.0, energy_j=1.0)
+    route = SearchRoute(arc_ids=("a12", "a23"), time_s=1.0, distance_m=400.0, ascent_m=0.0, descent_m=0.0, energy_j=1.0)
     candidate = RouteCandidate.from_route(route)
     assert (
         assess_candidate(graph, candidate, cyclist=CYCLIST, bicycle=BICYCLE).to_dict()
@@ -340,8 +338,8 @@ def test_assessment_uses_full_simulator_not_approximate_estimator():
                 modules.add(alias.name)
         elif isinstance(node, ast.ImportFrom):
             modules.add(node.module or "")
-    assert not any(module.startswith("search.approximate") for module in modules)
-    assert "physical.traversal" in modules
+    assert not any("search.approximate" in module for module in modules)
+    assert "router.core.physics.traversal" in modules
 
 
 # --------------------------------------------------------------------------

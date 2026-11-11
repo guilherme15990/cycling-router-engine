@@ -14,11 +14,9 @@ Cobertura exigida pelo incremento:
 """
 
 import json
-
 import pytest
-
-from graph.model import Arc, ElevationSample, Node, RoutingGraph, Segment
-from physical import (
+from router.core.data.graph.model import Arc, ElevationSample, Node, RoutingGraph, Segment
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     Environment,
@@ -26,7 +24,7 @@ from physical import (
     SimulationState,
     SimulationStatus,
 )
-from search import (
+from router.core.search import (
     UNKNOWN_SPEED,
     MultiObjectiveAStar,
     TraversalModel,
@@ -36,7 +34,7 @@ from search import (
     estimate_arc,
     model_max_speed,
 )
-from search.approximate import (
+from router.core.search.approximate import (
     ArcEstimateError,
     ComparisonReport,
     RankingComparison,

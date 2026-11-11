@@ -19,22 +19,20 @@ from __future__ import annotations
 
 import dataclasses
 import math
-
 import pytest
-
-from evaluation import (
+from router.core.evaluation import (
     EnergyConsistency,
     EvaluationReport,
-    Reason,
+    SafetyReason,
     ReasonKind,
-    RouteSafety,
+    RouteSafetyAssessment,
     RouteSafetyState,
     assess_route,
     classify_safety,
     energy_consistency,
     evaluate_candidates,
 )
-from graph.model import (
+from router.core.data.graph.model import (
     Arc,
     BicycleAccess,
     ElevationSample,
@@ -42,21 +40,21 @@ from graph.model import (
     RoutingGraph,
     Segment,
 )
-from graph.restrictions import AccessRule
-from physical import (
+from router.core.data.graph.restrictions import AccessRule
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
-    RouteMetrics,
+    PhysicsRouteMetrics,
     SimulationState,
     SimulationStatus,
     TraversalPath,
 )
-from physiology import (
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     PhysiologicalPrediction,
     PredictionStatus,
 )
-from search import Route, RouteCandidate
+from router.core.search import SearchRoute, RouteCandidate
 
 CYCLIST = CyclistModel(
     mass_kg=75.0, max_power_w=600.0, sustainable_power_w=200.0, frontal_area_m2=0.5
@@ -308,7 +306,7 @@ def test_proven_physical_infeasibility_rejects(mutate, expected):
 # D4 — evaluate_candidates reutiliza avaliacoes e escolhe a 1a elegivel
 # --------------------------------------------------------------------------
 def _candidate(route_id, arc_ids):
-    route = Route(
+    route = SearchRoute(
         arc_ids=arc_ids,
         time_s=1.0,
         distance_m=200.0 * len(arc_ids),
@@ -387,7 +385,6 @@ def test_degraded_route_can_be_recommended_with_warning():
 # --------------------------------------------------------------------------
 def test_serialization_roundtrip_is_json_friendly():
     import json
-
     report = evaluate_candidates(
         [_candidate("c1", ("a12", "a23"))],
         assessments={"c1": validated_assessment()},
@@ -432,7 +429,7 @@ def test_energy_consistency_without_wheel_work_has_no_false_zero():
     result = validated_assessment().path
     empty = TraversalPath(
         results=(),
-        metrics=RouteMetrics(),
+        metrics=PhysicsRouteMetrics(),
         initial_speed_mps=0.0,
         final_speed_mps=0.0,
     )
@@ -453,9 +450,9 @@ def test_every_rejection_carries_a_reason():
 
 
 def test_reason_and_safety_serialize():
-    reason = Reason(ReasonKind.STALLED, "detalhe", arc_id="a12")
+    reason = SafetyReason(ReasonKind.STALLED, "detalhe", arc_id="a12")
     assert reason.to_dict()["kind"] == "stalled"
-    safety = RouteSafety(RouteSafetyState.DEGRADED, (reason,))
+    safety = RouteSafetyAssessment(RouteSafetyState.DEGRADED, (reason,))
     payload = safety.to_dict()
     assert payload["state"] == "degraded"
     assert payload["eligible"] is True

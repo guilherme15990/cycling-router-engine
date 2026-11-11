@@ -18,12 +18,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-
-import cli
+from router.interfaces import cli
+from router.interfaces.cli.commands import graph as cli_graph
 from _pbf_fixtures import _PbfBuilder
-from elevation import TerrariumElevation
-from elevation_tiles import TerrariumTileError
-from offline import offline
+from router.core.data.elevation import TerrariumElevation
+from router.core.data.elevation.tiles import TerrariumTileError
+from router.offline import offline
 
 
 def _raw(degree: float) -> int:
@@ -88,7 +88,7 @@ def test_build_from_pbf_runs_entirely_offline(tmp_path):
     assert exit_code == 0
     assert out.is_file()
 
-    from graph.serialize import load_json
+    from router.core.data.graph.serialize import load_json
 
     graph = load_json(out)
     assert graph.node_count == 3
@@ -129,7 +129,7 @@ def test_build_from_pbf_applies_highway_filter(tmp_path):
             == 0
         )
 
-    from graph.serialize import load_json
+    from router.core.data.graph.serialize import load_json
 
     assert load_json(out).arc_count == 0
 
@@ -179,7 +179,7 @@ def test_build_from_pbf_attaches_turn_restrictions(tmp_path, capsys):
     assert code == 0
     assert "restricoes de conversao: 1" in capsys.readouterr().out
 
-    from graph.serialize import load_json
+    from router.core.data.graph.serialize import load_json
 
     assert list(load_json(out).turn_restrictions) == ["r500"]
 
@@ -195,7 +195,7 @@ def test_terrarium_provider_requires_tiles_dir():
         no_cache=True,
     )
     with pytest.raises(SystemExit):
-        cli._make_provider(args, None)
+        cli_graph._make_provider(args, None)
 
 
 def test_terrarium_provider_is_offline_and_configured(tmp_path):
@@ -206,7 +206,7 @@ def test_terrarium_provider_is_offline_and_configured(tmp_path):
         tiles_zoom=12,
         no_cache=True,
     )
-    provider = cli._make_provider(args, None)
+    provider = cli_graph._make_provider(args, None)
     assert isinstance(provider, TerrariumElevation)
     assert provider.tiles_dir == tiles
     assert provider.zoom == 12
@@ -237,7 +237,7 @@ def test_build_with_empty_terrarium_does_not_invent_elevation(tmp_path):
         )
 
     assert exit_code == 0
-    from graph.serialize import load_json, summarize
+    from router.core.data.graph.serialize import load_json, summarize
 
     summary = summarize(load_json(out))
     assert summary["elevation_coverage"] == pytest.approx(0.0)
@@ -258,7 +258,7 @@ def test_fetch_dem_downloads_to_local_dir(tmp_path, monkeypatch):
             progress(1, 1, tile)
         return [tile]
 
-    monkeypatch.setattr(cli, "fetch_terrarium_tiles", fake_fetch)
+    monkeypatch.setattr(cli_graph, "fetch_terrarium_tiles", fake_fetch)
 
     out = tmp_path / "dem"
     exit_code = cli.main(
@@ -283,7 +283,7 @@ def test_fetch_dem_reports_tile_error(tmp_path, monkeypatch):
     def failing_fetch(bbox, zoom, dest_dir, *, timeout_s, progress=None):
         raise TerrariumTileError("sem rede")
 
-    monkeypatch.setattr(cli, "fetch_terrarium_tiles", failing_fetch)
+    monkeypatch.setattr(cli_graph, "fetch_terrarium_tiles", failing_fetch)
 
     exit_code = cli.main(
         ["fetch-dem", "--bbox", "-18.3,-51.7,-17.1,-50.4", "--out", str(tmp_path)]

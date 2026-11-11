@@ -17,16 +17,15 @@ Ref.: ADR-026 e ``docs/adr/026-auditoria-busca.md`` §9.
 """
 
 import pytest
-
-from graph.model import Arc, Node, RoutingGraph, Segment
-from physical import (
+from router.core.data.graph.model import Arc, Node, RoutingGraph, Segment
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     Environment,
     PhysicalTraversal,
     TraversalResult,
 )
-from search import (
+from router.core.search import (
     MultiObjectiveAStar,
     PhysicalTraversalModel,
     ProfileSearchRequest,

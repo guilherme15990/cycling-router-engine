@@ -2,7 +2,7 @@
 
 > Gerado automaticamente por `scripts/generate_api_reference.py`. Nao edite a mao.
 
-Versao: **0.18.0** - 315 simbolos publicos (`api.__all__`).
+Versao: **0.18.0** - 336 simbolos publicos (`api.__all__`).
 
 Todas as assinaturas sao extraidas do codigo por introspeccao. A descricao de cada camada e curada; o resumo de cada simbolo vem da propria docstring (use `help(obj)` para o texto completo).
 
@@ -30,6 +30,8 @@ Todas as assinaturas sao extraidas do codigo por introspeccao. A descricao de ca
 - [Avaliacao: rota completa e classificacao (Camada 05)](#avaliacao-rota-completa-e-classificacao-camada-05)
 - [Seguranca da rota e avaliacao final (Camada 05, ADR-029)](#seguranca-da-rota-e-avaliacao-final-camada-05-adr-029)
 - [Consulta offline completa (planejamento)](#consulta-offline-completa-planejamento)
+- [Integracao com o aplicativo (ADR-030, Fase 3)](#integracao-com-o-aplicativo-adr-030-fase-3)
+- [Contrato publico de rota (v1)](#contrato-publico-de-rota-v1)
 - [Operacao offline (guard de rede)](#operacao-offline-guard-de-rede)
 - [Fonte geografica local: leitor OSM.PBF](#fonte-geografica-local-leitor-osm-pbf)
 - [Elevacao local: Terrarium (offline)](#elevacao-local-terrarium-offline)
@@ -64,7 +66,7 @@ Grafo direcionado com adjacencia por origem.
 ### `Arc`
 
 ```python
-class Arc(_Passage)(id: str, source: Hashable, target: Hashable, segments: tuple[Segment, ...])
+class Arc(_Passage)(id: str, source: Hashable, target: Hashable, segments: tuple[router.core.data.Segment, ...])
 ```
 
 Possibilidade de deslocamento **direcionado** sobre um :class:`Link`.
@@ -72,7 +74,7 @@ Possibilidade de deslocamento **direcionado** sobre um :class:`Link`.
 ### `Link`
 
 ```python
-class Link(_Passage)(id: str, source: Hashable, target: Hashable, segments: tuple[Segment, ...], arc_ids: tuple[str, ...] = ())
+class Link(_Passage)(id: str, source: Hashable, target: Hashable, segments: tuple[router.core.data.Segment, ...], arc_ids: tuple[str, ...] = ())
 ```
 
 Ligacao fisica e **nao-direcionada** entre dois :class:`Node`.
@@ -80,7 +82,7 @@ Ligacao fisica e **nao-direcionada** entre dois :class:`Node`.
 ### `Segment`
 
 ```python
-class Segment(id: str, distance_m: float, surface: Surface = <Surface.UNKNOWN: 'unknown'>, surface_status: SurfaceStatus = <SurfaceStatus.UNKNOWN: 'unknown'>, elevation_gain_m: float = 0.0, elevation_loss_m: float = 0.0, min_elevation_m: float | None = None, max_elevation_m: float | None = None, elevation_profile: tuple[ElevationSample, ...] = (), geometry: tuple[tuple[float, float], ...] = (), highway: str | None = None, name: str | None = None, osm_way_id: int | None = None, bicycle_access: BicycleAccess = <BicycleAccess.YES: 'yes'>, max_speed_kmh: float | None = None, restrictions: tuple[AccessRule, ...] = (), tags: Mapping[str, str] = <factory>)
+class Segment(id: str, distance_m: float, surface: router.core.data.Surface = <Surface.UNKNOWN: 'unknown'>, surface_status: router.core.data.SurfaceStatus = <SurfaceStatus.UNKNOWN: 'unknown'>, elevation_gain_m: float = 0.0, elevation_loss_m: float = 0.0, min_elevation_m: float | None = None, max_elevation_m: float | None = None, elevation_profile: tuple[router.core.data.ElevationSample, ...] = (), geometry: tuple[tuple[float, float], ...] = (), highway: str | None = None, name: str | None = None, osm_way_id: int | None = None, bicycle_access: router.core.data.BicycleAccess = <BicycleAccess.YES: 'yes'>, max_speed_kmh: float | None = None, restrictions: tuple[router.core.data.AccessRule, ...] = (), tags: Mapping[str, str] = <factory>)
 ```
 
 Trecho homogeneo de uma via, entre dois pontos de forma do OSM.
@@ -98,7 +100,7 @@ Valores: `MEASURED`, `DEM_SAMPLED`, `SOURCE_REPORTED`, `INTERPOLATED`, `ESTIMATE
 ### `ElevationSample`
 
 ```python
-class ElevationSample(distance_m: float, elevation_m: float | None, source_id: str | None = None, resolution_m: float | None = None, quality: ElevationQuality | None = None)
+class ElevationSample(distance_m: float, elevation_m: float | None, source_id: str | None = None, resolution_m: float | None = None, quality: router.core.data.ElevationQuality | None = None)
 ```
 
 Altitude a ``distance_m`` metros do inicio do segmento.
@@ -168,7 +170,7 @@ Valores: `MAPPED`, `UNMAPPED`, `INFERRED`, `UNKNOWN`.
 ### `surface_from_tags`
 
 ```python
-surface_from_tags(tags: Mapping[str, str]) -> Surface
+surface_from_tags(tags: Mapping[str, str]) -> router.core.data.Surface
 ```
 
 Atalho somente da superficie observada (ver ``surface_observation``).
@@ -176,7 +178,7 @@ Atalho somente da superficie observada (ver ``surface_observation``).
 ### `surface_observation`
 
 ```python
-surface_observation(tags: Mapping[str, str]) -> tuple[Surface, SurfaceStatus]
+surface_observation(tags: Mapping[str, str]) -> tuple[router.core.data.Surface, router.core.data.SurfaceStatus]
 ```
 
 Deriva superficie e proveniencia apenas do que esta mapeado no OSM.
@@ -184,7 +186,7 @@ Deriva superficie e proveniencia apenas do que esta mapeado no OSM.
 ### `surface_priority`
 
 ```python
-surface_priority(surface: Surface) -> int
+surface_priority(surface: router.core.data.Surface) -> int
 ```
 
 Prioridade ordinal de uma superficie (1 = melhor).
@@ -212,7 +214,7 @@ Proveniencia de uma restricao derivada de relacao OSM.
 ### `TurnRestriction`
 
 ```python
-class TurnRestriction(id: str, from_way_id: int, to_way_id: int, restriction_type: str, via_node_id: int | None = None, via_way_ids: tuple[int, ...] = (), condition: str | None = None, source: RestrictionSource | None = None)
+class TurnRestriction(id: str, from_way_id: int, to_way_id: int, restriction_type: str, via_node_id: int | None = None, via_way_ids: tuple[int, ...] = (), condition: str | None = None, source: router.core.data.RestrictionSource | None = None)
 ```
 
 Restricao de conversao entre dois arcos, preservada do OSM.
@@ -220,7 +222,7 @@ Restricao de conversao entre dois arcos, preservada do OSM.
 ### `parse_conditional_restrictions`
 
 ```python
-parse_conditional_restrictions(tags: Mapping[str, str]) -> tuple[AccessRule, ...]
+parse_conditional_restrictions(tags: Mapping[str, str]) -> tuple[router.core.data.AccessRule, ...]
 ```
 
 Extrai todas as tags ``*:conditional`` sem interpretar a condicao.
@@ -228,7 +230,7 @@ Extrai todas as tags ``*:conditional`` sem interpretar a condicao.
 ### `turn_restriction_from_relation`
 
 ```python
-turn_restriction_from_relation(relation: Mapping[str, object], version: str | None = None) -> TurnRestriction | None
+turn_restriction_from_relation(relation: Mapping[str, object], version: str | None = None) -> router.core.data.TurnRestriction | None
 ```
 
 Normaliza uma relacao ``type=restriction`` do OSM em ``TurnRestriction``.
@@ -256,7 +258,7 @@ SimplifyStats(nodes_before: 'int', nodes_after: 'int', arcs_before: 'int', arcs_
 ### `simplify_graph`
 
 ```python
-simplify_graph(graph: RoutingGraph, options: SimplifyOptions | None = None) -> tuple[RoutingGraph, SimplifyStats]
+simplify_graph(graph: router.core.data.RoutingGraph, options: router.core.data.SimplifyOptions | None = None) -> tuple[router.core.data.RoutingGraph, router.core.data.SimplifyStats]
 ```
 
 Retorna um novo grafo com os nos de passagem contraidos.
@@ -268,7 +270,7 @@ Conexao de origem/destino a rede: opcoes, candidatos, resultado e o grafo tempor
 ### `QueryGraph`
 
 ```python
-class QueryGraph(graph: RoutingGraph, origin_id: Hashable, destination_id: Hashable, origin: snapping.SnapCandidate, destination: snapping.SnapCandidate, virtual_nodes: frozenset[typing.Hashable] = <factory>)
+class QueryGraph(graph: router.core.data.RoutingGraph, origin_id: Hashable, destination_id: Hashable, origin: router.core.data.snapping.SnapCandidate, destination: router.core.data.snapping.SnapCandidate, virtual_nodes: frozenset[typing.Hashable] = <factory>)
 ```
 
 Grafo temporario pronto para a busca de rotas.
@@ -300,7 +302,7 @@ Parametros do snapping.
 ### `SnapResult`
 
 ```python
-class SnapResult(candidate: snapping.SnapCandidate, node_id: Hashable, virtual: bool, splits: tuple[snapping._ArcSplit, ...] = (), elevation_m: float | None = None)
+class SnapResult(candidate: router.core.data.snapping.SnapCandidate, node_id: Hashable, virtual: bool, splits: tuple[router.core.data.snapping._ArcSplit, ...] = (), elevation_m: float | None = None)
 ```
 
 Plano de conexao de um ponto, aplicavel a uma copia do grafo.
@@ -308,7 +310,7 @@ Plano de conexao de um ponto, aplicavel a uma copia do grafo.
 ### `SpatialSnapper`
 
 ```python
-class SpatialSnapper(graph: RoutingGraph, options: snapping.SnapOptions | None = None)
+class SpatialSnapper(graph: router.core.data.RoutingGraph, options: router.core.data.snapping.SnapOptions | None = None)
 ```
 
 Indexo arcos e nos e projeta coordenadas na rede.
@@ -316,7 +318,7 @@ Indexo arcos e nos e projeta coordenadas na rede.
 ### `build_query_graph`
 
 ```python
-build_query_graph(graph: RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], options: snapping.SnapOptions | None = None) -> snapping.QueryGraph
+build_query_graph(graph: router.core.data.RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], options: router.core.data.snapping.SnapOptions | None = None) -> router.core.data.snapping.QueryGraph
 ```
 
 Conecta origem e destino e devolve o grafo temporario de consulta.
@@ -344,7 +346,7 @@ Caracteristicas fisicas do ciclista.
 ### `ArcProfile`
 
 ```python
-class ArcProfile(arc_id: str, distance_m: float, segments: tuple[SegmentProfile, ...], ascent_m: float, descent_m: float, unknown_elevation_m: float)
+class ArcProfile(arc_id: str, distance_m: float, segments: tuple[router.core.physics.arc_profile.SegmentProfile, ...], ascent_m: float, descent_m: float, unknown_elevation_m: float)
 ```
 
 Perfil fisico completo de um arco direcionado.
@@ -360,15 +362,15 @@ Ambiente fisico da travessia.
 ### `PhysicalTraversal`
 
 ```python
-class PhysicalTraversal(step_m: float | None = None, acceleration_limit_mps2: float = 2.0, dismount_speed_mps: float = 1.4, require_elevation: bool = False, *, mode: SimulationMode | str = <SimulationMode.SEARCH: 'search'>)
+class PhysicalTraversal(step_m: float | None = None, acceleration_limit_mps2: float = 2.0, dismount_speed_mps: float = 1.4, require_elevation: bool = False, *, mode: router.core.physics.traversal.SimulationMode | str = <SimulationMode.SEARCH: 'search'>)
 ```
 
 Simula a travessia fisica de arcos do grafo.
 
-### `RouteMetrics`
+### `PhysicsRouteMetrics`
 
 ```python
-class RouteMetrics(time_s: float = 0.0, distance_m: float = 0.0, ascent_m: float = 0.0, descent_m: float = 0.0, energy_j: float = 0.0, mechanical_energy_j: float = 0.0, braking_energy_j: float = 0.0, battery_energy_j: float | None = None, aero_loss_j: float = 0.0, rolling_loss_j: float = 0.0)
+class PhysicsRouteMetrics(time_s: float = 0.0, distance_m: float = 0.0, ascent_m: float = 0.0, descent_m: float = 0.0, energy_j: float = 0.0, mechanical_energy_j: float = 0.0, braking_energy_j: float = 0.0, battery_energy_j: float | None = None, aero_loss_j: float = 0.0, rolling_loss_j: float = 0.0)
 ```
 
 Metricas acumuladas de uma rota.
@@ -420,7 +422,7 @@ Balanco energetico longitudinal de um trecho (ADR-025, decisao 2).
 ### `TraversalPath`
 
 ```python
-class TraversalPath(results: tuple[TraversalResult, ...], metrics: RouteMetrics, initial_speed_mps: float, final_speed_mps: float, elevation_uncertainty: 'ElevationUncertainty | None' = None, result_status: SimulationStatus = <SimulationStatus.VALID: 'valid'>, used_min_speed_regularization: bool = False)
+class TraversalPath(results: tuple[router.core.physics.models.TraversalResult, ...], metrics: router.core.physics.models.PhysicsRouteMetrics, initial_speed_mps: float, final_speed_mps: float, elevation_uncertainty: 'ElevationUncertainty | None' = None, result_status: router.core.physics.models.SimulationStatus = <SimulationStatus.VALID: 'valid'>, used_min_speed_regularization: bool = False)
 ```
 
 Resultado de percorrer arcos em continuidade.
@@ -428,7 +430,7 @@ Resultado de percorrer arcos em continuidade.
 ### `TraversalResult`
 
 ```python
-class TraversalResult(time_s: float, distance_m: float, ascent_m: float, descent_m: float, initial_speed_mps: float, final_speed_mps: float, mechanical_energy_j: float, rider_energy_j: float, battery_energy_j: float | None = None, braking_energy_j: float = 0.0, stalled: bool = False, arc_id: str | None = None, state: 'SimulationState | None' = None, elevation_uncertainty: 'ElevationUncertainty | None' = None, result_status: SimulationStatus = <SimulationStatus.VALID: 'valid'>, aero_loss_j: float = 0.0, rolling_loss_j: float = 0.0, used_min_speed_regularization: bool = False)
+class TraversalResult(time_s: float, distance_m: float, ascent_m: float, descent_m: float, initial_speed_mps: float, final_speed_mps: float, mechanical_energy_j: float, rider_energy_j: float, battery_energy_j: float | None = None, braking_energy_j: float = 0.0, stalled: bool = False, arc_id: str | None = None, state: 'SimulationState | None' = None, elevation_uncertainty: 'ElevationUncertainty | None' = None, result_status: router.core.physics.models.SimulationStatus = <SimulationStatus.VALID: 'valid'>, aero_loss_j: float = 0.0, rolling_loss_j: float = 0.0, used_min_speed_regularization: bool = False)
 ```
 
 Resultado fisico de percorrer um arco.
@@ -436,7 +438,7 @@ Resultado fisico de percorrer um arco.
 ### `traverse_arc`
 
 ```python
-traverse_arc(arc: Arc, cyclist: CyclistModel, bicycle: BicycleModel, initial_state: SimulationState | None = None, environment: Environment | None = None, power_w: float | None = None, *, step_m: float | None = None, mode: SimulationMode | str = <SimulationMode.SEARCH: 'search'>) -> TraversalResult
+traverse_arc(arc: router.core.data.Arc, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, initial_state: router.core.physics.models.SimulationState | None = None, environment: router.core.physics.environment.Environment | None = None, power_w: float | None = None, *, step_m: float | None = None, mode: router.core.physics.traversal.SimulationMode | str = <SimulationMode.SEARCH: 'search'>) -> router.core.physics.models.TraversalResult
 ```
 
 Atalho para uma travessia isolada, sem reutilizar cache.
@@ -444,7 +446,7 @@ Atalho para uma travessia isolada, sem reutilizar cache.
 ### `classify_status`
 
 ```python
-classify_status(uncertainty: ElevationUncertainty | None, *, require_elevation: bool = False) -> SimulationStatus
+classify_status(uncertainty: router.core.physics.models.ElevationUncertainty | None, *, require_elevation: bool = False) -> router.core.physics.models.SimulationStatus
 ```
 
 Politica de status a partir da incerteza altimetrica (ADR-025, decisao 2).
@@ -452,7 +454,7 @@ Politica de status a partir da incerteza altimetrica (ADR-025, decisao 2).
 ### `worst_status`
 
 ```python
-worst_status(*statuses: SimulationStatus) -> SimulationStatus
+worst_status(*statuses: router.core.physics.models.SimulationStatus) -> router.core.physics.models.SimulationStatus
 ```
 
 Status mais restritivo entre varios trechos (pior caso).
@@ -470,7 +472,7 @@ EFFORT_FEATURES_VERSION
 ### `EffortFeatures`
 
 ```python
-class EffortFeatures(duration_s: float, distance_m: float, average_speed_mps: float, mechanical_work_j: float, rider_work_j: float, mean_power_w: float, peak_power_w: float | None, power_variability: float | None, climbing_m: float, descending_m: float, elevation_coverage: float | None, observed_elevation_coverage: float | None, braking_energy_j: float, aero_loss_j: float, rolling_loss_j: float, battery_energy_j: float | None, metabolic_energy_j: float | None, result_status: SimulationStatus, used_min_speed_regularization: bool, elevation_uncertainty: ElevationUncertainty | None)
+class EffortFeatures(duration_s: float, distance_m: float, average_speed_mps: float, mechanical_work_j: float, rider_work_j: float, mean_power_w: float, peak_power_w: float | None, power_variability: float | None, climbing_m: float, descending_m: float, elevation_coverage: float | None, observed_elevation_coverage: float | None, braking_energy_j: float, aero_loss_j: float, rolling_loss_j: float, battery_energy_j: float | None, metabolic_energy_j: float | None, result_status: router.core.physics.models.SimulationStatus, used_min_speed_regularization: bool, elevation_uncertainty: router.core.physics.models.ElevationUncertainty | None)
 ```
 
 Caracteristicas de esforco de uma rota, derivadas da fisica.
@@ -478,7 +480,7 @@ Caracteristicas de esforco de uma rota, derivadas da fisica.
 ### `extract_effort_features`
 
 ```python
-extract_effort_features(path: TraversalPath) -> EffortFeatures
+extract_effort_features(path: router.core.physics.models.TraversalPath) -> router.core.physics.effort.EffortFeatures
 ```
 
 Extrai ``EffortFeatures`` de um resultado fisico de rota.
@@ -522,7 +524,7 @@ Estimativa de energia de um trecho, rota ou veiculo.
 ### `EnergyModel`
 
 ```python
-class EnergyModel(config: GenericEnergyConfig = <factory>, level: str = 'generic')
+class EnergyModel(config: router.core.physics.energy_model.GenericEnergyConfig = <factory>, level: str = 'generic')
 ```
 
 Converte energia mecanica em energia eletrica estimada.
@@ -562,7 +564,7 @@ Nivel de estimativa com parametros do veiculo informados.
 ### `assess_battery`
 
 ```python
-assess_battery(config: BatteryConfig, consumption_wh: float) -> BatteryFeasibility
+assess_battery(config: router.core.physics.energy_model.BatteryConfig, consumption_wh: float) -> router.core.physics.energy_model.BatteryFeasibility
 ```
 
 Avalia se a bateria cobre o consumo estimado respeitando a reserva.
@@ -616,7 +618,7 @@ Uma zona cardiaca: nome e intervalo explicito de bpm.
 ### `HeartRateZoneModel`
 
 ```python
-class HeartRateZoneModel(definition: str, version: str, zones: tuple[HeartRateZoneDefinition, ...])
+class HeartRateZoneModel(definition: str, version: str, zones: tuple[router.core.HeartRateZoneDefinition, ...])
 ```
 
 Modelo de zonas cardiacas com definicao e versao identificadas.
@@ -632,7 +634,7 @@ Parametros metabolicos explicitos, versionados e com proveniencia.
 ### `metabolic_energy_j`
 
 ```python
-metabolic_energy_j(rider_work_j: float, params: MetabolicParameters | None) -> float | None
+metabolic_energy_j(rider_work_j: float, params: router.core.MetabolicParameters | None) -> float | None
 ```
 
 Energia metabolica estimada, ou ``None`` sem parametros calibrados.
@@ -644,7 +646,7 @@ Contrato de previsão fisiológica — sempre identificada como estimativa (`sou
 ### `PhysiologicalPrediction`
 
 ```python
-class PhysiologicalPrediction(borg_scale: BorgScale, predicted_rpe: float | None, heart_rate_zone_distribution: dict[str, float] | None, model_version: str, status: PredictionStatus, confidence: float | None = None, confidence_method: str | None = None, heart_rate_zone_definition: str | None = None, prediction_interval_s: float | None = None, metabolic_energy_j: float | None = None, reason: str | None = None, missing_inputs: tuple[str, ...] = ())
+class PhysiologicalPrediction(borg_scale: router.core.BorgScale, predicted_rpe: float | None, heart_rate_zone_distribution: dict[str, float] | None, model_version: str, status: router.core.PredictionStatus, confidence: float | None = None, confidence_method: str | None = None, heart_rate_zone_definition: str | None = None, prediction_interval_s: float | None = None, metabolic_energy_j: float | None = None, reason: str | None = None, missing_inputs: tuple[str, ...] = ())
 ```
 
 Estimativa fisiologica identificada — nunca uma medicao.
@@ -690,7 +692,7 @@ Contrato minimo de um preditor fisiologico.
 ### `MetabolicEnergyPredictor`
 
 ```python
-class MetabolicEnergyPredictor(metabolic: MetabolicParameters, borg_scale: BorgScale = <BorgScale.RPE_6_20: '6-20'>)
+class MetabolicEnergyPredictor(metabolic: router.core.MetabolicParameters, borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>)
 ```
 
 Preditor que preenche **apenas** a energia metabolica.
@@ -698,7 +700,7 @@ Preditor que preenche **apenas** a energia metabolica.
 ### `UnavailablePredictor`
 
 ```python
-class UnavailablePredictor(borg_scale: BorgScale = <BorgScale.RPE_6_20: '6-20'>, model_version: str = 'unavailable')
+class UnavailablePredictor(borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, model_version: str = 'unavailable')
 ```
 
 Preditor padrao: declara explicitamente a ausencia de modelo calibrado.
@@ -706,7 +708,7 @@ Preditor padrao: declara explicitamente a ausencia de modelo calibrado.
 ### `predict_effort`
 
 ```python
-predict_effort(features: EffortFeatures, rider: RiderProfile | None = None, context: PredictionContext | None = None, *, predictor: EffortPredictor | None = None) -> PhysiologicalPrediction
+predict_effort(features: router.core.physics.effort.EffortFeatures, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None, *, predictor: router.core.prediction.ml.EffortPredictor | None = None) -> router.core.PhysiologicalPrediction
 ```
 
 Ponto de entrada guardado para a previsao de esforco.
@@ -726,7 +728,7 @@ Pesos do score normalizado. Devem somar 1.
 ### `DiversityConfig`
 
 ```python
-class DiversityConfig(metric: DiversityMetric = <DiversityMetric.SHARED_DISTANCE_RATIO: 'shared_distance_ratio'>, max_similarity: float = 0.7, fallback: DiversityFallback = <DiversityFallback.RELAX_THRESHOLD: 'relax_threshold'>, relaxation: DiversityRelaxation = <factory>)
+class DiversityConfig(metric: router.core.DiversityMetric = <DiversityMetric.SHARED_DISTANCE_RATIO: 'shared_distance_ratio'>, max_similarity: float = 0.7, fallback: router.core.DiversityFallback = <DiversityFallback.RELAX_THRESHOLD: 'relax_threshold'>, relaxation: router.core.DiversityRelaxation = <factory>)
 ```
 
 Configuracao de diversidade do perfil.
@@ -880,7 +882,7 @@ Implementacao central: le as metricas ja acumuladas na rota.
 ### `RouteProfile`
 
 ```python
-class RouteProfile(id: str, objectives: tuple[Objective, ...], ranking_strategy: RankingStrategy, title: str = '', tolerance: RankingTolerance | None = None, weights: BalancedWeights | None = None, references: ScoreReference | None = None, diversity: DiversityConfig = <factory>)
+class RouteProfile(id: str, objectives: tuple[router.core.Objective, ...], ranking_strategy: router.core.RankingStrategy, title: str = '', tolerance: router.core.RankingTolerance | None = None, weights: router.core.BalancedWeights | None = None, references: router.core.ScoreReference | None = None, diversity: router.core.DiversityConfig = <factory>)
 ```
 
 Preferencia de rota: objetivos Pareto, ranking e diversidade.
@@ -896,7 +898,7 @@ Referencias fixas para o score normalizado do perfil equilibrado.
 ### `SearchProfile`
 
 ```python
-class SearchProfile(id: str, objectives: tuple[Objective, ...])
+class SearchProfile(id: str, objectives: tuple[router.core.Objective, ...])
 ```
 
 Perfil de busca: identificador + objetivos ordenados.
@@ -920,7 +922,7 @@ Dominancia com tolerancia ``epsilon`` por objetivo.
 ### `objectives_for`
 
 ```python
-objectives_for(profile: str) -> ObjectiveSet
+objectives_for(profile: str) -> router.core.ObjectiveSet
 ```
 
 Devolve o ``ObjectiveSet`` de um perfil, normalizando o nome.
@@ -928,7 +930,7 @@ Devolve o ``ObjectiveSet`` de um perfil, normalizando o nome.
 ### `profile_for`
 
 ```python
-profile_for(profile: str) -> SearchProfile
+profile_for(profile: str) -> router.core.SearchProfile
 ```
 
 Devolve o ``SearchProfile`` de um perfil, normalizando o nome.
@@ -936,7 +938,7 @@ Devolve o ``SearchProfile`` de um perfil, normalizando o nome.
 ### `route_profile_for`
 
 ```python
-route_profile_for(profile: str) -> RouteProfile
+route_profile_for(profile: str) -> router.core.RouteProfile
 ```
 
 Devolve o ``RouteProfile`` de um id, normalizando o nome.
@@ -948,7 +950,7 @@ Nucleo do A* multiobjetivo: estado, dominancia, fronteira Pareto, fila lexicogra
 ### `FrontierManager`
 
 ```python
-class FrontierManager(dominance: Dominance, *, max_labels_per_key: int | None = None, on_discard: collections.abc.Callable[[Any], None] | None = None)
+class FrontierManager(dominance: router.core.Dominance, *, max_labels_per_key: int | None = None, on_discard: collections.abc.Callable[[Any], None] | None = None)
 ```
 
 Fronteiras nao dominadas por chave de estado fisico.
@@ -956,7 +958,7 @@ Fronteiras nao dominadas por chave de estado fisico.
 ### `FrontierMap`
 
 ```python
-class FrontierMap(objectives: ObjectiveSet, *, epsilon: float = 0.0, max_labels_per_node: int | None = None, key: collections.abc.Callable[[Any], collections.abc.Sequence[float]] | None = None, on_discard: collections.abc.Callable[[Any], None] | None = None)
+class FrontierMap(objectives: router.core.ObjectiveSet, *, epsilon: float = 0.0, max_labels_per_node: int | None = None, key: collections.abc.Callable[[Any], collections.abc.Sequence[float]] | None = None, on_discard: collections.abc.Callable[[Any], None] | None = None)
 ```
 
 Fronteiras Pareto separadas por chave.
@@ -964,7 +966,7 @@ Fronteiras Pareto separadas por chave.
 ### `Heuristic`
 
 ```python
-class Heuristic(graph: RoutingGraph, *, max_speed_mps: float | None = 22.0)
+class Heuristic(graph: router.core.data.RoutingGraph, *, max_speed_mps: float | None = 22.0)
 ```
 
 Heuristica geometrica admissivel, independente de perfil.
@@ -988,7 +990,7 @@ Fila de prioridade ordenada por um vetor de prioridade.
 ### `MultiObjectiveAStar`
 
 ```python
-class MultiObjectiveAStar(graph: RoutingGraph, traversal: TraversalModel, profile: SearchProfile | str, *, heuristic: Heuristic | None = None, dominance: Dominance | None = None, config: SearchConfig | None = None, initial_speed_mps: float = 0.0, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>))
+class MultiObjectiveAStar(graph: router.core.data.RoutingGraph, traversal: router.core.TraversalModel, profile: router.core.SearchProfile | str, *, heuristic: router.core.Heuristic | None = None, dominance: router.core.Dominance | None = None, config: router.core.SearchConfig | None = None, initial_speed_mps: float = 0.0, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>))
 ```
 
 Busca Pareto por perfil sobre um grafo finito.
@@ -996,7 +998,7 @@ Busca Pareto por perfil sobre um grafo finito.
 ### `ParetoFrontier`
 
 ```python
-class ParetoFrontier(objectives: ObjectiveSet, *, key: collections.abc.Callable[[Any], collections.abc.Sequence[float]] | None = None, epsilon: float = 0.0, max_size: int | None = None, on_discard: collections.abc.Callable[[Any], None] | None = None)
+class ParetoFrontier(objectives: router.core.ObjectiveSet, *, key: collections.abc.Callable[[Any], collections.abc.Sequence[float]] | None = None, epsilon: float = 0.0, max_size: int | None = None, on_discard: collections.abc.Callable[[Any], None] | None = None)
 ```
 
 Colecao de itens nao dominados segundo um ``ObjectiveSet``.
@@ -1012,7 +1014,7 @@ Estado fisico necessario para a proxima travessia.
 ### `PhysicalTraversalModel`
 
 ```python
-class PhysicalTraversalModel(traversal: PhysicalTraversal, cyclist: CyclistModel, bicycle: BicycleModel, environment: Environment | None = None, power_w: float | None = None)
+class PhysicalTraversalModel(traversal: router.core.physics.traversal.PhysicalTraversal, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, environment: router.core.physics.environment.Environment | None = None, power_w: float | None = None)
 ```
 
 Liga ``PhysicalTraversal`` aos modelos de ciclista, bicicleta e ambiente.
@@ -1028,7 +1030,7 @@ Parametros de execucao da busca.
 ### `SearchResult`
 
 ```python
-class SearchResult(origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: SearchProfile, labels: tuple[SearchState, ...], expanded: int = 0, generated: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0)
+class SearchResult(origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: router.core.SearchProfile, labels: tuple[router.core.SearchState, ...], expanded: int = 0, generated: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0)
 ```
 
 Fronteira Pareto de destino devolvida por ``MultiObjectiveAStar``.
@@ -1036,7 +1038,7 @@ Fronteira Pareto de destino devolvida por ``MultiObjectiveAStar``.
 ### `SearchState`
 
 ```python
-class SearchState(node_id: collections.abc.Hashable, physical_state: PhysicalState, time_s: float = 0.0, distance_m: float = 0.0, ascent_m: float = 0.0, descent_m: float = 0.0, energy_j: float = 0.0, parent: 'SearchState | None' = None, incoming_arc_id: str | None = None, label_id: int = 0, active: bool = True, result_status: SimulationStatus = <SimulationStatus.VALID: 'valid'>, elevation_uncertainty: 'ElevationUncertainty | None' = None, used_min_speed_regularization: bool = False, stalled: bool = False, dismount_used: bool = False)
+class SearchState(node_id: collections.abc.Hashable, physical_state: router.core.PhysicalState, time_s: float = 0.0, distance_m: float = 0.0, ascent_m: float = 0.0, descent_m: float = 0.0, energy_j: float = 0.0, parent: 'SearchState | None' = None, incoming_arc_id: str | None = None, label_id: int = 0, active: bool = True, result_status: router.core.physics.models.SimulationStatus = <SimulationStatus.VALID: 'valid'>, elevation_uncertainty: 'ElevationUncertainty | None' = None, used_min_speed_regularization: bool = False, stalled: bool = False, dismount_used: bool = False)
 ```
 
 Label de busca: metricas acumuladas + estado fisico + reconstrucao.
@@ -1044,7 +1046,7 @@ Label de busca: metricas acumuladas + estado fisico + reconstrucao.
 ### `SpeedBucketDominance`
 
 ```python
-class SpeedBucketDominance(objectives: ObjectiveSet, *, speed_step_mps: float = 0.5, arrival_class_nodes: collections.abc.Iterable[collections.abc.Hashable] | None = None)
+class SpeedBucketDominance(objectives: router.core.ObjectiveSet, *, speed_step_mps: float = 0.5, arrival_class_nodes: collections.abc.Iterable[collections.abc.Hashable] | None = None)
 ```
 
 Dominancia por objetivos, somente dentro do mesmo no e bucket.
@@ -1068,7 +1070,7 @@ Sentinela de velocidade inicial desconhecida na busca.
 ### `advance_state`
 
 ```python
-advance_state(current: SearchState, arc: Arc, result: TraversalResult, *, mass_kg: float, label_id: int) -> SearchState
+advance_state(current: router.core.SearchState, arc: router.core.data.Arc, result: router.core.physics.models.TraversalResult, *, mass_kg: float, label_id: int) -> router.core.SearchState
 ```
 
 Acumula a travessia de ``arc`` em uma nova label.
@@ -1076,7 +1078,7 @@ Acumula a travessia de ``arc`` em uma nova label.
 ### `initial_state`
 
 ```python
-initial_state(node_id: collections.abc.Hashable, mass_kg: float, initial_speed_mps: float = 0.0, *, label_id: int = 0) -> SearchState
+initial_state(node_id: collections.abc.Hashable, mass_kg: float, initial_speed_mps: float = 0.0, *, label_id: int = 0) -> router.core.SearchState
 ```
 
 Label inicial na origem, sem custo acumulado.
@@ -1084,7 +1086,7 @@ Label inicial na origem, sem custo acumulado.
 ### `model_max_speed`
 
 ```python
-model_max_speed(traversal: TraversalModel) -> float | None | _UnknownSpeedSentinel
+model_max_speed(traversal: router.core.TraversalModel) -> float | None | router.core._UnknownSpeedSentinel
 ```
 
 Teto de velocidade **declarado** pelo modelo, se houver.
@@ -1092,7 +1094,7 @@ Teto de velocidade **declarado** pelo modelo, se houver.
 ### `route_arcs`
 
 ```python
-route_arcs(state: SearchState) -> list[str | None]
+route_arcs(state: router.core.SearchState) -> list[str | None]
 ```
 
 Reconstroi a sequencia de arcos da origem ate ``state``.
@@ -1112,7 +1114,7 @@ Erro do estimador contra o simulador para um arco.
 ### `ComparisonReport`
 
 ```python
-class ComparisonReport(arcs: tuple[ArcEstimateError, ...], max_time_rel_error: float | None, mean_time_rel_error: float | None, max_energy_rel_error: float | None, mean_energy_rel_error: float | None, max_final_speed_abs_error: float, reference_steps: int, estimate_steps: int)
+class ComparisonReport(arcs: tuple[router.core.ArcEstimateError, ...], max_time_rel_error: float | None, mean_time_rel_error: float | None, max_energy_rel_error: float | None, mean_energy_rel_error: float | None, max_final_speed_abs_error: float, reference_steps: int, estimate_steps: int)
 ```
 
 Relatorio agregado estimador x simulador.
@@ -1128,7 +1130,7 @@ Impacto de uma ordenacao alternativa sobre **as mesmas rotas**.
 ### `SearchRankingComparison`
 
 ```python
-class SearchRankingComparison(profile_id: str, ranking: RankingComparison, same_route_set: bool, same_top_route: bool, reference_expanded: int, estimate_expanded: int, reference_arc_sequences: tuple[tuple[str | None, ...], ...], estimate_arc_sequences: tuple[tuple[str | None, ...], ...])
+class SearchRankingComparison(profile_id: str, ranking: router.core.RankingComparison, same_route_set: bool, same_top_route: bool, reference_expanded: int, estimate_expanded: int, reference_arc_sequences: tuple[tuple[str | None, ...], ...], estimate_arc_sequences: tuple[tuple[str | None, ...], ...])
 ```
 
 Impacto do estimador sobre a **fronteira de busca** de um perfil.
@@ -1136,7 +1138,7 @@ Impacto do estimador sobre a **fronteira de busca** de um perfil.
 ### `SteadyStateTraversalModel`
 
 ```python
-class SteadyStateTraversalModel(cyclist: CyclistModel, bicycle: BicycleModel, environment: Environment | None = None, power_w: float | None = None, require_elevation: bool = False)
+class SteadyStateTraversalModel(cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, environment: router.core.physics.environment.Environment | None = None, power_w: float | None = None, require_elevation: bool = False)
 ```
 
 ``TraversalModel`` aproximado por equilibrio (uso em busca).
@@ -1144,7 +1146,7 @@ class SteadyStateTraversalModel(cyclist: CyclistModel, bicycle: BicycleModel, en
 ### `compare_rankings`
 
 ```python
-compare_rankings(reference: list[tuple[collections.abc.Hashable, tuple[float, ...]]], estimate: list[tuple[collections.abc.Hashable, tuple[float, ...]]], *, tolerance: float = 1e-06) -> RankingComparison
+compare_rankings(reference: list[tuple[collections.abc.Hashable, tuple[float, ...]]], estimate: list[tuple[collections.abc.Hashable, tuple[float, ...]]], *, tolerance: float = 1e-06) -> router.core.RankingComparison
 ```
 
 Compara duas ordenacoes de rotas por **chave** e por **valor**.
@@ -1152,7 +1154,7 @@ Compara duas ordenacoes de rotas por **chave** e por **valor**.
 ### `compare_search_rankings`
 
 ```python
-compare_search_rankings(graph: RoutingGraph, origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: SearchProfile | str, cyclist: CyclistModel, bicycle: BicycleModel, *, initial_speed_mps: float = 0.0, environment: Environment | None = None, power_w: float | None = None, reference_step_m: float = 5.0, tolerance: float = 1e-06) -> SearchRankingComparison
+compare_search_rankings(graph: router.core.data.RoutingGraph, origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: router.core.SearchProfile | str, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, *, initial_speed_mps: float = 0.0, environment: router.core.physics.environment.Environment | None = None, power_w: float | None = None, reference_step_m: float = 5.0, tolerance: float = 1e-06) -> router.core.SearchRankingComparison
 ```
 
 Compara a fronteira de busca do simulador completo e do estimador.
@@ -1160,7 +1162,7 @@ Compara a fronteira de busca do simulador completo e do estimador.
 ### `compare_traversals`
 
 ```python
-compare_traversals(arcs: list[Arc], cyclist: CyclistModel, bicycle: BicycleModel, *, initial_state: SimulationState | None = None, environment: Environment | None = None, power_w: float | None = None, reference_step_m: float = 5.0) -> ComparisonReport
+compare_traversals(arcs: list[router.core.data.Arc], cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, *, initial_state: router.core.physics.models.SimulationState | None = None, environment: router.core.physics.environment.Environment | None = None, power_w: float | None = None, reference_step_m: float = 5.0) -> router.core.ComparisonReport
 ```
 
 Compara o simulador completo e o estimador arco a arco.
@@ -1168,7 +1170,7 @@ Compara o simulador completo e o estimador arco a arco.
 ### `estimate_arc`
 
 ```python
-estimate_arc(arc: Arc, cyclist: CyclistModel, bicycle: BicycleModel, initial_state: SimulationState | None = None, environment: Environment | None = None, power_w: float | None = None, *, require_elevation: bool = False) -> TraversalResult
+estimate_arc(arc: router.core.data.Arc, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, initial_state: router.core.physics.models.SimulationState | None = None, environment: router.core.physics.environment.Environment | None = None, power_w: float | None = None, *, require_elevation: bool = False) -> router.core.physics.models.TraversalResult
 ```
 
 Travessia **aproximada** de ``arc`` por equilibrio de velocidade.
@@ -1180,7 +1182,7 @@ Contrato de circulacao (ADR-026): veredito tri-estado (`ALLOW`/`FORBID`/`UNKNOWN
 ### `CirculationPolicy`
 
 ```python
-class CirculationPolicy(unresolved_verdict: Verdict = <Verdict.FORBID: 'forbid'>)
+class CirculationPolicy(unresolved_verdict: router.core.Verdict = <Verdict.FORBID: 'forbid'>)
 ```
 
 Politica **declarativa** para vereditos ``UNKNOWN`` (brutos).
@@ -1188,7 +1190,7 @@ Politica **declarativa** para vereditos ``UNKNOWN`` (brutos).
 ### `Decision`
 
 ```python
-class Decision(verdict: Verdict, reason: DecisionReason, raw_verdict: Verdict = <Verdict.ALLOW: 'allow'>, legality_asserted: bool = False, dismount: bool = False, restriction_id: str | None = None)
+class Decision(verdict: router.core.Verdict, reason: router.core.DecisionReason, raw_verdict: router.core.Verdict = <Verdict.ALLOW: 'allow'>, legality_asserted: bool = False, dismount: bool = False, restriction_id: str | None = None)
 ```
 
 Resultado de uma consulta de circulacao.
@@ -1206,7 +1208,7 @@ Valores: `NO_RULE`, `EXPLICIT_FORBIDDEN`, `EXPLICIT_ALLOWED`, `CONDITIONAL_FORBI
 ### `RouteValidation`
 
 ```python
-class RouteValidation(compliant: bool, steps: tuple[Decision, ...], violations: tuple[Decision, ...], unresolved: tuple[Decision, ...], dismount_used: bool)
+class RouteValidation(compliant: bool, steps: tuple[router.core.Decision, ...], violations: tuple[router.core.Decision, ...], unresolved: tuple[router.core.Decision, ...], dismount_used: bool)
 ```
 
 Resultado da validacao de uma rota contra o contrato de circulacao.
@@ -1224,7 +1226,7 @@ Valores: `ALLOW`, `FORBID`, `UNKNOWN`.
 ### `arc_decision`
 
 ```python
-arc_decision(arc: Arc, *, evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> Decision
+arc_decision(arc: router.core.data.Arc, *, evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.Decision
 ```
 
 Decide o acesso de ``arc``.
@@ -1232,7 +1234,7 @@ Decide o acesso de ``arc``.
 ### `constrained_nodes`
 
 ```python
-constrained_nodes(graph: RoutingGraph) -> frozenset[collections.abc.Hashable]
+constrained_nodes(graph: router.core.data.RoutingGraph) -> frozenset[collections.abc.Hashable]
 ```
 
 Nos em que a legalidade da proxima conversao depende do arco de chegada.
@@ -1240,7 +1242,7 @@ Nos em que a legalidade da proxima conversao depende do arco de chegada.
 ### `transition_decision`
 
 ```python
-transition_decision(graph: RoutingGraph, from_arc: Arc, to_arc: Arc, node_id: collections.abc.Hashable | None = None, *, history_way_ids: collections.abc.Sequence[int | None] = (), evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> Decision
+transition_decision(graph: router.core.data.RoutingGraph, from_arc: router.core.data.Arc, to_arc: router.core.data.Arc, node_id: collections.abc.Hashable | None = None, *, history_way_ids: collections.abc.Sequence[int | None] = (), evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.Decision
 ```
 
 Decide a conversao ``from_arc -> to_arc`` no no de transicao.
@@ -1248,7 +1250,7 @@ Decide a conversao ``from_arc -> to_arc`` no no de transicao.
 ### `validate_route`
 
 ```python
-validate_route(graph: RoutingGraph, arc_ids: collections.abc.Sequence[str], *, evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> RouteValidation
+validate_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str], *, evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.RouteValidation
 ```
 
 Valida uma sequencia de arcos direcionados contra o contrato.
@@ -1257,10 +1259,10 @@ Valida uma sequencia de arcos direcionados contra o contrato.
 
 Reconstrucao da fronteira em rotas e avaliacao de objetivos.
 
-### `Route`
+### `SearchRoute`
 
 ```python
-class Route(arc_ids: tuple[str | None, ...], time_s: float, distance_m: float, ascent_m: float, descent_m: float, energy_j: float, label_id: int = 0, arc_lengths: tuple[float, ...] = (), result_status: SimulationStatus = <SimulationStatus.VALID: 'valid'>, elevation_uncertainty: ElevationUncertainty | None = None, used_min_speed_regularization: bool = False, stalled: bool = False, dismount_used: bool = False)
+class SearchRoute(arc_ids: tuple[str | None, ...], time_s: float, distance_m: float, ascent_m: float, descent_m: float, energy_j: float, label_id: int = 0, arc_lengths: tuple[float, ...] = (), result_status: router.core.physics.models.SimulationStatus = <SimulationStatus.VALID: 'valid'>, elevation_uncertainty: router.core.physics.models.ElevationUncertainty | None = None, used_min_speed_regularization: bool = False, stalled: bool = False, dismount_used: bool = False)
 ```
 
 Rota reconstruida: arcos direcionados, comprimentos e metricas.
@@ -1268,7 +1270,7 @@ Rota reconstruida: arcos direcionados, comprimentos e metricas.
 ### `evaluate`
 
 ```python
-evaluate(source: MetricSource, evaluator: ObjectiveEvaluator | None = None) -> ObjectiveValues
+evaluate(source: router.core.MetricSource, evaluator: router.core.ObjectiveEvaluator | None = None) -> router.core.ObjectiveValues
 ```
 
 Atalho: avalia ``source`` com o avaliador dado (ou o central).
@@ -1276,7 +1278,7 @@ Atalho: avalia ``source`` com o avaliador dado (ou o central).
 ### `evaluate_metrics`
 
 ```python
-evaluate_metrics(metrics: MetricSource, evaluator: ObjectiveEvaluator | None = None) -> ObjectiveValues
+evaluate_metrics(metrics: router.core.MetricSource, evaluator: router.core.ObjectiveEvaluator | None = None) -> router.core.ObjectiveValues
 ```
 
 Compatibilidade: avalia um conjunto de metricas.
@@ -1284,7 +1286,7 @@ Compatibilidade: avalia um conjunto de metricas.
 ### `evaluate_route`
 
 ```python
-evaluate_route(route: MetricSource, evaluator: ObjectiveEvaluator | None = None) -> ObjectiveValues
+evaluate_route(route: router.core.MetricSource, evaluator: router.core.ObjectiveEvaluator | None = None) -> router.core.ObjectiveValues
 ```
 
 Compatibilidade: avalia uma rota (mesmo que ``evaluate``).
@@ -1292,15 +1294,15 @@ Compatibilidade: avalia uma rota (mesmo que ``evaluate``).
 ### `route_from_state`
 
 ```python
-route_from_state(state: SearchState) -> Route
+route_from_state(state: router.core.SearchState) -> router.core.SearchRoute
 ```
 
-Reconstroi uma ``Route`` de uma label de destino.
+Reconstroi uma ``SearchRoute`` de uma label de destino.
 
 ### `routes_from_result`
 
 ```python
-routes_from_result(result: SearchResult) -> tuple[Route, ...]
+routes_from_result(result: router.core.SearchResult) -> tuple[router.core.SearchRoute, ...]
 ```
 
 Converte a fronteira de destino de um ``SearchResult`` em rotas.
@@ -1330,7 +1332,7 @@ Valores: `PATH`, `METRICS`, `PATH_AND_METRICS`.
 ### `ProfileRanker`
 
 ```python
-class ProfileRanker(evaluator: ObjectiveEvaluator | None = None)
+class ProfileRanker(evaluator: router.core.ObjectiveEvaluator | None = None)
 ```
 
 Componente de ranking: ordena candidatas segundo o perfil.
@@ -1338,7 +1340,7 @@ Componente de ranking: ordena candidatas segundo o perfil.
 ### `RankedCandidate`
 
 ```python
-class RankedCandidate(candidate: RouteCandidate, rank: int, profile_score: float | None = None)
+class RankedCandidate(candidate: router.core.RouteCandidate, rank: int, profile_score: float | None = None)
 ```
 
 Candidata ordenada: posicao, candidata e score (None se lexicografico).
@@ -1346,7 +1348,7 @@ Candidata ordenada: posicao, candidata e score (None se lexicografico).
 ### `RankedRoute`
 
 ```python
-class RankedRoute(route: Route, rank: int, profile_score: float | None = None)
+class RankedRoute(route: router.core.SearchRoute, rank: int, profile_score: float | None = None)
 ```
 
 Compatibilidade: rota ordenada (sem a identidade da candidata).
@@ -1354,7 +1356,7 @@ Compatibilidade: rota ordenada (sem a identidade da candidata).
 ### `RouteCandidate`
 
 ```python
-class RouteCandidate(route_id: str, route: Route, metrics: CandidateMetrics)
+class RouteCandidate(route_id: str, route: router.core.SearchRoute, metrics: router.core.CandidateMetrics)
 ```
 
 Alternativa candidata: identidade + rota reconstruida + metricas.
@@ -1362,7 +1364,7 @@ Alternativa candidata: identidade + rota reconstruida + metricas.
 ### `RouteCandidatePool`
 
 ```python
-class RouteCandidatePool(candidates: tuple[RouteCandidate, ...] = (), dropped_duplicates: int = 0)
+class RouteCandidatePool(candidates: tuple[router.core.RouteCandidate, ...] = (), dropped_duplicates: int = 0)
 ```
 
 Conjunto de candidatas nao dominadas, ja deduplicado.
@@ -1370,7 +1372,7 @@ Conjunto de candidatas nao dominadas, ja deduplicado.
 ### `RouteDeduplicator`
 
 ```python
-class RouteDeduplicator(mode: DeduplicationMode = <DeduplicationMode.PATH: 'path'>, metric_quantum: float = 0.001)
+class RouteDeduplicator(mode: router.core.DeduplicationMode = <DeduplicationMode.PATH: 'path'>, metric_quantum: float = 0.001)
 ```
 
 Remove candidatas repetidas mantendo a primeira ocorrencia.
@@ -1378,7 +1380,7 @@ Remove candidatas repetidas mantendo a primeira ocorrencia.
 ### `RouteDiversity`
 
 ```python
-class RouteDiversity(metric: DiversityMetric = <DiversityMetric.SHARED_DISTANCE_RATIO: 'shared_distance_ratio'>, threshold: float = 0.7)
+class RouteDiversity(metric: router.core.DiversityMetric = <DiversityMetric.SHARED_DISTANCE_RATIO: 'shared_distance_ratio'>, threshold: float = 0.7)
 ```
 
 Componente de diversidade: metrica + limiar configurados juntos.
@@ -1386,7 +1388,7 @@ Componente de diversidade: metrica + limiar configurados juntos.
 ### `arc_jaccard`
 
 ```python
-arc_jaccard(a: Route, b: Route) -> float
+arc_jaccard(a: router.core.SearchRoute, b: router.core.SearchRoute) -> float
 ```
 
 Similaridade de Jaccard sobre os arcos direcionados.
@@ -1394,7 +1396,7 @@ Similaridade de Jaccard sobre os arcos direcionados.
 ### `is_too_similar`
 
 ```python
-is_too_similar(a: Route, b: Route, metric: DiversityMetric, threshold: float) -> bool
+is_too_similar(a: router.core.SearchRoute, b: router.core.SearchRoute, metric: router.core.DiversityMetric, threshold: float) -> bool
 ```
 
 True quando a semelhanca excede ``threshold``.
@@ -1402,7 +1404,7 @@ True quando a semelhanca excede ``threshold``.
 ### `order_routes`
 
 ```python
-order_routes(routes: collections.abc.Iterable[Route], profile: RouteProfile, *, evaluator: ObjectiveEvaluator | None = None) -> list[Route]
+order_routes(routes: collections.abc.Iterable[router.core.SearchRoute], profile: router.core.RouteProfile, *, evaluator: router.core.ObjectiveEvaluator | None = None) -> list[router.core.SearchRoute]
 ```
 
 Atalho: apenas as rotas, na ordem de preferencia do perfil.
@@ -1410,7 +1412,7 @@ Atalho: apenas as rotas, na ordem de preferencia do perfil.
 ### `profile_score`
 
 ```python
-profile_score(route: Route, profile: RouteProfile, *, evaluator: ObjectiveEvaluator | None = None) -> float | None
+profile_score(route: router.core.SearchRoute, profile: router.core.RouteProfile, *, evaluator: router.core.ObjectiveEvaluator | None = None) -> float | None
 ```
 
 Score escalar do perfil para uma rota (None se lexicografico).
@@ -1418,7 +1420,7 @@ Score escalar do perfil para uma rota (None se lexicografico).
 ### `rank_candidates`
 
 ```python
-rank_candidates(candidates: collections.abc.Iterable[RouteCandidate], profile: RouteProfile, *, evaluator: ObjectiveEvaluator | None = None) -> list[RankedCandidate]
+rank_candidates(candidates: collections.abc.Iterable[router.core.RouteCandidate], profile: router.core.RouteProfile, *, evaluator: router.core.ObjectiveEvaluator | None = None) -> list[router.core.RankedCandidate]
 ```
 
 Ordena candidatas pela preferencia do perfil (rank 0 = melhor).
@@ -1426,7 +1428,7 @@ Ordena candidatas pela preferencia do perfil (rank 0 = melhor).
 ### `rank_routes`
 
 ```python
-rank_routes(routes: collections.abc.Iterable[Route], profile: RouteProfile, *, evaluator: ObjectiveEvaluator | None = None) -> list[RankedRoute]
+rank_routes(routes: collections.abc.Iterable[router.core.SearchRoute], profile: router.core.RouteProfile, *, evaluator: router.core.ObjectiveEvaluator | None = None) -> list[router.core.RankedRoute]
 ```
 
 Ordena rotas pela preferencia do perfil (rank 0 = melhor).
@@ -1434,7 +1436,7 @@ Ordena rotas pela preferencia do perfil (rank 0 = melhor).
 ### `route_diversity`
 
 ```python
-route_diversity(a: Route, b: Route, metric: DiversityMetric) -> float
+route_diversity(a: router.core.SearchRoute, b: router.core.SearchRoute, metric: router.core.DiversityMetric) -> float
 ```
 
 Semelhanca entre ``a`` e ``b`` segundo ``metric`` (0 = distintas).
@@ -1442,7 +1444,7 @@ Semelhanca entre ``a`` e ``b`` segundo ``metric`` (0 = distintas).
 ### `route_similarity`
 
 ```python
-route_similarity(a: Route, b: Route) -> float
+route_similarity(a: router.core.SearchRoute, b: router.core.SearchRoute) -> float
 ```
 
 Alias de ``arc_jaccard`` (compatibilidade com a API anterior).
@@ -1450,7 +1452,7 @@ Alias de ``arc_jaccard`` (compatibilidade com a API anterior).
 ### `shared_distance_ratio`
 
 ```python
-shared_distance_ratio(a: Route, b: Route) -> float
+shared_distance_ratio(a: router.core.SearchRoute, b: router.core.SearchRoute) -> float
 ```
 
 Proporcao de distancia compartilhada, em ``[0, 1]``.
@@ -1462,7 +1464,7 @@ Escolha das N rotas (com fallback de diversidade), explicacao e o contrato de al
 ### `ProfileSearchRequest`
 
 ```python
-class ProfileSearchRequest(origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: RouteProfile, max_routes: int = 3, initial_speed_mps: float = 0.0, energy_model: EnergyModel | None = None, battery: BatteryConfig | None = None)
+class ProfileSearchRequest(origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: router.core.RouteProfile, max_routes: int = 3, initial_speed_mps: float = 0.0, energy_model: router.core.physics.energy_model.EnergyModel | None = None, battery: router.core.physics.energy_model.BatteryConfig | None = None)
 ```
 
 Pedido de busca para um perfil concreto.
@@ -1470,7 +1472,7 @@ Pedido de busca para um perfil concreto.
 ### `ProfileSearchResponse`
 
 ```python
-class ProfileSearchResponse(profile_id: str, routes: tuple[SelectedRoute, ...], pareto_route_count: int, selection: SelectionMetadata, explanations: tuple[RouteExplanation, ...] = (), energy: tuple[RouteEnergyEstimate, ...] = (), reached: bool = False, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0)
+class ProfileSearchResponse(profile_id: str, routes: tuple[router.core.SelectedRoute, ...], pareto_route_count: int, selection: router.core.SelectionMetadata, explanations: tuple[router.core.RouteExplanation, ...] = (), energy: tuple[router.core.RouteEnergyEstimate, ...] = (), reached: bool = False, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0)
 ```
 
 Resposta: rotas selecionadas + explicacoes alinhadas por indice.
@@ -1486,7 +1488,7 @@ Justificativa textual de uma rota selecionada.
 ### `RouteExplainer`
 
 ```python
-class RouteExplainer(evaluator: ObjectiveEvaluator | None = None)
+class RouteExplainer(evaluator: router.core.ObjectiveEvaluator | None = None)
 ```
 
 Produz explicacoes derivadas das metricas e do conjunto comparado.
@@ -1494,7 +1496,7 @@ Produz explicacoes derivadas das metricas e do conjunto comparado.
 ### `RouteSelectionRequest`
 
 ```python
-class RouteSelectionRequest(max_routes: int, min_routes: int = 1, diversity: DiversityConfig | None = None)
+class RouteSelectionRequest(max_routes: int, min_routes: int = 1, diversity: router.core.DiversityConfig | None = None)
 ```
 
 Como escolher as N rotas (limite de apresentacao).
@@ -1502,7 +1504,7 @@ Como escolher as N rotas (limite de apresentacao).
 ### `RouteSelectionResult`
 
 ```python
-class RouteSelectionResult(selected: tuple[SelectedRoute, ...], pareto_route_count: int, rejected_as_similar_count: int, diversity_relaxed: bool, threshold_used: float | None = None, dropped_duplicates: int = 0)
+class RouteSelectionResult(selected: tuple[router.core.SelectedRoute, ...], pareto_route_count: int, rejected_as_similar_count: int, diversity_relaxed: bool, threshold_used: float | None = None, dropped_duplicates: int = 0)
 ```
 
 Resultado da selecao.
@@ -1510,7 +1512,7 @@ Resultado da selecao.
 ### `RouteSelector`
 
 ```python
-class RouteSelector(evaluator: ObjectiveEvaluator | None = None)
+class RouteSelector(evaluator: router.core.ObjectiveEvaluator | None = None)
 ```
 
 Componente de selecao: escolhe ate N candidatas diversas.
@@ -1518,7 +1520,7 @@ Componente de selecao: escolhe ate N candidatas diversas.
 ### `SelectedRoute`
 
 ```python
-class SelectedRoute(candidate: RouteCandidate, rank: int, profile_score: float | None, selection_reason: SelectionReason)
+class SelectedRoute(candidate: router.core.RouteCandidate, rank: int, profile_score: float | None, selection_reason: router.core.SelectionReason)
 ```
 
 Candidata escolhida: posicao, score do perfil e razao da escolha.
@@ -1526,7 +1528,7 @@ Candidata escolhida: posicao, score do perfil e razao da escolha.
 ### `SelectionConfig`
 
 ```python
-class SelectionConfig(max_routes: int, min_routes: int = 1, diversity: DiversityConfig | None = None)
+class SelectionConfig(max_routes: int, min_routes: int = 1, diversity: router.core.DiversityConfig | None = None)
 ```
 
 Como escolher as N rotas (limite de apresentacao).
@@ -1542,7 +1544,7 @@ Metadados da selecao apresentados junto com a resposta.
 ### `SelectionReason`
 
 ```python
-class SelectionReason(primary_objective: Objective, primary_value: float, diversity_accepted: bool)
+class SelectionReason(primary_objective: router.core.Objective, primary_value: float, diversity_accepted: bool)
 ```
 
 Por que a rota entrou: objetivo primario e aceite de diversidade.
@@ -1550,7 +1552,7 @@ Por que a rota entrou: objetivo primario e aceite de diversidade.
 ### `SelectionResult`
 
 ```python
-class SelectionResult(selected: tuple[SelectedRoute, ...], pareto_route_count: int, rejected_as_similar_count: int, diversity_relaxed: bool, threshold_used: float | None = None, dropped_duplicates: int = 0)
+class SelectionResult(selected: tuple[router.core.SelectedRoute, ...], pareto_route_count: int, rejected_as_similar_count: int, diversity_relaxed: bool, threshold_used: float | None = None, dropped_duplicates: int = 0)
 ```
 
 Resultado da selecao.
@@ -1558,7 +1560,7 @@ Resultado da selecao.
 ### `explain_route`
 
 ```python
-explain_route(route: Route, profile: RouteProfile, reason: SelectionReason, *, candidates: collections.abc.Iterable[Route] = (), evaluator: ObjectiveEvaluator | None = None) -> RouteExplanation
+explain_route(route: router.core.SearchRoute, profile: router.core.RouteProfile, reason: router.core.SelectionReason, *, candidates: collections.abc.Iterable[router.core.SearchRoute] = (), evaluator: router.core.ObjectiveEvaluator | None = None) -> router.core.RouteExplanation
 ```
 
 Atalho funcional para ``RouteExplainer().explain``.
@@ -1566,7 +1568,7 @@ Atalho funcional para ``RouteExplainer().explain``.
 ### `search_profile`
 
 ```python
-search_profile(graph: RoutingGraph, traversal: TraversalModel, request: ProfileSearchRequest, *, heuristic: Heuristic | None = None, search_config: SearchConfig | None = None, selection_config: SelectionConfig | None = None, deduplicator: RouteDeduplicator | None = None, explain: bool = True) -> ProfileSearchResponse
+search_profile(graph: router.core.data.RoutingGraph, traversal: router.core.TraversalModel, request: router.core.ProfileSearchRequest, *, heuristic: router.core.Heuristic | None = None, search_config: router.core.SearchConfig | None = None, selection_config: router.core.SelectionConfig | None = None, deduplicator: router.core.RouteDeduplicator | None = None, explain: bool = True) -> router.core.ProfileSearchResponse
 ```
 
 Executa busca + selecao para um ``ProfileSearchRequest``.
@@ -1574,7 +1576,7 @@ Executa busca + selecao para um ``ProfileSearchRequest``.
 ### `select_candidates`
 
 ```python
-select_candidates(candidates: collections.abc.Iterable[RouteCandidate], profile: RouteProfile, config: SelectionConfig | None = None, *, evaluator: ObjectiveEvaluator | None = None) -> SelectionResult
+select_candidates(candidates: collections.abc.Iterable[router.core.RouteCandidate], profile: router.core.RouteProfile, config: router.core.SelectionConfig | None = None, *, evaluator: router.core.ObjectiveEvaluator | None = None) -> router.core.SelectionResult
 ```
 
 Seleciona ate ``config.max_routes`` candidatas, em ordem de preferencia.
@@ -1590,7 +1592,7 @@ Atalho: forma o pool a partir de um ``SearchResult`` e seleciona.
 ### `select_routes`
 
 ```python
-select_routes(routes: collections.abc.Iterable[Route], profile: RouteProfile, config: SelectionConfig | None = None, *, evaluator: ObjectiveEvaluator | None = None, deduplicator: RouteDeduplicator | None = None) -> SelectionResult
+select_routes(routes: collections.abc.Iterable[router.core.SearchRoute], profile: router.core.RouteProfile, config: router.core.SelectionConfig | None = None, *, evaluator: router.core.ObjectiveEvaluator | None = None, deduplicator: router.core.RouteDeduplicator | None = None) -> router.core.SelectionResult
 ```
 
 Atalho: forma o pool de candidatas (com dedup) e seleciona.
@@ -1602,7 +1604,7 @@ Estimativa de energia eletrica de uma rota, alinhada as rotas selecionadas.
 ### `RouteEnergyEstimate`
 
 ```python
-class RouteEnergyEstimate(route_id: str, estimate: EnergyEstimate, battery: BatteryFeasibility | None = None)
+class RouteEnergyEstimate(route_id: str, estimate: router.core.physics.energy_model.EnergyEstimate, battery: router.core.physics.energy_model.BatteryFeasibility | None = None)
 ```
 
 Energia estimada de uma rota + viabilidade de bateria (opcional).
@@ -1610,7 +1612,7 @@ Energia estimada de uma rota + viabilidade de bateria (opcional).
 ### `estimate_route_energy`
 
 ```python
-estimate_route_energy(route: Route, model: EnergyModel | None = None, *, battery: BatteryConfig | None = None, route_id: str = '') -> RouteEnergyEstimate
+estimate_route_energy(route: router.core.SearchRoute, model: router.core.physics.energy_model.EnergyModel | None = None, *, battery: router.core.physics.energy_model.BatteryConfig | None = None, route_id: str = '') -> router.core.RouteEnergyEstimate
 ```
 
 Converte a energia mecanica de ``route`` em estimativa eletrica.
@@ -1618,7 +1620,7 @@ Converte a energia mecanica de ``route`` em estimativa eletrica.
 ### `estimate_routes_energy`
 
 ```python
-estimate_routes_energy(routes: collections.abc.Iterable[Route], model: EnergyModel | None = None, *, battery: BatteryConfig | None = None, route_ids: collections.abc.Iterable[str] | None = None) -> tuple[RouteEnergyEstimate, ...]
+estimate_routes_energy(routes: collections.abc.Iterable[router.core.SearchRoute], model: router.core.physics.energy_model.EnergyModel | None = None, *, battery: router.core.physics.energy_model.BatteryConfig | None = None, route_ids: collections.abc.Iterable[str] | None = None) -> tuple[router.core.RouteEnergyEstimate, ...]
 ```
 
 Estima a energia de varias rotas, alinhando ``route_ids`` por indice.
@@ -1640,7 +1642,7 @@ Valores: `PHYSIOLOGICAL`, `PHYSICAL_ONLY`, `REJECTED`.
 ### `RouteAssessment`
 
 ```python
-class RouteAssessment(arc_ids: tuple[str, ...], path: TraversalPath, features: EffortFeatures, prediction: PhysiologicalPrediction, circulation: RouteValidation, intensity: 'IntensityEstimate', energy: EnergyConsistency | None = None)
+class RouteAssessment(arc_ids: tuple[str, ...], path: router.core.physics.models.TraversalPath, features: router.core.physics.effort.EffortFeatures, prediction: router.core.PhysiologicalPrediction, circulation: router.core.RouteValidation, intensity: 'IntensityEstimate', energy: router.core.EnergyConsistency | None = None)
 ```
 
 Resultado da avaliacao fisica completa de uma rota.
@@ -1656,7 +1658,7 @@ Erro de **dados** na avaliacao de rota.
 ### `assess_candidate`
 
 ```python
-assess_candidate(graph: RoutingGraph, candidate: RouteCandidate, **kwargs) -> RouteAssessment
+assess_candidate(graph: router.core.data.RoutingGraph, candidate: router.core.RouteCandidate, **kwargs) -> router.core.RouteAssessment
 ```
 
 Avalia uma ``RouteCandidate`` (identidade + rota) pelo simulador completo.
@@ -1664,7 +1666,7 @@ Avalia uma ``RouteCandidate`` (identidade + rota) pelo simulador completo.
 ### `assess_candidates`
 
 ```python
-assess_candidates(graph: RoutingGraph, candidates: collections.abc.Iterable[RouteCandidate], **kwargs) -> tuple[RouteAssessment, ...]
+assess_candidates(graph: router.core.data.RoutingGraph, candidates: collections.abc.Iterable[router.core.RouteCandidate], **kwargs) -> tuple[router.core.RouteAssessment, ...]
 ```
 
 Avalia um conjunto de candidatas, preservando a ordem de entrada.
@@ -1672,7 +1674,7 @@ Avalia um conjunto de candidatas, preservando a ordem de entrada.
 ### `assess_route`
 
 ```python
-assess_route(graph: RoutingGraph, arc_ids: collections.abc.Sequence[str | None], *, cyclist: CyclistModel, bicycle: BicycleModel, traversal: PhysicalTraversal | None = None, environment: Environment | None = None, initial_state: SimulationState | None = None, power_w: float | None = None, rider: RiderProfile | None = None, context: PredictionContext | None = None, predictor: EffortPredictor | None = None, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> RouteAssessment
+assess_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str | None], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.RouteAssessment
 ```
 
 Avalia uma rota com o **simulador fisico completo** e a classifica.
@@ -1680,10 +1682,10 @@ Avalia uma rota com o **simulador fisico completo** e a classifica.
 ### `assess_search_route`
 
 ```python
-assess_search_route(graph: RoutingGraph, route: Route, **kwargs) -> RouteAssessment
+assess_search_route(graph: router.core.data.RoutingGraph, route: router.core.SearchRoute, **kwargs) -> router.core.RouteAssessment
 ```
 
-Avalia uma ``Route`` da busca (Camada 03) pelo simulador completo.
+Avalia uma ``SearchRoute`` da busca (Camada 03) pelo simulador completo.
 
 ## Seguranca da rota e avaliacao final (Camada 05, ADR-029)
 
@@ -1700,7 +1702,7 @@ Consistencia energetica agregada de uma rota (diagnostico, ADR-029 D7).
 ### `EvaluatedRoute`
 
 ```python
-class EvaluatedRoute(route_id: str, safety: RouteSafety, assessment: RouteAssessment | None = None, recommended: bool = False)
+class EvaluatedRoute(route_id: str, safety: router.core.RouteSafetyAssessment, assessment: router.core.RouteAssessment | None = None, recommended: bool = False)
 ```
 
 Rota avaliada com seu estado de seguranca (D4).
@@ -1708,15 +1710,15 @@ Rota avaliada com seu estado de seguranca (D4).
 ### `EvaluationReport`
 
 ```python
-class EvaluationReport(routes: tuple[EvaluatedRoute, ...] = (), excluded: tuple[EvaluatedRoute, ...] = (), recommended: EvaluatedRoute | None = None, warnings: tuple[str, ...] = ())
+class EvaluationReport(routes: tuple[router.core.EvaluatedRoute, ...] = (), excluded: tuple[router.core.EvaluatedRoute, ...] = (), recommended: router.core.EvaluatedRoute | None = None, warnings: tuple[str, ...] = ())
 ```
 
 Relatorio de avaliacao final: elegiveis, excluidas e recomendada (D4).
 
-### `Reason`
+### `SafetyReason`
 
 ```python
-class Reason(kind: ReasonKind, detail: str, arc_id: str | None = None)
+class SafetyReason(kind: router.core.ReasonKind, detail: str, arc_id: str | None = None)
 ```
 
 Motivo estruturado de um estado (auditavel).
@@ -1731,10 +1733,10 @@ Motivo **estruturado** de um estado (nunca silencioso; sempre auditavel).
 
 Valores: `CIRCULATION_VIOLATION`, `CIRCULATION_UNRESOLVED`, `NON_FINITE_METRIC`, `NEGATIVE_SPEED`, `NON_POSITIVE_DISTANCE`, `ELEVATION_MISSING`, `SIMULATION_DEGRADED`, `SIMULATION_UNAVAILABLE`, `MIN_SPEED_REGULARIZATION`, `STALLED`, `DISMOUNT_USED`, `PHYSIOLOGY_UNAVAILABLE`, `PHYSIOLOGY_MODEL_NOT_CALIBRATED`, `PHYSIOLOGY_INSUFFICIENT_DATA`, `PHYSIOLOGY_CONTRACT_INCOMPATIBLE`, `INTENSITY_NOT_CALIBRATED`, `EVALUATION_MISSING`.
 
-### `RouteSafety`
+### `RouteSafetyAssessment`
 
 ```python
-class RouteSafety(state: RouteSafetyState, reasons: tuple[Reason, ...] = (), advisories: tuple[Reason, ...] = ())
+class RouteSafetyAssessment(state: router.core.RouteSafetyState, reasons: tuple[router.core.SafetyReason, ...] = (), advisories: tuple[router.core.SafetyReason, ...] = ())
 ```
 
 Estado de seguranca de uma rota e seus motivos (ADR-029 D2).
@@ -1752,7 +1754,7 @@ Valores: `VALIDATED`, `DEGRADED`, `REJECTED`.
 ### `classify_safety`
 
 ```python
-classify_safety(assessment: RouteAssessment) -> RouteSafety
+classify_safety(assessment: router.core.RouteAssessment) -> router.core.RouteSafetyAssessment
 ```
 
 Classifica a **seguranca** de uma rota ja avaliada (sem recalcular nada).
@@ -1760,7 +1762,7 @@ Classifica a **seguranca** de uma rota ja avaliada (sem recalcular nada).
 ### `energy_consistency`
 
 ```python
-energy_consistency(path: TraversalPath, mass_kg: float) -> EnergyConsistency
+energy_consistency(path: router.core.physics.models.TraversalPath, mass_kg: float) -> router.core.EnergyConsistency
 ```
 
 Agrega o balanco energetico ja calculado de um ``TraversalPath``.
@@ -1768,7 +1770,7 @@ Agrega o balanco energetico ja calculado de um ``TraversalPath``.
 ### `evaluate_candidates`
 
 ```python
-evaluate_candidates(candidates: collections.abc.Iterable, *, assessments: collections.abc.Mapping[str, RouteAssessment] | None = None) -> EvaluationReport
+evaluate_candidates(candidates: collections.abc.Iterable, *, assessments: collections.abc.Mapping[str, router.core.RouteAssessment] | None = None) -> router.core.EvaluationReport
 ```
 
 Avalia a seguranca de candidatas **sem recalcular** o ja validado (D4).
@@ -1780,15 +1782,15 @@ Orquestracao de todo o fluxo offline numa chamada: **zona dinamica** (`envelope.
 ### `PlannedRoute`
 
 ```python
-class PlannedRoute(candidate: RouteCandidate, assessment: RouteAssessment, classification: RouteClassification, safety: RouteSafety, recommended: bool = False)
+class PlannedRoute(candidate: router.core.RouteCandidate, assessment: router.core.RouteAssessment, classification: router.core.RouteClassification, safety: router.core.RouteSafetyAssessment, recommended: bool = False, geometry: tuple[router.contracts.route.RoutePoint, ...] = ())
 ```
 
 Uma rota descoberta, com fisica completa, previsao e classificacao.
 
-### `RoutePlan`
+### `RoutePlanResult`
 
 ```python
-class RoutePlan(origin: tuple[float, float], destination: tuple[float, float], profile_id: str, search_bbox: tuple[float, float, float, float], bbox: tuple[float, float, float, float], reached: bool, zone_nodes: int, zone_arcs: int, graph_nodes: int, graph_arcs: int, iterations: int, routes: tuple[planning.PlannedRoute, ...] = (), rejected: tuple[planning.PlannedRoute, ...] = (), warnings: tuple[str, ...] = (), pareto_route_count: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, preference: EffortPreference | None = None)
+class RoutePlanResult(origin: tuple[float, float], destination: tuple[float, float], profile_id: str, search_bbox: tuple[float, float, float, float], bbox: tuple[float, float, float, float], reached: bool, zone_nodes: int, zone_arcs: int, graph_nodes: int, graph_arcs: int, iterations: int, routes: tuple[router.app.planning.PlannedRoute, ...] = (), rejected: tuple[router.app.planning.PlannedRoute, ...] = (), warnings: tuple[str, ...] = (), pareto_route_count: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, preference: router.core.EffortPreference | None = None)
 ```
 
 Plano de consulta offline: box, zona e rotas descobertas.
@@ -1796,10 +1798,180 @@ Plano de consulta offline: box, zona e rotas descobertas.
 ### `plan_offline_routes`
 
 ```python
-plan_offline_routes(graph: RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], *, cyclist: CyclistModel, bicycle: BicycleModel, profile: str | RouteProfile = 'fastest', snap_options: snapping.SnapOptions | None = None, traversal: PhysicalTraversal | None = None, environment: Environment | None = None, initial_speed_mps: float = 0.0, initial_state: SimulationState | None = None, power_w: float | None = None, rider: RiderProfile | None = None, context: PredictionContext | None = None, predictor: EffortPredictor | None = None, preference: EffortPreference | None = None, deduplicator: RouteDeduplicator | None = None, max_routes: int | None = None, growth: float = 1.6, max_iterations: int = 8, pad_m: float = 80.0) -> planning.RoutePlan
+plan_offline_routes(graph: router.core.data.RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, profile: str | router.core.RouteProfile = 'fastest', snap_options: router.core.data.snapping.SnapOptions | None = None, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_speed_mps: float = 0.0, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, preference: router.core.EffortPreference | None = None, deduplicator: router.core.RouteDeduplicator | None = None, max_routes: int | None = None, growth: float = 1.6, max_iterations: int = 8, pad_m: float = 80.0) -> router.app.planning.RoutePlanResult
 ```
 
 Descobre rotas offline entre ``origin`` e ``destination`` e as classifica.
+
+## Integracao com o aplicativo (ADR-030, Fase 3)
+
+Superficie **curada** para o consumidor externo: `plan_routes` resolve multi-pernas (`stops`) no nucleo e devolve o envelope `RoutePlan`; `integration` reexporta poucos nomes (contrato, grafo, modelos de entrada e guard offline) e preserva um caminho por operacao.
+
+### `plan_routes`
+
+```python
+plan_routes(graph: router.core.data.RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], *, stops: collections.abc.Sequence[tuple[float, float]] = (), cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, profile: str = 'fastest', **options: Any) -> router.contracts.route.RoutePlan
+```
+
+Planeja uma rota passando por ``stops``, na ordem informada.
+
+### `integration`
+
+```python
+integration
+```
+
+Modulo de integracao: superficie curada para o app (ADR-030 Fase 3).
+
+## Contrato publico de rota (v1)
+
+Fronteira de **transporte** do motor (ADR-030): tipos versionados, serializaveis e independentes dos DTOs internos. O envelope e **estrito** (`format`/`version` obrigatorios, `allow_nan=False`, sem `default=str`), a ausencia e explicita (`None`) e a geometria vem por ponto (`dist_m` monotonico). `snake_case` no Python/JSON; adaptadores traduzem para `camelCase`.
+
+### `CONTRACT_FORMAT`
+
+```python
+CONTRACT_FORMAT
+```
+
+### `CONTRACT_VERSION`
+
+```python
+CONTRACT_VERSION
+```
+
+### `INTENSITY_BANDS`
+
+```python
+INTENSITY_BANDS
+```
+
+### `RouteContractError`
+
+```python
+class RouteContractError(ValueError)
+```
+
+Payload de rota invalido, incompleto ou de versao desconhecida.
+
+### `BBox`
+
+```python
+class BBox(south: float, west: float, north: float, east: float)
+```
+
+Caixa geografica (graus).
+
+### `RouteRequest`
+
+```python
+class RouteRequest(origin: tuple[float, float], destination: tuple[float, float], profile: str, stops: tuple[tuple[float, float], ...] = ())
+```
+
+Intencao de roteamento ecoada no resultado.
+
+### `RoutePoint`
+
+```python
+class RoutePoint(lat: float, lon: float, ele: float | None, dist_m: float, speed_kmh: float, grade_pct: float, band: int | None = None, rpe: float | None = None, watts: float | None = None)
+```
+
+Ponto do perfil da rota.
+
+### `RouteMetrics`
+
+```python
+class RouteMetrics(source: str, distance_m: float, time_s: float, energy_j: float, ascent_m: float, descent_m: float, max_grade_pct: float | None = None, meters_band: tuple[float, float, float] = (0.0, 0.0, 0.0), contra_m: float | None = None, walk_m: float | None = None)
+```
+
+Metricas agregadas da rota.
+
+### `RouteML`
+
+```python
+class RouteML(mean_rpe: float, peak_rpe: float, calibrated: bool, is_measurement: bool, band_distance_fraction: dict[str, float] = <factory>, band_duration_fraction: dict[str, float] | None = None, method_id: str = '', model_version: str = '', borg_scale: str = '')
+```
+
+Estimativa de intensidade (RPE/faixas) — **nao calibrada**.
+
+### `Reason`
+
+```python
+class Reason(kind: str, detail: str, arc_id: str | None = None)
+```
+
+Motivo estruturado de seguranca (auditavel).
+
+### `RouteSafety`
+
+```python
+class RouteSafety(state: str, eligible: bool, reasons: tuple[router.contracts.route.Reason, ...] = (), advisories: tuple[router.contracts.route.Reason, ...] = ())
+```
+
+Estado de seguranca da rota (ADR-029).
+
+### `RouteProvenance`
+
+```python
+class RouteProvenance(kind: str, profile: str)
+```
+
+Como a rota nasceu (gerador/perfil).
+
+### `Route`
+
+```python
+class Route(id: str, profile: str, recommended: bool, geometry: tuple[router.contracts.route.RoutePoint, ...], metrics: router.contracts.route.RouteMetrics, ml: router.contracts.route.RouteML, safety: router.contracts.route.RouteSafety, provenance: router.contracts.route.RouteProvenance)
+```
+
+Rota no contrato publico.
+
+### `Zone`
+
+```python
+class Zone(nodes: int, arcs: int, graph_nodes: int, graph_arcs: int)
+```
+
+Tamanho da zona de busca versus grafo total.
+
+### `RoutePlan`
+
+```python
+class RoutePlan(request: router.contracts.route.RouteRequest, reached: bool, search_bbox: router.contracts.geo.BBox, bbox: router.contracts.geo.BBox, zone: router.contracts.route.Zone, iterations: int, pareto_route_count: int, physiological_count: int, routes: tuple[router.contracts.route.Route, ...] = (), rejected: tuple[router.contracts.route.Route, ...] = (), warnings: tuple[str, ...] = (), recommended_route_id: str | None = None, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, format: str = 'roteamento.cycling-route-plan', version: int = 1)
+```
+
+Envelope versionado de uma consulta de rotas.
+
+### `dumps`
+
+```python
+dumps(plan: router.contracts.route.RoutePlan, *, indent: int | None = None) -> str
+```
+
+Serializa o contrato em JSON **estrito** (sem ``default=str``).
+
+### `loads`
+
+```python
+loads(text: str) -> router.contracts.route.RoutePlan
+```
+
+Le e valida um envelope JSON do contrato.
+
+### `write_plan`
+
+```python
+write_plan(path: str | pathlib.Path, plan: router.contracts.route.RoutePlan, *, indent: int | None = 2) -> pathlib.Path
+```
+
+Grava o contrato em UTF-8 e devolve o caminho.
+
+### `read_plan`
+
+```python
+read_plan(path: str | pathlib.Path) -> router.contracts.route.RoutePlan
+```
+
+Le um envelope do contrato de um arquivo UTF-8.
 
 ## Operacao offline (guard de rede)
 
@@ -1860,7 +2032,7 @@ Contadores da leitura (auditoria do que foi percorrido/selecionado).
 ### `read_header`
 
 ```python
-read_header(path: str | pathlib.Path) -> PbfHeader
+read_header(path: str | pathlib.Path) -> router.core.data.PbfHeader
 ```
 
 Le o ``OSMHeader`` do arquivo e devolve seus metadados.
@@ -1868,7 +2040,7 @@ Le o ``OSMHeader`` do arquivo e devolve seus metadados.
 ### `read_osm_pbf`
 
 ```python
-read_osm_pbf(path: str | pathlib.Path, *, highways: tuple[str, ...] | None = None, with_stats: bool = False) -> OsmData | tuple[OsmData, PbfStats]
+read_osm_pbf(path: str | pathlib.Path, *, highways: tuple[str, ...] | None = None, with_stats: bool = False) -> router.core.data.OsmData | tuple[router.core.data.OsmData, router.core.data.PbfStats]
 ```
 
 Le um ``.osm.pbf`` e monta um :class:`OsmData`.
@@ -2026,7 +2198,7 @@ bbox_intersects(a: tuple[float, float, float, float], b: tuple[float, float, flo
 ### `graph_for_bbox`
 
 ```python
-graph_for_bbox(graph: RoutingGraph, bbox: tuple[float, float, float, float]) -> RoutingGraph
+graph_for_bbox(graph: router.core.data.RoutingGraph, bbox: tuple[float, float, float, float]) -> router.core.data.RoutingGraph
 ```
 
 Subgrafo da zona: nos dentro do box + arcos com ambas as pontas dentro.
@@ -2042,7 +2214,7 @@ Escala o box sobre o proprio centro por ``factor`` (``>1`` cresce).
 ### `adaptive_zone`
 
 ```python
-adaptive_zone(graph: RoutingGraph, waypoints: collections.abc.Sequence[tuple[float, float]], probe: collections.abc.Callable[[RoutingGraph], collections.abc.Sequence[collections.abc.Sequence[tuple[float, float]]]], *, growth: float = 1.6, max_iterations: int = 8, pad_m: float = 80.0) -> tuple[tuple[float, float, float, float], RoutingGraph, tuple[collections.abc.Sequence[tuple[float, float]], ...]]
+adaptive_zone(graph: router.core.data.RoutingGraph, waypoints: collections.abc.Sequence[tuple[float, float]], probe: collections.abc.Callable[[router.core.data.RoutingGraph], collections.abc.Sequence[collections.abc.Sequence[tuple[float, float]]]], *, growth: float = 1.6, max_iterations: int = 8, pad_m: float = 80.0) -> tuple[tuple[float, float, float, float], router.core.data.RoutingGraph, tuple[collections.abc.Sequence[tuple[float, float]], ...]]
 ```
 
 Zona de busca **adaptativa**, dimensionada pelas rotas.
@@ -2096,7 +2268,7 @@ Metodos de derivacao de zonas registrados (vazio por padrao).
 ### `register_zone_derivation`
 
 ```python
-register_zone_derivation(method: HeartRateZoneDerivationMethod) -> str
+register_zone_derivation(method: router.core.prediction.targets.HeartRateZoneDerivationMethod) -> str
 ```
 
 Registra um metodo de derivacao e devolve o identificador completo.
@@ -2104,7 +2276,7 @@ Registra um metodo de derivacao e devolve o identificador completo.
 ### `get_zone_derivation`
 
 ```python
-get_zone_derivation(method_id: str) -> HeartRateZoneDerivationMethod
+get_zone_derivation(method_id: str) -> router.core.prediction.targets.HeartRateZoneDerivationMethod
 ```
 
 Recupera um metodo registrado, ou levanta ``ZoneDerivationUnavailable``.
@@ -2112,7 +2284,7 @@ Recupera um metodo registrado, ou levanta ``ZoneDerivationUnavailable``.
 ### `derive_heart_rate_zones`
 
 ```python
-derive_heart_rate_zones(profile: RiderProfile, method_id: str) -> HeartRateZoneModel
+derive_heart_rate_zones(profile: router.core.RiderProfile, method_id: str) -> router.core.HeartRateZoneModel
 ```
 
 Deriva zonas do ciclista usando um metodo **explicito** registrado.
@@ -2178,7 +2350,7 @@ Identificador **pseudonimizado** do ciclista.
 ### `pseudonymize`
 
 ```python
-pseudonymize(identifier: str, *, salt: str) -> CyclistId
+pseudonymize(identifier: str, *, salt: str) -> router.core.prediction.observations.CyclistId
 ```
 
 Pseudonimo **estavel e nao reversivel** a partir de um identificador.
@@ -2186,7 +2358,7 @@ Pseudonimo **estavel e nao reversivel** a partir de um identificador.
 ### `ObservedEffort`
 
 ```python
-class ObservedEffort(observation_id: str, cyclist_id: CyclistId, duration_s: float, distance_m: float, provenance: Provenance, borg_scale: BorgScale = <BorgScale.RPE_6_20: '6-20'>, observed_rpe: float | None = None, observed_heart_rate_bpm: float | None = None, heart_rate_zone_durations_s: dict[str, float] | None = None, heart_rate_zone_definition: str | None = None, feature_schema_version: str = '1', feature_row: dict[str, float | None] | None = None, recorded_at: str | None = None, quality: MeasurementQuality = <MeasurementQuality.UNKNOWN: 'unknown'>, notes: str | None = None)
+class ObservedEffort(observation_id: str, cyclist_id: router.core.prediction.observations.CyclistId, duration_s: float, distance_m: float, provenance: router.core.prediction.observations.Provenance, borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, observed_rpe: float | None = None, observed_heart_rate_bpm: float | None = None, heart_rate_zone_durations_s: dict[str, float] | None = None, heart_rate_zone_definition: str | None = None, feature_schema_version: str = '1', feature_row: dict[str, float | None] | None = None, recorded_at: str | None = None, quality: router.core.prediction.observations.MeasurementQuality = <MeasurementQuality.UNKNOWN: 'unknown'>, notes: str | None = None)
 ```
 
 Um esforco **observado** associado a uma rota percorrida.
@@ -2194,7 +2366,7 @@ Um esforco **observado** associado a uma rota percorrida.
 ### `ObservationDataset`
 
 ```python
-class ObservationDataset(dataset_version: str, observations: tuple[ObservedEffort, ...], provenance: Provenance, notes: str | None = None)
+class ObservationDataset(dataset_version: str, observations: tuple[router.core.prediction.observations.ObservedEffort, ...], provenance: router.core.prediction.observations.Provenance, notes: str | None = None)
 ```
 
 Conjunto de observacoes reais, versionado e com proveniencia.
@@ -2202,7 +2374,7 @@ Conjunto de observacoes reais, versionado e com proveniencia.
 ### `save_dataset`
 
 ```python
-save_dataset(dataset: ObservationDataset, path: str | pathlib.Path) -> pathlib.Path
+save_dataset(dataset: router.core.prediction.observations.ObservationDataset, path: str | pathlib.Path) -> pathlib.Path
 ```
 
 Persiste o conjunto **localmente** (JSON versionado).
@@ -2210,7 +2382,7 @@ Persiste o conjunto **localmente** (JSON versionado).
 ### `load_dataset`
 
 ```python
-load_dataset(path: str | pathlib.Path) -> ObservationDataset
+load_dataset(path: str | pathlib.Path) -> router.core.prediction.observations.ObservationDataset
 ```
 
 Le um conjunto persistido **localmente** (sem rede).
@@ -2218,7 +2390,7 @@ Le um conjunto persistido **localmente** (sem rede).
 ### `build_dataset`
 
 ```python
-build_dataset(dataset_version: str, observations: Iterable[ObservedEffort], *, provenance: Provenance, notes: str | None = None) -> ObservationDataset
+build_dataset(dataset_version: str, observations: Iterable[router.core.prediction.observations.ObservedEffort], *, provenance: router.core.prediction.observations.Provenance, notes: str | None = None) -> router.core.prediction.observations.ObservationDataset
 ```
 
 Atalho para montar um ``ObservationDataset`` a partir de um iteravel.
@@ -2254,7 +2426,7 @@ Conjunto padrao: apenas features **sempre** presentes na fisica.
 ### `feature_row`
 
 ```python
-feature_row(features: EffortFeatures, rider: RiderProfile | None = None, context: PredictionContext | None = None) -> dict[str, float | None]
+feature_row(features: router.core.physics.effort.EffortFeatures, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None) -> dict[str, float | None]
 ```
 
 Monta a linha de features (sem alvo) a partir do contrato existente.
@@ -2302,7 +2474,7 @@ Modelo linear ``y = intercept + sum(coef_i * feature_i)``.
 ### `model_from_payload`
 
 ```python
-model_from_payload(payload: Mapping[str, Any]) -> ConstantModel | LinearModel
+model_from_payload(payload: Mapping[str, Any]) -> router.core.prediction.models.ConstantModel | router.core.prediction.models.LinearModel
 ```
 
 Reconstroi um modelo a partir do ``payload`` persistido.
@@ -2310,7 +2482,7 @@ Reconstroi um modelo a partir do ``payload`` persistido.
 ### `fit_constant`
 
 ```python
-fit_constant(targets: Sequence[float]) -> ConstantModel
+fit_constant(targets: Sequence[float]) -> router.core.prediction.models.ConstantModel
 ```
 
 Baseline constante: media dos alvos observados.
@@ -2318,7 +2490,7 @@ Baseline constante: media dos alvos observados.
 ### `fit_linear`
 
 ```python
-fit_linear(rows: Sequence[Mapping[str, float]], targets: Sequence[float], feature_names: Sequence[str]) -> LinearModel
+fit_linear(rows: Sequence[Mapping[str, float]], targets: Sequence[float], feature_names: Sequence[str]) -> router.core.prediction.models.LinearModel
 ```
 
 Ajuste linear por minimos quadrados (equacoes normais + eliminacao).
@@ -2382,7 +2554,7 @@ Artefato ilegivel/corrompido/em formato desconhecido.
 ### `ModelArtifact`
 
 ```python
-class ModelArtifact(model_version: str, dataset_version: str, effort_schema_version: str, target: TargetKind, method: str, provenance: Provenance, payload: dict[str, typing.Any], is_baseline: bool = False, calibration_method: str | None = None, format: str = 'intelligence-model', format_version: str = '1', notes: str | None = None)
+class ModelArtifact(model_version: str, dataset_version: str, effort_schema_version: str, target: router.core.prediction.targets.TargetKind, method: str, provenance: router.core.prediction.observations.Provenance, payload: dict[str, typing.Any], is_baseline: bool = False, calibration_method: str | None = None, format: str = 'intelligence-model', format_version: str = '1', notes: str | None = None)
 ```
 
 Modelo treinado, persistido localmente, com proveniencia completa.
@@ -2390,7 +2562,7 @@ Modelo treinado, persistido localmente, com proveniencia completa.
 ### `check_compatibility`
 
 ```python
-check_compatibility(artifact: ModelArtifact, effort_schema_version: str) -> None
+check_compatibility(artifact: router.core.prediction.model_store.ModelArtifact, effort_schema_version: str) -> None
 ```
 
 Levanta ``ModelIncompatibleError`` se o modelo nao for compativel.
@@ -2418,7 +2590,7 @@ Erro de dados/parametros no treino (nunca mascarado).
 ### `TrainingReport`
 
 ```python
-class TrainingReport(target: TargetKind, method: str, feature_names: tuple[str, ...], n_total: int, n_used: int, n_dropped_missing_target: int, n_dropped_missing_features: int)
+class TrainingReport(target: router.core.prediction.targets.TargetKind, method: str, feature_names: tuple[str, ...], n_total: int, n_used: int, n_dropped_missing_target: int, n_dropped_missing_features: int)
 ```
 
 Resumo auditavel do que foi usado/descartado no treino.
@@ -2426,7 +2598,7 @@ Resumo auditavel do que foi usado/descartado no treino.
 ### `TrainedModel`
 
 ```python
-class TrainedModel(artifact: ModelArtifact, report: TrainingReport)
+class TrainedModel(artifact: router.core.prediction.model_store.ModelArtifact, report: router.core.prediction.training.TrainingReport)
 ```
 
 Artefato + relatorio do treino que o produziu.
@@ -2434,7 +2606,7 @@ Artefato + relatorio do treino que o produziu.
 ### `build_training_matrix`
 
 ```python
-build_training_matrix(dataset: ObservationDataset, target: TargetKind, feature_names: Sequence[str], *, feature_schema_version: str = '1') -> tuple[list[dict[str, float]], list[float], TrainingReport]
+build_training_matrix(dataset: router.core.prediction.observations.ObservationDataset, target: router.core.prediction.targets.TargetKind, feature_names: Sequence[str], *, feature_schema_version: str = '1') -> tuple[list[dict[str, float]], list[float], router.core.prediction.training.TrainingReport]
 ```
 
 Monta ``(linhas, alvos, relatorio)`` a partir das observacoes reais.
@@ -2442,7 +2614,7 @@ Monta ``(linhas, alvos, relatorio)`` a partir das observacoes reais.
 ### `train_constant_baseline`
 
 ```python
-train_constant_baseline(dataset: ObservationDataset, *, target: TargetKind = <TargetKind.RPE: 'rpe'>, feature_schema_version: str = '1') -> TrainedModel
+train_constant_baseline(dataset: router.core.prediction.observations.ObservationDataset, *, target: router.core.prediction.targets.TargetKind = <TargetKind.RPE: 'rpe'>, feature_schema_version: str = '1') -> router.core.prediction.training.TrainedModel
 ```
 
 Baseline constante: media do alvo observado (sem features).
@@ -2450,7 +2622,7 @@ Baseline constante: media do alvo observado (sem features).
 ### `train_linear`
 
 ```python
-train_linear(dataset: ObservationDataset, *, target: TargetKind = <TargetKind.RPE: 'rpe'>, feature_names: Sequence[str] = ('duration_s', 'distance_m', 'average_speed_mps', 'mechanical_work_j', 'rider_work_j', 'mean_power_w', 'climbing_m', 'descending_m', 'braking_energy_j', 'aero_loss_j', 'rolling_loss_j'), feature_schema_version: str = '1', is_baseline: bool = False, calibration_method: str | None = None, notes: str | None = None) -> TrainedModel
+train_linear(dataset: router.core.prediction.observations.ObservationDataset, *, target: router.core.prediction.targets.TargetKind = <TargetKind.RPE: 'rpe'>, feature_names: Sequence[str] = ('duration_s', 'distance_m', 'average_speed_mps', 'mechanical_work_j', 'rider_work_j', 'mean_power_w', 'climbing_m', 'descending_m', 'braking_energy_j', 'aero_loss_j', 'rolling_loss_j'), feature_schema_version: str = '1', is_baseline: bool = False, calibration_method: str | None = None, notes: str | None = None) -> router.core.prediction.training.TrainedModel
 ```
 
 Treino linear por minimos quadrados (baseline ou candidato).
@@ -2458,7 +2630,7 @@ Treino linear por minimos quadrados (baseline ou candidato).
 ### `train_and_save`
 
 ```python
-train_and_save(dataset: ObservationDataset, store, *, target: TargetKind = <TargetKind.RPE: 'rpe'>, feature_names: Sequence[str] = ('duration_s', 'distance_m', 'average_speed_mps', 'mechanical_work_j', 'rider_work_j', 'mean_power_w', 'climbing_m', 'descending_m', 'braking_energy_j', 'aero_loss_j', 'rolling_loss_j'), is_baseline: bool = True, feature_schema_version: str = '1', calibration_method: str | None = None, notes: str | None = None) -> TrainedModel
+train_and_save(dataset: router.core.prediction.observations.ObservationDataset, store, *, target: router.core.prediction.targets.TargetKind = <TargetKind.RPE: 'rpe'>, feature_names: Sequence[str] = ('duration_s', 'distance_m', 'average_speed_mps', 'mechanical_work_j', 'rider_work_j', 'mean_power_w', 'climbing_m', 'descending_m', 'braking_energy_j', 'aero_loss_j', 'rolling_loss_j'), is_baseline: bool = True, feature_schema_version: str = '1', calibration_method: str | None = None, notes: str | None = None) -> router.core.prediction.training.TrainedModel
 ```
 
 Treina (baseline ou candidato linear) e grava o artefato localmente.
@@ -2482,7 +2654,7 @@ Erro/vies de um subgrupo (ex.: por ciclista).
 ### `ModelEvaluation`
 
 ```python
-class ModelEvaluation(target: TargetKind, split_scheme: str, n: int, mae: float, rmse: float, bias: float, per_group: tuple[GroupMetrics, ...] = ())
+class ModelEvaluation(target: router.core.prediction.targets.TargetKind, split_scheme: str, n: int, mae: float, rmse: float, bias: float, per_group: tuple[router.core.prediction.model_eval.GroupMetrics, ...] = ())
 ```
 
 Resultado auditavel da avaliacao de um modelo.
@@ -2506,7 +2678,7 @@ CriteriaResult(accepted: 'bool', reasons: 'tuple[str, ...]' = ())
 ### `evaluate_model`
 
 ```python
-evaluate_model(model, observations: Sequence[ObservedEffort], *, target: TargetKind = <TargetKind.RPE: 'rpe'>, feature_names: Sequence[str], split_scheme: str = 'unspecified') -> ModelEvaluation
+evaluate_model(model, observations: Sequence[router.core.prediction.observations.ObservedEffort], *, target: router.core.prediction.targets.TargetKind = <TargetKind.RPE: 'rpe'>, feature_names: Sequence[str], split_scheme: str = 'unspecified') -> router.core.prediction.model_eval.ModelEvaluation
 ```
 
 Avalia MAE/RMSE/vies do modelo nas observacoes fornecidas.
@@ -2514,7 +2686,7 @@ Avalia MAE/RMSE/vies do modelo nas observacoes fornecidas.
 ### `temporal_split`
 
 ```python
-temporal_split(dataset: ObservationDataset, *, test_fraction: float = 0.2) -> tuple[ObservationDataset, ObservationDataset]
+temporal_split(dataset: router.core.prediction.observations.ObservationDataset, *, test_fraction: float = 0.2) -> tuple[router.core.prediction.observations.ObservationDataset, router.core.prediction.observations.ObservationDataset]
 ```
 
 Separa treino/teste no tempo (teste no **futuro** do treino).
@@ -2522,7 +2694,7 @@ Separa treino/teste no tempo (teste no **futuro** do treino).
 ### `cyclist_split`
 
 ```python
-cyclist_split(dataset: ObservationDataset, *, test_fraction: float = 0.2) -> tuple[ObservationDataset, ObservationDataset]
+cyclist_split(dataset: router.core.prediction.observations.ObservationDataset, *, test_fraction: float = 0.2) -> tuple[router.core.prediction.observations.ObservationDataset, router.core.prediction.observations.ObservationDataset]
 ```
 
 Separa por ciclista: ciclistas de teste **nao** aparecem no treino.
@@ -2530,7 +2702,7 @@ Separa por ciclista: ciclistas de teste **nao** aparecem no treino.
 ### `LocalModelPredictor`
 
 ```python
-class LocalModelPredictor(artifact: ModelArtifact, model: ConstantModel | LinearModel, borg_scale: BorgScale = <BorgScale.RPE_6_20: '6-20'>, effort_schema_version: str = '1')
+class LocalModelPredictor(artifact: router.core.prediction.model_store.ModelArtifact, model: router.core.prediction.models.ConstantModel | router.core.prediction.models.LinearModel, borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, effort_schema_version: str = '1')
 ```
 
 ``EffortPredictor`` apoiado em um artefato de modelo **local**.
@@ -2538,7 +2710,7 @@ class LocalModelPredictor(artifact: ModelArtifact, model: ConstantModel | Linear
 ### `load_predictor`
 
 ```python
-load_predictor(store: ModelStore, model_version: str, *, borg_scale: BorgScale = <BorgScale.RPE_6_20: '6-20'>, effort_schema_version: str = '1') -> LocalModelPredictor
+load_predictor(store: router.core.prediction.model_store.ModelStore, model_version: str, *, borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, effort_schema_version: str = '1') -> router.core.prediction.predictor.LocalModelPredictor
 ```
 
 Atalho para :meth:`LocalModelPredictor.from_store`.
@@ -2564,7 +2736,7 @@ Valores: `SATISFIED`, `NOT_SATISFIED`, `UNKNOWN`.
 ### `EffortPreference`
 
 ```python
-class EffortPreference(borg_scale: BorgScale = <BorgScale.RPE_6_20: '6-20'>, acceptable_rpe: tuple[float, float] | None = None, preferred_zones: tuple[str, ...] | None = None, min_preferred_fraction: float | None = None, preferred_intensity_bands: tuple[str, ...] | None = None, min_intensity_band_fraction: float | None = None, intensity_band_basis: str = 'distance', notes: str | None = None)
+class EffortPreference(borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, acceptable_rpe: tuple[float, float] | None = None, preferred_zones: tuple[str, ...] | None = None, min_preferred_fraction: float | None = None, preferred_intensity_bands: tuple[str, ...] | None = None, min_intensity_band_fraction: float | None = None, intensity_band_basis: str = 'distance', notes: str | None = None)
 ```
 
 Preferencia de esforco **declarada** pelo ciclista.
@@ -2572,7 +2744,7 @@ Preferencia de esforco **declarada** pelo ciclista.
 ### `CriterionResult`
 
 ```python
-class CriterionResult(name: str, verdict: PreferenceVerdict, reason: str, observed: float | None = None, threshold: float | None = None)
+class CriterionResult(name: str, verdict: router.core.PreferenceVerdict, reason: str, observed: float | None = None, threshold: float | None = None)
 ```
 
 Resultado auditavel de **um** criterio de preferencia.
@@ -2580,7 +2752,7 @@ Resultado auditavel de **um** criterio de preferencia.
 ### `RouteClassification`
 
 ```python
-class RouteClassification(arc_ids: tuple[str, ...], outcome: AssessmentOutcome, preference: EffortPreference | None, prediction_status: str, criteria: tuple[CriterionResult, ...] = ())
+class RouteClassification(arc_ids: tuple[str, ...], outcome: router.core.AssessmentOutcome, preference: router.core.EffortPreference | None, prediction_status: str, criteria: tuple[router.core.CriterionResult, ...] = ())
 ```
 
 Classificacao final de uma rota: esforco previsto x preferencia.
@@ -2588,7 +2760,7 @@ Classificacao final de uma rota: esforco previsto x preferencia.
 ### `classify_route`
 
 ```python
-classify_route(assessment: RouteAssessment, preference: EffortPreference | None = None) -> RouteClassification
+classify_route(assessment: router.core.RouteAssessmentView, preference: router.core.EffortPreference | None = None) -> router.core.RouteClassification
 ```
 
 Classifica **uma** rota avaliada: esforco previsto x preferencia.
@@ -2596,7 +2768,7 @@ Classifica **uma** rota avaliada: esforco previsto x preferencia.
 ### `classify_routes`
 
 ```python
-classify_routes(assessments: collections.abc.Iterable[RouteAssessment], preference: EffortPreference | None = None) -> tuple[RouteClassification, ...]
+classify_routes(assessments: collections.abc.Iterable[router.core.RouteAssessmentView], preference: router.core.EffortPreference | None = None) -> tuple[router.core.RouteClassification, ...]
 ```
 
 Classifica varias rotas **preservando a ordem de entrada**.
@@ -2672,7 +2844,7 @@ Observacao de um trecho (arco) para a estimativa de intensidade.
 ### `IntensityEstimate`
 
 ```python
-class IntensityEstimate(borg_scale: BorgScale, mean_rpe: float, peak_rpe: float, band_distance_fraction: dict[str, float], band_duration_fraction: dict[str, float] | None, distance_m: float, duration_s: float, method_id: str = 'toporide-heuristic', model_version: str = '1', band_definition: str = 'borg-intensity-bands@1')
+class IntensityEstimate(borg_scale: router.core.BorgScale, mean_rpe: float, peak_rpe: float, band_distance_fraction: dict[str, float], band_duration_fraction: dict[str, float] | None, distance_m: float, duration_s: float, method_id: str = 'toporide-heuristic', model_version: str = '1', band_definition: str = 'borg-intensity-bands@1', segment_rpes: tuple[float, ...] = (), segment_bands: tuple[str, ...] = ())
 ```
 
 Estimativa de intensidade de uma rota — **nao calibrada**.
@@ -2696,7 +2868,7 @@ Nome da faixa de intensidade para um RPE (Borg).
 ### `segment_rpe`
 
 ```python
-segment_rpe(segment: IntensitySegment, *, mass_kg: float, ftp_w: float, accumulated_j: float = 0.0, borg_scale: BorgScale = <BorgScale.RPE_6_20: '6-20'>, coefficients: IntensityCoefficients = IntensityCoefficients(base_rpe=6.0, scale_gain=6.0, ftp_reference_kg=75.0, grade_free_pct=5.0, grade_exponent=1.3, traffic_weight=1.5, fatigue_weight=1.5, fatigue_amplitude=1.5, fatigue_window_s=1200.0, fatigue_sensitivity=1.0)) -> float
+segment_rpe(segment: router.core.prediction.intensity.IntensitySegment, *, mass_kg: float, ftp_w: float, accumulated_j: float = 0.0, borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, coefficients: router.core.prediction.intensity.IntensityCoefficients = IntensityCoefficients(base_rpe=6.0, scale_gain=6.0, ftp_reference_kg=75.0, grade_free_pct=5.0, grade_exponent=1.3, traffic_weight=1.5, fatigue_weight=1.5, fatigue_amplitude=1.5, fatigue_window_s=1200.0, fatigue_sensitivity=1.0)) -> float
 ```
 
 RPE (Borg) estimado de um trecho, com a fadiga acumulada informada.
@@ -2704,7 +2876,7 @@ RPE (Borg) estimado de um trecho, com a fadiga acumulada informada.
 ### `estimate_intensity`
 
 ```python
-estimate_intensity(segments: collections.abc.Sequence[IntensitySegment], *, mass_kg: float, ftp_w: float, borg_scale: BorgScale = <BorgScale.RPE_6_20: '6-20'>, coefficients: IntensityCoefficients = IntensityCoefficients(base_rpe=6.0, scale_gain=6.0, ftp_reference_kg=75.0, grade_free_pct=5.0, grade_exponent=1.3, traffic_weight=1.5, fatigue_weight=1.5, fatigue_amplitude=1.5, fatigue_window_s=1200.0, fatigue_sensitivity=1.0)) -> IntensityEstimate
+estimate_intensity(segments: collections.abc.Sequence[router.core.prediction.intensity.IntensitySegment], *, mass_kg: float, ftp_w: float, borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, coefficients: router.core.prediction.intensity.IntensityCoefficients = IntensityCoefficients(base_rpe=6.0, scale_gain=6.0, ftp_reference_kg=75.0, grade_free_pct=5.0, grade_exponent=1.3, traffic_weight=1.5, fatigue_weight=1.5, fatigue_amplitude=1.5, fatigue_window_s=1200.0, fatigue_sensitivity=1.0)) -> router.core.prediction.intensity.IntensityEstimate
 ```
 
 Estima RPE e faixas de intensidade de uma rota (por distancia e duracao).
@@ -2712,7 +2884,7 @@ Estima RPE e faixas de intensidade de uma rota (por distancia e duracao).
 ### `segments_from_traversal`
 
 ```python
-segments_from_traversal(path: TraversalPath, arcs: collections.abc.Sequence) -> tuple[IntensitySegment, ...]
+segments_from_traversal(path: router.core.physics.models.TraversalPath, arcs: collections.abc.Sequence) -> tuple[router.core.prediction.intensity.IntensitySegment, ...]
 ```
 
 Monta os trechos de intensidade a partir de um ``TraversalPath``.

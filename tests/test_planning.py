@@ -17,23 +17,21 @@ OSM em memoria + elevacao local:
 from __future__ import annotations
 
 import json
-
 import pytest
-
-from elevation import CallableElevation
-from geo import bbox_contains, bbox_of
-from intelligence import EffortPreference
-from ml import UnavailablePredictor
-from offline import is_network_disabled, offline
-from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OsmData
-from physical import BicycleModel, CyclistModel
-from physiology import (
+from router.core.data.elevation import CallableElevation
+from router.core.data.geo import bbox_contains, bbox_of
+from router.core.evaluation import EffortPreference
+from router.core.prediction.ml import UnavailablePredictor
+from router.offline import is_network_disabled, offline
+from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
+from router.core.data.osm.parse import OsmData
+from router.core.physics import BicycleModel, CyclistModel
+from router.core.physiology import (
     DEFAULT_BORG_SCALE,
     PhysiologicalPrediction,
     PredictionStatus,
 )
-from planning import PlannedRoute, RoutePlan, plan_offline_routes
+from router.app.planning import PlannedRoute, RoutePlanResult, plan_offline_routes
 
 # --------------------------------------------------------------------------
 # Grafo de teste: quadrado 1-2-4 / 1-3-4 com elevacao, mais um no distante.
@@ -103,7 +101,7 @@ def _cyclist() -> CyclistModel:
     )
 
 
-def _plan(**kwargs) -> RoutePlan:
+def _plan(**kwargs) -> RoutePlanResult:
     return plan_offline_routes(
         _graph(),
         ORIGIN,
@@ -141,7 +139,7 @@ class _StubRpePredictor:
 def test_plan_discovers_connected_route_with_physics():
     plan = _plan()
 
-    assert isinstance(plan, RoutePlan)
+    assert isinstance(plan, RoutePlanResult)
     assert plan.reached is True
     assert plan.count >= 1
     assert plan.profile_id == "fastest"
@@ -224,13 +222,12 @@ def test_plan_to_dict_preserves_search_completeness_indicators():
 
 def test_print_plan_warns_when_frontier_is_pruned(capsys):
     import dataclasses
-
-    from cli import _print_plan
+    from router.interfaces.cli.render import print_plan
 
     pruned = dataclasses.replace(
         _plan(), frontier_truncated=True, dropped_labels=3
     )
-    _print_plan(pruned)
+    print_plan(pruned)
     out = capsys.readouterr().out
     # A poda da fronteira nao fica silenciosa na interface.
     assert "fronteira podada" in out
@@ -240,11 +237,10 @@ def test_print_plan_warns_when_frontier_is_pruned(capsys):
 
 def test_print_plan_warns_when_search_is_interrupted(capsys):
     import dataclasses
-
-    from cli import _print_plan
+    from router.interfaces.cli.render import print_plan
 
     interrupted = dataclasses.replace(_plan(), truncated=True)
-    _print_plan(interrupted)
+    print_plan(interrupted)
     out = capsys.readouterr().out
     assert "interrompida" in out
     assert "max_expansions" in out
@@ -368,7 +364,7 @@ def test_plan_runs_with_network_disabled():
 # CLI
 # --------------------------------------------------------------------------
 def _saved_graph(tmp_path):
-    from graph.serialize import save_json
+    from router.core.data.graph.serialize import save_json
 
     path = tmp_path / "graph.json"
     save_json(_graph(), str(path))
@@ -376,7 +372,7 @@ def _saved_graph(tmp_path):
 
 
 def test_cli_plan_json(tmp_path, capsys):
-    from cli import main
+    from router.interfaces.cli import main
 
     path = _saved_graph(tmp_path)
     code = main(
@@ -393,13 +389,15 @@ def test_cli_plan_json(tmp_path, capsys):
     captured = capsys.readouterr()
     assert code == 0
     payload = json.loads(captured.out)
+    assert payload["format"] == "roteamento.cycling-route-plan"
+    assert payload["version"] == 1
     assert payload["reached"] is True
     assert payload["route_count"] >= 1
     assert payload["zone"]["arcs"] < payload["zone"]["graph_arcs"]
 
 
 def test_cli_plan_text_output(tmp_path, capsys):
-    from cli import main
+    from router.interfaces.cli import main
 
     path = _saved_graph(tmp_path)
     code = main(
@@ -424,7 +422,7 @@ def test_cli_plan_text_output(tmp_path, capsys):
 
 
 def test_cli_plan_rpe_bounds_must_be_paired(tmp_path, capsys):
-    from cli import main
+    from router.interfaces.cli import main
 
     path = _saved_graph(tmp_path)
     code = main(
@@ -444,7 +442,7 @@ def test_cli_plan_rpe_bounds_must_be_paired(tmp_path, capsys):
 
 
 def test_cli_plan_model_args_must_be_paired(tmp_path, capsys):
-    from cli import main
+    from router.interfaces.cli import main
 
     path = _saved_graph(tmp_path)
     code = main(

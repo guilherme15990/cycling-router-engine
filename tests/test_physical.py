@@ -1,9 +1,7 @@
 import json
-
 import pytest
-
-from cli import main
-from graph.model import (
+from router.interfaces.cli import main
+from router.core.data.graph.model import (
     BicycleAccess,
     RoutingGraph,
     Arc,
@@ -11,15 +9,15 @@ from graph.model import (
     ElevationSample,
     Node,
 )
-from graph.serialize import save_json
-from graph.surface import Surface, SurfaceStatus
-from physical import (
+from router.core.data.graph.serialize import save_json
+from router.core.data.graph.surface import Surface, SurfaceStatus
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     ArcProfile,
     Environment,
     PhysicalTraversal,
-    RouteMetrics,
+    PhysicsRouteMetrics,
     SimulationState,
     aerodynamic_force_n,
     equilibrium_speed_mps,
@@ -415,7 +413,7 @@ def test_route_metrics_accumulate(cyclist, bicycle, traversal):
         bicycle,
     )
 
-    metrics = RouteMetrics.from_results([first, second])
+    metrics = PhysicsRouteMetrics.from_results([first, second])
 
     assert metrics.time_s == pytest.approx(first.time_s + second.time_s)
     assert metrics.distance_m == pytest.approx(

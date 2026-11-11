@@ -10,11 +10,10 @@ Ref.: ``docs/adr/026-contrato-circulacao.md`` §4-§6.
 """
 
 import pytest
-
-from graph.model import Arc, BicycleAccess, Node, RoutingGraph, Segment
-from graph.restrictions import AccessRule, TurnRestriction
-from physical import ElevationUncertainty, SimulationStatus, TraversalResult
-from search import (
+from router.core.data.graph.model import Arc, BicycleAccess, Node, RoutingGraph, Segment
+from router.core.data.graph.restrictions import AccessRule, TurnRestriction
+from router.core.physics import ElevationUncertainty, SimulationStatus, TraversalResult
+from router.core.search import (
     MultiObjectiveAStar,
     PhysicalState,
     RouteCandidate,

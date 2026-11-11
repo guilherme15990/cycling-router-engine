@@ -6,9 +6,8 @@ qualidade/proveniencia de elevacao.
 """
 
 import pytest
-
-from elevation import CallableElevation, OsmTagElevation
-from graph.model import (
+from router.core.data.elevation import CallableElevation, OsmTagElevation
+from router.core.data.graph.model import (
     Arc,
     ElevationQuality,
     ElevationSample,
@@ -19,18 +18,18 @@ from graph.model import (
     Segment,
     concat_geometry,
 )
-from graph.restrictions import (
+from router.core.data.graph.restrictions import (
     AccessRule,
     RestrictionSource,
     TurnRestriction,
     turn_restriction_from_relation,
 )
-from graph.serialize import graph_from_dict, graph_to_dict
-from graph.simplify import simplify_graph
-from osm.build import BuildOptions, attach_elevation, build_graph
-from osm.parse import OsmData
-from physical.arc_profile import ArcProfile
-from snapping import SpatialSnapper
+from router.core.data.graph.serialize import graph_from_dict, graph_to_dict
+from router.core.data.graph.simplify import simplify_graph
+from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
+from router.core.data.osm.parse import OsmData
+from router.core.physics.arc_profile import ArcProfile
+from router.core.data.snapping import SpatialSnapper
 
 # --------------------------------------------------------------------------
 # helpers

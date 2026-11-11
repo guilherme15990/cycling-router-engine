@@ -1,8 +1,7 @@
 """Testes do modelo energetico generico e da viabilidade de bateria."""
 
 import pytest
-
-from physical import (
+from router.core.physics import (
     JOULES_PER_WH,
     BatteryConfig,
     BatteryFeasibility,

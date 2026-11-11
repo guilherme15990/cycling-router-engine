@@ -1,9 +1,8 @@
 import pytest
-
-from graph.model import Arc, Segment
-from physical import TraversalResult
-from physical.energy import kinetic_energy_j
-from search import (
+from router.core.data.graph.model import Arc, Segment
+from router.core.physics import TraversalResult
+from router.core.physics.energy import kinetic_energy_j
+from router.core.search import (
     Objective,
     ObjectiveSet,
     PhysicalState,
@@ -15,7 +14,7 @@ from search import (
     route_arcs,
     speed_bucket,
 )
-from search import FrontierManager
+from router.core.search import FrontierManager
 
 MASS_KG = 87.0
 
@@ -47,7 +46,7 @@ def make_result(
 
 
 def make_state(node_id, *, speed_mps, time_s, distance_m, label_id=0):
-    from search import SearchState
+    from router.core.search import SearchState
 
     return SearchState(
         node_id=node_id,

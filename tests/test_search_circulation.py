@@ -8,10 +8,9 @@ Ref.: ``docs/adr/026-contrato-circulacao.md`` §2-§3, §7.
 """
 
 import pytest
-
-from graph.model import Arc, BicycleAccess, Node, RoutingGraph, Segment
-from graph.restrictions import AccessRule, TurnRestriction
-from search import (
+from router.core.data.graph.model import Arc, BicycleAccess, Node, RoutingGraph, Segment
+from router.core.data.graph.restrictions import AccessRule, TurnRestriction
+from router.core.search import (
     CirculationPolicy,
     DecisionReason,
     Verdict,

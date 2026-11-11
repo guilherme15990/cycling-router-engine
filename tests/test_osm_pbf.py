@@ -13,11 +13,10 @@ import struct
 from pathlib import Path
 
 import pytest
-
 from _pbf_fixtures import _PbfBuilder, _deg, _fbytes, _fvarint
-from osm.build import build_graph
-from osm.parse import DEFAULT_HIGHWAYS, OsmData
-from osm.pbf import PbfError, PbfStats, read_header, read_osm_pbf
+from router.core.data.osm.build import build_graph
+from router.core.data.osm.parse import DEFAULT_HIGHWAYS, OsmData
+from router.core.data.osm.pbf import PbfError, PbfStats, read_header, read_osm_pbf
 
 
 # ---------------------------------------------------------------------------

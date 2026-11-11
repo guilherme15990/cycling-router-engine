@@ -14,12 +14,10 @@ import ast
 import dataclasses
 import inspect
 import json
-
 import pytest
-
-import physical.effort as effort_module
-from graph.model import Arc, ElevationSample, Segment
-from physical import (
+import router.core.physics.effort as effort_module
+from router.core.data.graph.model import Arc, ElevationSample, Segment
+from router.core.physics import (
     BicycleModel,
     CyclistModel,
     EFFORT_FEATURES_VERSION,

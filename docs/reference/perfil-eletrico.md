@@ -308,12 +308,12 @@ Perfil **genérico**, modelo energético **genérico**, **veículo opcional** e
 
 | Conceito | Onde está |
 | --- | --- |
-| Perfil `Elétrico` (id `electric`) | `src/search/profiles.py` (`PROFILE_CONFIG["electric"]`), `src/search/objectives.py` (`PROFILE_OBJECTIVES["electric"]`) |
+| Perfil `Elétrico` (id `electric`) | `src/router/core/search/profiles.py` (`PROFILE_CONFIG["electric"]`), `src/router/core/search/objectives.py` (`PROFILE_OBJECTIVES["electric"]`) |
 | Objetivos Pareto | `(Objective.ENERGY, Objective.TIME)` → `("energy_j", "time_s")` |
 | Ranking | lexicográfico (energia primeiro) com tolerância `energy_j`/`time_s` |
-| Modelo energético | `src/physical/energy_model.py`: `GenericEnergyConfig`, `EnergyModel`, `EnergyEstimate` |
+| Modelo energético | `src/router/core/physics/energy_model.py`: `GenericEnergyConfig`, `EnergyModel`, `EnergyEstimate` |
 | Bateria opcional | `BatteryConfig`, `BatteryFeasibility`, `assess_battery` |
-| Estimativa por rota | `src/search/energy.py`: `RouteEnergyEstimate`, `estimate_route_energy(s)` |
+| Estimativa por rota | `src/router/core/search/energy.py`: `RouteEnergyEstimate`, `estimate_route_energy(s)` |
 | Integração | `ProfileSearchRequest(energy_model=..., battery=...)` → `ProfileSearchResponse.energy` |
 | GUI | `gui/routegui/app.py` (perfil "Eletrico" + coluna de energia), `engine_bridge.py` (`GuiRoute.energy_wh`/`battery_note`) |
 

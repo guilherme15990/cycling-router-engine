@@ -11,10 +11,8 @@ Cobrem:
 """
 
 import json
-
 import pytest
-
-from intelligence import (
+from router.core.prediction import (
     MODEL_ARTIFACT_FORMAT,
     ModelArtifact,
     ModelFormatError,
