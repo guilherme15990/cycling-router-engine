@@ -230,18 +230,66 @@ def test_zone_preference_unknown_without_distribution():
 def _with_intensity(distribution, *, duration_distribution=None):
     from dataclasses import replace
 
+    from router.core.physiology import (
+        ParameterSource,
+        PowerReference,
+        ReferencePowerKind,
+    )
     from router.core.prediction.intensity import IntensityEstimate
+    from router.core.prediction.mechanical import MechanicalIntensity, RoutePhysics
+    from router.core.prediction.response import FatigueModel, RiderResponseEstimate
 
-    estimate = IntensityEstimate(
+    reference = PowerReference.from_absolute(
+        200.0,
+        rider_mass_kg=75.0,
+        kind=ReferencePowerKind.FTP,
+        source=ParameterSource.MEASURED,
+    )
+    mechanical = MechanicalIntensity(
+        physics=RoutePhysics(
+            distance_m=100.0,
+            duration_s=20.0,
+            ascent_m=0.0,
+            descent_m=0.0,
+            wheel_work_j=3600.0,
+            rider_wheel_work_j=3600.0,
+            rider_crank_work_j=4000.0,
+            motor_wheel_work_j=0.0,
+        ),
+        reference=reference,
+        segment_power_w=(200.0,),
+        segment_relative_intensity=(1.0,),
+        segment_duration_s=(20.0,),
+        segment_distance_m=(100.0,),
+        rms_power_w=200.0,
+        max_segment_mean_power_w=200.0,
+        variability_index=1.0,
+    )
+    response = RiderResponseEstimate(
         borg_scale=DEFAULT_BORG_SCALE,
         mean_rpe=10.0,
+        mean_rpe_time_weighted=10.0,
+        mean_rpe_distance_weighted=10.0,
         peak_rpe=12.0,
+        segment_rpes=(10.0,),
+        segment_relative_intensity=(1.0,),
+        segment_heart_rate_bpm=(None,),
+        segment_fraction_of_max_hr=(None,),
+        mean_heart_rate_bpm=None,
+        peak_heart_rate_bpm=None,
+        heart_rate_zone_distribution=None,
+        heart_rate_zone_definition=None,
+        fatigue_model=FatigueModel.NONE,
+    )
+    estimate = IntensityEstimate(
+        borg_scale=DEFAULT_BORG_SCALE,
+        mechanical=mechanical,
+        rider_response=response,
         band_distance_fraction=dict(distribution),
         band_duration_fraction=(
             None if duration_distribution is None else dict(duration_distribution)
         ),
-        distance_m=100.0,
-        duration_s=20.0,
+        segment_bands=("i1",),
     )
     return replace(assess(two_arc_graph()), intensity=estimate)
 

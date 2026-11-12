@@ -63,6 +63,7 @@ from .diagnostics import EnergyConsistency, energy_consistency
 
 if TYPE_CHECKING:  # pragma: no cover - apenas para tipagem
     from router.core.prediction.intensity import IntensityEstimate
+    from router.core.prediction.mechanical import PropulsionModel
 
 
 class RouteAssessmentError(ValueError):
@@ -241,6 +242,7 @@ def assess_route(
     initial_state: SimulationState | None = None,
     power_w: float | None = None,
     rider: RiderProfile | None = None,
+    propulsion: "PropulsionModel | None" = None,
     context: PredictionContext | None = None,
     predictor: EffortPredictor | None = None,
     condition_evaluator: ConditionEvaluator | None = None,
@@ -263,6 +265,7 @@ def assess_route(
         initial_state: Estado dinamico na origem; padrao: repouso.
         power_w: Potencia no pedivela; padrao do ciclista.
         rider: Perfil fisiologico (opcional).
+        propulsion: Modelo de propulsao (opcional; padrao sem assistencia).
         context: Contexto da predicao (opcional).
         predictor: Preditor fisiologico; ``None`` => ``UNAVAILABLE`` explicito.
         condition_evaluator: Avaliador de condicoes de restricao de circulacao.
@@ -300,14 +303,18 @@ def assess_route(
         policy=circulation_policy,
     )
 
-    # Estimativa de intensidade (ADR-028): computacional e NAO calibrada. Nao
-    # preenche a previsao fisiologica; e um artefato distinto e rotulado.
+    # Intensidade (ADR-034): fisica da rota, intensidade mecanica relativa e
+    # resposta provisoria sao camadas distintas. Nao preenche a previsao
+    # fisiologica; e um artefato separado e rotulado.
     from router.core.prediction.intensity import estimate_intensity, segments_from_traversal
+    from router.core.prediction.mechanical import DEFAULT_PROPULSION
+    from router.core.prediction.rider import rider_model_from_cyclist
 
+    rider_model = rider_model_from_cyclist(cyclist, rider)
     intensity = estimate_intensity(
         segments_from_traversal(path, arcs),
-        mass_kg=cyclist.mass_kg + bicycle.mass_kg,
-        ftp_w=cyclist.sustainable_power_w,
+        rider=rider_model,
+        propulsion=propulsion if propulsion is not None else DEFAULT_PROPULSION,
     )
 
     # Diagnostico energetico (ADR-029 D7): agrega o balanco ja calculado pelo

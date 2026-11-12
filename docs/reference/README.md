@@ -42,6 +42,10 @@ como fonte unica e identidade de pacote) foi **executada**; o registro esta na
 secao 14 do ADR-032 e na secao 14 do
 [ADR-033](../adr/033-arquitetura-por-componentes-de-pipeline.md).
 
+A separacao conceitual entre **intensidade mecanica** e **resposta fisiologica**
+(revisao do `intensity.py`) esta registrada no
+[ADR-034](../adr/034-intensidade-mecanica-e-resposta-fisiologica.md).
+
 ## Projeto
 
 - [`../README.md`](../README.md) — visão geral, instalação, uso, estrutura e

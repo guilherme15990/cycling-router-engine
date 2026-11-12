@@ -197,13 +197,15 @@ def test_metabolic_energy_scales_by_efficiency():
 def test_rider_profile_is_optional_and_validated():
     empty = RiderProfile()
     assert empty.max_heart_rate_bpm is None
-    assert empty.threshold_power_w is None
-    ok = RiderProfile(max_heart_rate_bpm=185.0, threshold_power_w=280.0)
+    assert empty.ftp_w is None
+    ok = RiderProfile(max_heart_rate_bpm=185.0, ftp_w=280.0)
     assert ok.max_heart_rate_bpm == 185.0
     with pytest.raises(ValueError):
         RiderProfile(max_heart_rate_bpm=0.0)
     with pytest.raises(ValueError):
         RiderProfile(weight_kg=-1.0)
+    with pytest.raises(ValueError):
+        RiderProfile(w_prime_j=20_000.0)
 
 
 def test_prediction_context_validated():

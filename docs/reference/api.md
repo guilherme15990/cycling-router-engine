@@ -672,7 +672,7 @@ Valores: `AVAILABLE`, `UNAVAILABLE`, `MODEL_NOT_CALIBRATED`, `INSUFFICIENT_DATA`
 ### `RiderProfile`
 
 ```python
-class RiderProfile(max_heart_rate_bpm: float | None = None, resting_heart_rate_bpm: float | None = None, threshold_power_w: float | None = None, weight_kg: float | None = None)
+class RiderProfile(max_heart_rate_bpm: float | None = None, resting_heart_rate_bpm: float | None = None, ftp_w: float | None = None, critical_power_w: float | None = None, w_prime_j: float | None = None, weight_kg: float | None = None, age_years: float | None = None, capacity_profile: router.core.CapacityProfile | None = None, activity_level: router.core.ActivityLevel | None = None)
 ```
 
 Perfil fisiologico do ciclista, **parcial e opcional**.
@@ -1674,7 +1674,7 @@ Avalia um conjunto de candidatas, preservando a ordem de entrada.
 ### `assess_route`
 
 ```python
-assess_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str | None], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.RouteAssessment
+assess_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str | None], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, propulsion: 'PropulsionModel | None' = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.RouteAssessment
 ```
 
 Avalia uma rota com o **simulador fisico completo** e a classifica.
@@ -2828,26 +2828,26 @@ Coeficientes padrao da estimativa (origem: `toporide`; ver tabela de provenienci
 ### `IntensityCoefficients`
 
 ```python
-class IntensityCoefficients(base_rpe: float = 6.0, scale_gain: float = 6.0, ftp_reference_kg: float = 75.0, grade_free_pct: float = 5.0, grade_exponent: float = 1.3, traffic_weight: float = 1.5, fatigue_weight: float = 1.5, fatigue_amplitude: float = 1.5, fatigue_window_s: float = 1200.0, fatigue_sensitivity: float = 1.0)
+class IntensityCoefficients(rpe_anchors: tuple[tuple[float, float], ...] = ((0.0, 6.0), (0.5, 11.0), (0.7, 13.0), (0.85, 15.0), (1.0, 17.0), (1.2, 19.0), (1.5, 20.0)), fatigue_rpe_gain: float = 1.0, cp_w_recovery_factor: float = 0.5, rpe_peak_window_s: float = 60.0, hr_time_constant_s: float = 45.0, hr_peak_window_s: float = 60.0, hr_threshold_fraction_of_reserve: float = 0.85, hr_above_gain: float = 2.0, hr_rest_fraction_of_max: float = 0.55, hr_threshold_fraction_of_max: float = 0.95)
 ```
 
-Coeficientes da estimativa de intensidade, com origem declarada.
+Parâmetros explícitos da resposta provisória.
 
 ### `IntensitySegment`
 
 ```python
-class IntensitySegment(distance_m: float, duration_s: float, rider_energy_j: float, grade_pct: float, traffic_stress: float)
+class IntensitySegment(distance_m: float, duration_s: float, rider_energy_j: float, mechanical_energy_j: float, ascent_m: float = 0.0, descent_m: float = 0.0, traffic_stress: float = 0.0)
 ```
 
-Observacao de um trecho (arco) para a estimativa de intensidade.
+Trecho de rota com grandezas físicas explícitas.
 
 ### `IntensityEstimate`
 
 ```python
-class IntensityEstimate(borg_scale: router.core.BorgScale, mean_rpe: float, peak_rpe: float, band_distance_fraction: dict[str, float], band_duration_fraction: dict[str, float] | None, distance_m: float, duration_s: float, method_id: str = 'toporide-heuristic', model_version: str = '1', band_definition: str = 'borg-intensity-bands@1', segment_rpes: tuple[float, ...] = (), segment_bands: tuple[str, ...] = ())
+class IntensityEstimate(borg_scale: router.core.BorgScale, mechanical: router.core.prediction.mechanical.MechanicalIntensity, rider_response: router.core.prediction.response.RiderResponseEstimate, band_distance_fraction: dict[str, float], band_duration_fraction: dict[str, float] | None, segment_bands: tuple[str, ...], method_id: str = 'mechanical-response', model_version: str = '2', band_definition: str = 'borg-intensity-bands@1', traffic_stress_mean: float | None = None)
 ```
 
-Estimativa de intensidade de uma rota — **nao calibrada**.
+Estimativa de intensidade de uma rota — computacional e não calibrada.
 
 ### `hw_stress`
 
@@ -2855,7 +2855,7 @@ Estimativa de intensidade de uma rota — **nao calibrada**.
 hw_stress(highway: str | None) -> float
 ```
 
-Estresse de trafego (ordinal) de uma classe de via OSM.
+Estresse de tráfego (ordinal) de uma classe de via OSM.
 
 ### `band_for_rpe`
 
@@ -2868,23 +2868,23 @@ Nome da faixa de intensidade para um RPE (Borg).
 ### `segment_rpe`
 
 ```python
-segment_rpe(segment: router.core.prediction.intensity.IntensitySegment, *, mass_kg: float, ftp_w: float, accumulated_j: float = 0.0, borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, coefficients: router.core.prediction.intensity.IntensityCoefficients = IntensityCoefficients(base_rpe=6.0, scale_gain=6.0, ftp_reference_kg=75.0, grade_free_pct=5.0, grade_exponent=1.3, traffic_weight=1.5, fatigue_weight=1.5, fatigue_amplitude=1.5, fatigue_window_s=1200.0, fatigue_sensitivity=1.0)) -> float
+segment_rpe(segment: router.core.prediction.mechanical.RouteSegment, *, rider: router.core.RiderModel, propulsion: router.core.prediction.mechanical.PropulsionModel = PropulsionModel(mode=<PropulsionMode.RIDER_ONLY: 'rider_only'>, assist_fraction=0.0, target_rider_power_w=None, max_motor_power_w=None), borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, config: router.core.prediction.response.ResponseConfig = ResponseConfig(rpe_anchors=((0.0, 6.0), (0.5, 11.0), (0.7, 13.0), (0.85, 15.0), (1.0, 17.0), (1.2, 19.0), (1.5, 20.0)), fatigue_rpe_gain=1.0, cp_w_recovery_factor=0.5, rpe_peak_window_s=60.0, hr_time_constant_s=45.0, hr_peak_window_s=60.0, hr_threshold_fraction_of_reserve=0.85, hr_above_gain=2.0, hr_rest_fraction_of_max=0.55, hr_threshold_fraction_of_max=0.95)) -> float
 ```
 
-RPE (Borg) estimado de um trecho, com a fadiga acumulada informada.
+RPE provisório de um único trecho, dado um ``RiderModel``.
 
 ### `estimate_intensity`
 
 ```python
-estimate_intensity(segments: collections.abc.Sequence[router.core.prediction.intensity.IntensitySegment], *, mass_kg: float, ftp_w: float, borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, coefficients: router.core.prediction.intensity.IntensityCoefficients = IntensityCoefficients(base_rpe=6.0, scale_gain=6.0, ftp_reference_kg=75.0, grade_free_pct=5.0, grade_exponent=1.3, traffic_weight=1.5, fatigue_weight=1.5, fatigue_amplitude=1.5, fatigue_window_s=1200.0, fatigue_sensitivity=1.0)) -> router.core.prediction.intensity.IntensityEstimate
+estimate_intensity(segments: collections.abc.Sequence[router.core.prediction.mechanical.RouteSegment], *, rider: router.core.RiderModel, propulsion: router.core.prediction.mechanical.PropulsionModel = PropulsionModel(mode=<PropulsionMode.RIDER_ONLY: 'rider_only'>, assist_fraction=0.0, target_rider_power_w=None, max_motor_power_w=None), borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, config: router.core.prediction.response.ResponseConfig = ResponseConfig(rpe_anchors=((0.0, 6.0), (0.5, 11.0), (0.7, 13.0), (0.85, 15.0), (1.0, 17.0), (1.2, 19.0), (1.5, 20.0)), fatigue_rpe_gain=1.0, cp_w_recovery_factor=0.5, rpe_peak_window_s=60.0, hr_time_constant_s=45.0, hr_peak_window_s=60.0, hr_threshold_fraction_of_reserve=0.85, hr_above_gain=2.0, hr_rest_fraction_of_max=0.55, hr_threshold_fraction_of_max=0.95)) -> router.core.prediction.intensity.IntensityEstimate
 ```
 
-Estima RPE e faixas de intensidade de uma rota (por distancia e duracao).
+Estima intensidade mecânica, RPE e resposta provisória de uma rota.
 
 ### `segments_from_traversal`
 
 ```python
-segments_from_traversal(path: router.core.physics.models.TraversalPath, arcs: collections.abc.Sequence) -> tuple[router.core.prediction.intensity.IntensitySegment, ...]
+segments_from_traversal(path: router.core.physics.models.TraversalPath, arcs: collections.abc.Sequence) -> tuple[router.core.prediction.mechanical.RouteSegment, ...]
 ```
 
-Monta os trechos de intensidade a partir de um ``TraversalPath``.
+Monta os trechos físicos a partir de um ``TraversalPath``.

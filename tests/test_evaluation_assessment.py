@@ -351,7 +351,7 @@ def test_assessment_carries_uncalibrated_intensity_estimate():
     estimate = assessment.intensity
     assert estimate.calibrated is False
     assert estimate.is_measurement is False
-    assert estimate.source == "computational_intensity_estimate"
+    assert estimate.method_id == "mechanical-response"
     assert DEFAULT_BORG_SCALE.min_score <= estimate.mean_rpe <= DEFAULT_BORG_SCALE.max_score
     assert sum(estimate.band_distance_fraction.values()) == pytest.approx(1.0)
     assert estimate.band_duration_fraction is not None

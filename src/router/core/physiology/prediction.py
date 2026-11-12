@@ -25,6 +25,7 @@ from enum import Enum
 from typing import ClassVar
 
 from ._validation import finite, non_negative, positive, unit_interval
+from .rider import ActivityLevel, CapacityProfile
 from .scales import DEFAULT_BORG_SCALE, BorgScale
 from .zones import validate_distribution
 
@@ -70,22 +71,52 @@ class RiderProfile:
 
     Todos os campos sao opcionais: a ausencia e explicita (``None``). Nenhum
     valor fisiologico e inferido a partir de dados nao fornecidos.
+
+    ``ftp_w`` e FTP medida; ``critical_power_w`` e potencia critica medida.
+    Os dois conceitos sao distintos e nunca sao substituidos um pelo outro.
+    ``capacity_profile``/``activity_level`` sao presets, usados apenas quando
+    nao ha medida individual.
     """
 
     max_heart_rate_bpm: float | None = None
     resting_heart_rate_bpm: float | None = None
-    threshold_power_w: float | None = None
+    ftp_w: float | None = None
+    critical_power_w: float | None = None
+    w_prime_j: float | None = None
     weight_kg: float | None = None
+    age_years: float | None = None
+    capacity_profile: CapacityProfile | None = None
+    activity_level: ActivityLevel | None = None
 
     def __post_init__(self) -> None:
         if self.max_heart_rate_bpm is not None:
             positive("max_heart_rate_bpm", self.max_heart_rate_bpm)
         if self.resting_heart_rate_bpm is not None:
             positive("resting_heart_rate_bpm", self.resting_heart_rate_bpm)
-        if self.threshold_power_w is not None:
-            non_negative("threshold_power_w", self.threshold_power_w)
+        if self.ftp_w is not None:
+            positive("ftp_w", self.ftp_w)
+        if self.critical_power_w is not None:
+            positive("critical_power_w", self.critical_power_w)
+        if self.w_prime_j is not None:
+            positive("w_prime_j", self.w_prime_j)
+            if self.critical_power_w is None:
+                raise ValueError("w_prime_j exige critical_power_w")
         if self.weight_kg is not None:
             positive("weight_kg", self.weight_kg)
+        if self.age_years is not None:
+            age = finite("age_years", self.age_years)
+            if not 5.0 <= age <= 100.0:
+                raise ValueError(
+                    f"age_years fora da faixa plausivel [5, 100] (recebido {age!r})"
+                )
+        if self.capacity_profile is not None and not isinstance(
+            self.capacity_profile, CapacityProfile
+        ):
+            raise ValueError("capacity_profile deve ser um CapacityProfile ou None")
+        if self.activity_level is not None and not isinstance(
+            self.activity_level, ActivityLevel
+        ):
+            raise ValueError("activity_level deve ser um ActivityLevel ou None")
 
 
 @dataclass(frozen=True, slots=True)

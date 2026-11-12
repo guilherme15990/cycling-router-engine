@@ -52,6 +52,24 @@ from .intensity import (
     segment_rpe,
     segments_from_traversal,
 )
+from .mechanical import (
+    DEFAULT_PROPULSION,
+    MechanicalIntensity,
+    PropulsionMode,
+    PropulsionModel,
+    PropulsionSplit,
+    RoutePhysics,
+    RouteSegment,
+    estimate_mechanical_intensity,
+)
+from .response import (
+    DEFAULT_RESPONSE_CONFIG,
+    FatigueModel,
+    ResponseConfig,
+    RiderResponseEstimate,
+    estimate_rider_response,
+)
+from .rider import rider_model_from_cyclist
 from .model_eval import (
     CriteriaResult,
     EvaluationError,
@@ -166,6 +184,22 @@ __all__ = [
     "segment_rpe",
     "estimate_intensity",
     "segments_from_traversal",
+    # mechanical intensity / propulsion (ADR-034)
+    "RouteSegment",
+    "RoutePhysics",
+    "MechanicalIntensity",
+    "PropulsionMode",
+    "PropulsionModel",
+    "PropulsionSplit",
+    "DEFAULT_PROPULSION",
+    "estimate_mechanical_intensity",
+    # provisional physiological response (ADR-034)
+    "ResponseConfig",
+    "DEFAULT_RESPONSE_CONFIG",
+    "FatigueModel",
+    "RiderResponseEstimate",
+    "estimate_rider_response",
+    "rider_model_from_cyclist",
     # models
     "MODELS_VERSION",
     "ModelError",
