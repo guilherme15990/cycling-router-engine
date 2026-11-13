@@ -9,7 +9,7 @@ e atribui um **estado de seguranca operacional** explicito:
   fisica material;
 * ``DEGRADED``  — fisicamente valida e legal, **com** limitacao fisica declarada
   (incerteza altimetrica, ``stalled``, regularizacao de baixa velocidade,
-  desmontagem, simulacao indisponivel);
+  simulacao indisponivel);
 * ``REJECTED``  — proibicao de circulacao **aplicavel**, restricao de circulacao
   **nao resolvida** (conservadora) **ou** inviabilidade fisica **comprovada**.
 
@@ -74,7 +74,6 @@ class ReasonKind(str, Enum):
     SIMULATION_UNAVAILABLE = "simulation_unavailable"
     MIN_SPEED_REGULARIZATION = "min_speed_regularization"
     STALLED = "stalled"
-    DISMOUNT_USED = "dismount_used"
     # -- fisiologia / estimativa: informativos (D2/D6) ---------------------
     PHYSIOLOGY_UNAVAILABLE = "physiology_unavailable"
     PHYSIOLOGY_MODEL_NOT_CALIBRATED = "physiology_model_not_calibrated"
@@ -97,7 +96,6 @@ _DEGRADING_LIMITATIONS: dict[str, ReasonKind] = {
     "simulation_unavailable": ReasonKind.SIMULATION_UNAVAILABLE,
     "min_speed_regularization": ReasonKind.MIN_SPEED_REGULARIZATION,
     "stalled": ReasonKind.STALLED,
-    "dismount_used": ReasonKind.DISMOUNT_USED,
 }
 
 #: Mapeamento dos codigos fisiologicos (informativos).

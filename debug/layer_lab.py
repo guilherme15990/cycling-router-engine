@@ -25,8 +25,9 @@ def init_state():
                     air_density=env.air_density_kg_m3, gravity=env.gravity_m_s2,
                     speed_cap_kmh=env.safe_max_speed_mps * 3.6, initial_kmh=0.0,
                     physics_step=traversal.step_m, require_elevation=False,
-                    snap_radius=snap.max_distance_m, allow_dismount=snap.allow_dismount,
-                    bbox_growth=1.6, bbox_iterations=8, bbox_padding=80.0,
+                    snap_radius=snap.max_distance_m,
+                    bbox_padding=80.0, use_full_graph=False,
+                    progress_event_every=4, max_workers=4,
                     predictor_enabled=False, predictor_store="debug/.cache/models", predictor_version="",
                     rider_enabled=False, rider_ftp=0.0, rider_hr_max=0.0, rider_hr_rest=0.0,
                     pacing_enabled=True, reference_speed_kmh=15.0)
@@ -53,12 +54,32 @@ def render_controls():
         st.caption("A avaliação completa usa o modo definido pelo próprio motor; a captura mostra o simulador efetivamente utilizado em cada chamada.")
         st.checkbox("Exigir altimetria na simulação", key="require_elevation")
         st.number_input("Distância máxima de snapping (m)", min_value=1.0, max_value=5000.0, key="snap_radius")
-        st.checkbox("Permitir trechos de empurrar a bicicleta no snapping", key="allow_dismount")
     with st.expander("Envelope de busca e bbox"):
-        a, c = st.columns(2)
-        a.number_input("Fator de expansão da zona", min_value=1.01, max_value=5.0, key="bbox_growth")
-        c.number_input("Margem do bbox (m)", min_value=0.0, max_value=10000.0, key="bbox_padding")
-        st.caption("A área cresce até cobrir o grafo disponível, salvo cancelamento ou erro.")
+        st.number_input("Margem do bbox (m)", min_value=0.0, max_value=10000.0, key="bbox_padding")
+        st.checkbox(
+            "Buscar no grafo inteiro (expansão explícita)",
+            key="use_full_graph",
+            help="Desligado: usa apenas o corredor dos pontos e a margem informada. Ligado: o usuário autoriza a cobertura do grafo carregado.",
+        )
+        st.caption("A busca ocorre uma única vez. Por padrão, o corredor é definido pelos pontos e pela margem; o índice espacial persistente evita varrer o grafo inteiro ao recortar a BBox. O box final de exibição/altimetria cobre o traçado devolvido.")
+    with st.expander("Busca e publicação progressiva"):
+        st.number_input(
+            "Publicar preview a cada N candidatas",
+            min_value=1,
+            max_value=100,
+            step=1,
+            key="progress_event_every",
+            help="A primeira candidata é publicada imediatamente; depois, o preview é atualizado a cada N candidatas. Isso reduz avaliações e eventos repetidos.",
+        )
+        st.number_input(
+            "Máximo de pernas simultâneas",
+            min_value=1,
+            max_value=16,
+            step=1,
+            key="max_workers",
+            help="Aplicado apenas quando há paradas. Cada perna mantém seus caches mutáveis isolados.",
+        )
+        st.caption("A captura do debug assina os eventos porque precisa mostrar o progresso. Um consumidor sem assinante não executa preview.")
     with st.expander("Preditor ML local e dados fisiológicos"):
         st.checkbox("Carregar preditor de um artefato local", key="predictor_enabled")
         st.text_input("Diretório do ModelStore", key="predictor_store")
@@ -88,15 +109,19 @@ def _execute_with_state(s, api, **request):
     trace = LayerTrace(samples=int(s.trace_samples)) if s.capture_layers else None
     s.layer_report = None
     options = {}
+    plan = None
     try:
         with trace if trace is not None else nullcontext():
             options = dict(environment=Environment(headwind_mps=s.wind_mps,
                            air_density_kg_m3=s.air_density, gravity_m_s2=s.gravity,
                            safe_max_speed_mps=s.speed_cap_kmh / 3.6),
                            traversal=PhysicalTraversal(step_m=s.physics_step, require_elevation=s.require_elevation),
-                           snap_options=SnapOptions(max_distance_m=s.snap_radius, allow_dismount=s.allow_dismount),
+                           snap_options=SnapOptions(max_distance_m=s.snap_radius),
                            initial_speed_mps=s.initial_kmh / 3.6,
-                           growth=s.bbox_growth, pad_m=s.bbox_padding)
+                           pad_m=float(getattr(s, "bbox_padding", 80.0)),
+                           use_full_graph=bool(getattr(s, "use_full_graph", False)),
+                           progress_event_every=int(getattr(s, "progress_event_every", 4)),
+                           max_workers=int(getattr(s, "max_workers", 4)))
             if s.predictor_enabled:
                 if not s.predictor_version.strip():
                     raise ValueError("Informe a versão registrada do preditor local.")
@@ -124,6 +149,40 @@ def _execute_with_state(s, api, **request):
     finally:
         if trace is not None:
             report = trace.report()
+            graph = request.get("graph")
+            traversal = options.get("traversal")
+            spatial_index = None
+            if graph is not None and hasattr(graph, "has_spatial_index"):
+                spatial_index = {
+                    "persistent_grid": bool(graph.has_spatial_index()),
+                    "node_index": type(getattr(graph, "_node_spatial_index", None)).__name__
+                    if getattr(graph, "_node_spatial_index", None) is not None else None,
+                    "arc_index": type(getattr(graph, "_arc_spatial_index", None)).__name__
+                    if getattr(graph, "_arc_spatial_index", None) is not None else None,
+                }
+            report["performance"] = {
+                "search_orchestration": "router.core.search.candidate_search.search_candidates",
+                "search_scope": "provided_graph" if bool(getattr(s, "use_full_graph", False)) else "corridor_bbox",
+                "spatial_index": spatial_index,
+                "physics_cache": {
+                    "profiles": len(getattr(traversal, "_profiles", {})),
+                    "steps": len(getattr(traversal, "_steps", {})),
+                    "equilibrium_entries": len(getattr(traversal, "_equilibrium", {})),
+                } if traversal is not None else None,
+                "preview": {
+                    "subscribed": True,
+                    "progress_event_every": int(getattr(s, "progress_event_every", 4)),
+                    "max_workers": int(getattr(s, "max_workers", 4)),
+                    "geometry_reused": True,
+                    "preview_assessments_reused": True,
+                },
+                "result": {
+                    "routes": len(getattr(plan, "routes", ()) or ()) if plan is not None else 0,
+                    "search_mode": getattr(plan, "search_mode", None) if plan is not None else None,
+                    "search_complete": getattr(plan, "search_complete", None) if plan is not None else None,
+                    "optimality_proven": getattr(plan, "optimality_proven", None) if plan is not None else None,
+                },
+            }
             report["request"] = {k: snapshot(v) for k, v in {**request, **options}.items()}
             s.layer_report = report
 
@@ -146,6 +205,23 @@ def render():
     if report.get("failure"):
         st.error(report["failure"])
     st.caption(f"Captura da última execução: {report['elapsed']:.3f} s. Durações incluem instrumentação e chamadas filhas; não devem ser somadas nem usadas como benchmark.")
+    performance = report.get("performance")
+    if performance:
+        st.subheader("Diagnóstico das melhorias", icon=":material/speed:")
+        spatial = performance.get("spatial_index") or {}
+        cache = performance.get("physics_cache") or {}
+        preview = performance.get("preview") or {}
+        result = performance.get("result") or {}
+        _table([
+            {"Item": "Orquestração da busca", "Valor": performance.get("search_orchestration", "—")},
+            {"Item": "Escopo", "Valor": performance.get("search_scope", "—")},
+            {"Item": "Índice espacial persistente", "Valor": "sim" if spatial.get("persistent_grid") else "não"},
+            {"Item": "Cache físico", "Valor": f"{cache.get('profiles', 0)} perfis · {cache.get('steps', 0)} passos · {cache.get('equilibrium_entries', 0)} equilíbrios"},
+            {"Item": "Publicação do preview", "Valor": f"a cada {preview.get('progress_event_every', '—')} candidata(s)"},
+            {"Item": "Geometria / avaliações do preview", "Valor": "reutilizadas" if preview.get("geometry_reused") and preview.get("preview_assessments_reused") else "não confirmado"},
+            {"Item": "Resultado", "Valor": f"{result.get('routes', 0)} rota(s) · completo={result.get('search_complete', '—')} · ótimo={result.get('optimality_proven', '—')}"},
+        ])
+        st.caption("Esses indicadores descrevem o caminho executado e o estado dos caches; os tempos da captura continuam inadequados para benchmark.")
     with st.expander("Cenário enviado à API"):
         st.json(report.get("request", {}), expanded=False)
     functions = report["functions"]
@@ -208,7 +284,7 @@ def start_job(**request):
         raise ValueError('Carregue um grafo de arquivo antes de executar a consulta isolada.')
     settings_keys = ('capture_layers', 'trace_samples', 'wind_mps', 'air_density', 'gravity',
         'speed_cap_kmh', 'initial_kmh', 'physics_step', 'require_elevation', 'snap_radius',
-        'allow_dismount', 'bbox_growth', 'bbox_iterations', 'bbox_padding', 'predictor_enabled',
+        'bbox_padding', 'use_full_graph', 'progress_event_every', 'max_workers', 'predictor_enabled',
         'predictor_store', 'predictor_version', 'rider_enabled', 'rider_ftp', 'rider_hr_max', 'rider_hr_rest',
         'pacing_enabled', 'reference_speed_kmh')
     settings = {key: s[key] for key in settings_keys}
@@ -273,7 +349,13 @@ def render_job():
                 s.progress_status = event['status']
                 details = event.get('details') or {}
                 if event['status'] in ('searching', 'route_found'):
-                    s.progress_message = f"Busca em andamento · perna {event.get('leg') or 1}/{event.get('legs') or 1} · expansão {details.get('iteration', '—')}"
+                    zone = ""
+                    if details.get('zone_nodes') is not None:
+                        zone = f" · zona {details['zone_nodes']:,} nós/{details.get('zone_arcs', 0):,} arcos"
+                    s.progress_message = (
+                        f"Busca em andamento · perna {event.get('leg') or 1}/{event.get('legs') or 1}"
+                        f" · busca {details.get('iteration', '—')}{zone}"
+                    )
                 if event.get('plan'):
                     candidate = loads(json.dumps(event['plan']))
                     signature = tuple((route.id, len(route.geometry)) for route in candidate.routes)

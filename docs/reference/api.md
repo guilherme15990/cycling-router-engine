@@ -53,7 +53,7 @@ class BicycleAccess(str, Enum)
 
 Permissao de circulacao observada no OSM.
 
-Valores: `YES`, `DISMOUNT`.
+Valores: `YES`.
 
 ### `RoutingGraph`
 
@@ -294,7 +294,7 @@ Nao foi possivel conectar o ponto a rede ciclavel.
 ### `SnapOptions`
 
 ```python
-class SnapOptions(max_distance_m: float = 100.0, node_preference_m: float = 10.0, node_offset_tolerance_m: float = 2.0, min_split_distance_m: float = 1.0, allow_dismount: bool = True, cell_size_m: float | None = None)
+class SnapOptions(max_distance_m: float = 100.0, node_preference_m: float = 10.0, node_offset_tolerance_m: float = 2.0, min_split_distance_m: float = 1.0, cell_size_m: float | None = None)
 ```
 
 Parametros do snapping.
@@ -362,7 +362,7 @@ Ambiente fisico da travessia.
 ### `PhysicalTraversal`
 
 ```python
-class PhysicalTraversal(step_m: float | None = None, acceleration_limit_mps2: float = 2.0, dismount_speed_mps: float = 1.4, require_elevation: bool = False, *, mode: router.core.physics.traversal.SimulationMode | str = <SimulationMode.SEARCH: 'search'>)
+class PhysicalTraversal(step_m: float | None = None, acceleration_limit_mps2: float = 2.0, require_elevation: bool = False, *, mode: router.core.physics.traversal.SimulationMode | str = <SimulationMode.SEARCH: 'search'>)
 ```
 
 Simula a travessia fisica de arcos do grafo.
@@ -990,7 +990,7 @@ Fila de prioridade ordenada por um vetor de prioridade.
 ### `MultiObjectiveAStar`
 
 ```python
-class MultiObjectiveAStar(graph: router.core.data.RoutingGraph, traversal: router.core.TraversalModel, profile: router.core.SearchProfile | str, *, heuristic: router.core.Heuristic | None = None, dominance: router.core.Dominance | None = None, config: router.core.SearchConfig | None = None, initial_speed_mps: float = 0.0, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>))
+class MultiObjectiveAStar(graph: router.core.data.RoutingGraph, traversal: router.core.TraversalModel, profile: router.core.SearchProfile | str, *, heuristic: router.core.Heuristic | None = None, dominance: router.core.Dominance | None = None, config: router.core.SearchConfig | None = None, initial_speed_mps: float = 0.0, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.ALLOW: 'allow'>))
 ```
 
 Busca Pareto por perfil sobre um grafo finito.
@@ -1030,7 +1030,7 @@ Parametros de execucao da busca.
 ### `SearchResult`
 
 ```python
-class SearchResult(origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: router.core.SearchProfile, labels: tuple[router.core.SearchState, ...], expanded: int = 0, generated: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0)
+class SearchResult(origin: collections.abc.Hashable, destination: collections.abc.Hashable, profile: router.core.SearchProfile, labels: tuple[router.core.SearchState, ...], expanded: int = 0, generated: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, stopped_early: bool = False, stop_reason: str | None = None)
 ```
 
 Fronteira Pareto de destino devolvida por ``MultiObjectiveAStar``.
@@ -1038,7 +1038,7 @@ Fronteira Pareto de destino devolvida por ``MultiObjectiveAStar``.
 ### `SearchState`
 
 ```python
-class SearchState(node_id: collections.abc.Hashable, physical_state: router.core.PhysicalState, time_s: float = 0.0, distance_m: float = 0.0, ascent_m: float = 0.0, descent_m: float = 0.0, energy_j: float = 0.0, parent: 'SearchState | None' = None, incoming_arc_id: str | None = None, label_id: int = 0, active: bool = True, result_status: router.core.physics.models.SimulationStatus = <SimulationStatus.VALID: 'valid'>, elevation_uncertainty: 'ElevationUncertainty | None' = None, used_min_speed_regularization: bool = False, stalled: bool = False, dismount_used: bool = False)
+class SearchState(node_id: collections.abc.Hashable, physical_state: router.core.PhysicalState, time_s: float = 0.0, distance_m: float = 0.0, ascent_m: float = 0.0, descent_m: float = 0.0, energy_j: float = 0.0, parent: 'SearchState | None' = None, incoming_arc_id: str | None = None, label_id: int = 0, active: bool = True, result_status: router.core.physics.models.SimulationStatus = <SimulationStatus.VALID: 'valid'>, elevation_uncertainty: 'ElevationUncertainty | None' = None, used_min_speed_regularization: bool = False, stalled: bool = False)
 ```
 
 Label de busca: metricas acumuladas + estado fisico + reconstrucao.
@@ -1177,12 +1177,12 @@ Travessia **aproximada** de ``arc`` por equilibrio de velocidade.
 
 ## Busca: contrato de circulacao (guardrails)
 
-Contrato de circulacao (ADR-026): veredito tri-estado (`ALLOW`/`FORBID`/`UNKNOWN`) e politica conservadora (`UNKNOWN -> FORBID`), decisao de acesso do arco, decisao de conversao (via-node e via-way ordenado), validador independente de rota e os nos com restricao de conversao. **Nao** altera a fisica.
+Contrato de circulacao (ADR-026): veredito tri-estado (`ALLOW`/`FORBID`/`UNKNOWN`) e politica de produto (`UNKNOWN -> ALLOW`, ainda reportado), decisao de acesso do arco, decisao de conversao (via-node e via-way ordenado), validador independente de rota e os nos com restricao de conversao. **Nao** altera a fisica.
 
 ### `CirculationPolicy`
 
 ```python
-class CirculationPolicy(unresolved_verdict: router.core.Verdict = <Verdict.FORBID: 'forbid'>)
+class CirculationPolicy(unresolved_verdict: router.core.Verdict = <Verdict.ALLOW: 'allow'>)
 ```
 
 Politica **declarativa** para vereditos ``UNKNOWN`` (brutos).
@@ -1190,7 +1190,7 @@ Politica **declarativa** para vereditos ``UNKNOWN`` (brutos).
 ### `Decision`
 
 ```python
-class Decision(verdict: router.core.Verdict, reason: router.core.DecisionReason, raw_verdict: router.core.Verdict = <Verdict.ALLOW: 'allow'>, legality_asserted: bool = False, dismount: bool = False, restriction_id: str | None = None)
+class Decision(verdict: router.core.Verdict, reason: router.core.DecisionReason, raw_verdict: router.core.Verdict = <Verdict.ALLOW: 'allow'>, legality_asserted: bool = False, restriction_id: str | None = None)
 ```
 
 Resultado de uma consulta de circulacao.
@@ -1203,12 +1203,12 @@ class DecisionReason(str, Enum)
 
 Motivo de uma decisao (nunca silencioso; sempre auditavel).
 
-Valores: `NO_RULE`, `EXPLICIT_FORBIDDEN`, `EXPLICIT_ALLOWED`, `CONDITIONAL_FORBIDDEN`, `CONDITIONAL_ALLOWED`, `CONDITION_UNRESOLVED`, `CONTEXT_INSUFFICIENT`, `DISMOUNT`, `TURN_FORBIDDEN`, `TURN_ONLY_SATISFIED`, `TURN_ONLY_VIOLATED`, `UNSUPPORTED`.
+Valores: `NO_RULE`, `EXPLICIT_FORBIDDEN`, `EXPLICIT_ALLOWED`, `CONDITIONAL_FORBIDDEN`, `CONDITIONAL_ALLOWED`, `CONDITION_UNRESOLVED`, `CONTEXT_INSUFFICIENT`, `TURN_FORBIDDEN`, `TURN_ONLY_SATISFIED`, `TURN_ONLY_VIOLATED`, `UNSUPPORTED`.
 
 ### `RouteValidation`
 
 ```python
-class RouteValidation(compliant: bool, steps: tuple[router.core.Decision, ...], violations: tuple[router.core.Decision, ...], unresolved: tuple[router.core.Decision, ...], dismount_used: bool)
+class RouteValidation(compliant: bool, steps: tuple[router.core.Decision, ...], violations: tuple[router.core.Decision, ...], unresolved: tuple[router.core.Decision, ...])
 ```
 
 Resultado da validacao de uma rota contra o contrato de circulacao.
@@ -1226,7 +1226,7 @@ Valores: `ALLOW`, `FORBID`, `UNKNOWN`.
 ### `arc_decision`
 
 ```python
-arc_decision(arc: router.core.data.Arc, *, evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.Decision
+arc_decision(arc: router.core.data.Arc, *, evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.ALLOW: 'allow'>)) -> router.core.Decision
 ```
 
 Decide o acesso de ``arc``.
@@ -1242,7 +1242,7 @@ Nos em que a legalidade da proxima conversao depende do arco de chegada.
 ### `transition_decision`
 
 ```python
-transition_decision(graph: router.core.data.RoutingGraph, from_arc: router.core.data.Arc, to_arc: router.core.data.Arc, node_id: collections.abc.Hashable | None = None, *, history_way_ids: collections.abc.Sequence[int | None] = (), evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.Decision
+transition_decision(graph: router.core.data.RoutingGraph, from_arc: router.core.data.Arc, to_arc: router.core.data.Arc, node_id: collections.abc.Hashable | None = None, *, history_way_ids: collections.abc.Sequence[int | None] = (), evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.ALLOW: 'allow'>)) -> router.core.Decision
 ```
 
 Decide a conversao ``from_arc -> to_arc`` no no de transicao.
@@ -1250,7 +1250,7 @@ Decide a conversao ``from_arc -> to_arc`` no no de transicao.
 ### `validate_route`
 
 ```python
-validate_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str], *, evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.RouteValidation
+validate_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str], *, evaluator: collections.abc.Callable[[str], bool | None] | None = None, policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.ALLOW: 'allow'>)) -> router.core.RouteValidation
 ```
 
 Valida uma sequencia de arcos direcionados contra o contrato.
@@ -1262,7 +1262,7 @@ Reconstrucao da fronteira em rotas e avaliacao de objetivos.
 ### `SearchRoute`
 
 ```python
-class SearchRoute(arc_ids: tuple[str | None, ...], time_s: float, distance_m: float, ascent_m: float, descent_m: float, energy_j: float, label_id: int = 0, arc_lengths: tuple[float, ...] = (), result_status: router.core.physics.models.SimulationStatus = <SimulationStatus.VALID: 'valid'>, elevation_uncertainty: router.core.physics.models.ElevationUncertainty | None = None, used_min_speed_regularization: bool = False, stalled: bool = False, dismount_used: bool = False)
+class SearchRoute(arc_ids: tuple[str | None, ...], time_s: float, distance_m: float, ascent_m: float, descent_m: float, energy_j: float, label_id: int = 0, arc_lengths: tuple[float, ...] = (), result_status: router.core.physics.models.SimulationStatus = <SimulationStatus.VALID: 'valid'>, elevation_uncertainty: router.core.physics.models.ElevationUncertainty | None = None, used_min_speed_regularization: bool = False, stalled: bool = False)
 ```
 
 Rota reconstruida: arcos direcionados, comprimentos e metricas.
@@ -1674,7 +1674,7 @@ Avalia um conjunto de candidatas, preservando a ordem de entrada.
 ### `assess_route`
 
 ```python
-assess_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str | None], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, propulsion: 'PropulsionModel | None' = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>), pacing: router.core.physics.pacing.ReferencePacing | None = None, demand_field: router.core.physics.demand.ArcDemandField | None = None, demand_scenario: router.core.physics.demand.DemandScenario | None = None) -> router.core.RouteAssessment
+assess_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str | None], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, propulsion: 'PropulsionModel | None' = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.ALLOW: 'allow'>), pacing: router.core.physics.pacing.ReferencePacing | None = None, demand_field: router.core.physics.demand.ArcDemandField | None = None, demand_scenario: router.core.physics.demand.DemandScenario | None = None) -> router.core.RouteAssessment
 ```
 
 Avalia uma rota com o **simulador fisico completo** e a classifica.
@@ -1731,7 +1731,7 @@ class ReasonKind(str, Enum)
 
 Motivo **estruturado** de um estado (nunca silencioso; sempre auditavel).
 
-Valores: `CIRCULATION_VIOLATION`, `CIRCULATION_UNRESOLVED`, `NON_FINITE_METRIC`, `NEGATIVE_SPEED`, `NON_POSITIVE_DISTANCE`, `ELEVATION_MISSING`, `SIMULATION_DEGRADED`, `SIMULATION_UNAVAILABLE`, `MIN_SPEED_REGULARIZATION`, `STALLED`, `DISMOUNT_USED`, `PHYSIOLOGY_UNAVAILABLE`, `PHYSIOLOGY_MODEL_NOT_CALIBRATED`, `PHYSIOLOGY_INSUFFICIENT_DATA`, `PHYSIOLOGY_CONTRACT_INCOMPATIBLE`, `INTENSITY_NOT_CALIBRATED`, `EVALUATION_MISSING`.
+Valores: `CIRCULATION_VIOLATION`, `CIRCULATION_UNRESOLVED`, `NON_FINITE_METRIC`, `NEGATIVE_SPEED`, `NON_POSITIVE_DISTANCE`, `ELEVATION_MISSING`, `SIMULATION_DEGRADED`, `SIMULATION_UNAVAILABLE`, `MIN_SPEED_REGULARIZATION`, `STALLED`, `PHYSIOLOGY_UNAVAILABLE`, `PHYSIOLOGY_MODEL_NOT_CALIBRATED`, `PHYSIOLOGY_INSUFFICIENT_DATA`, `PHYSIOLOGY_CONTRACT_INCOMPATIBLE`, `INTENSITY_NOT_CALIBRATED`, `EVALUATION_MISSING`.
 
 ### `RouteSafetyAssessment`
 
@@ -1777,7 +1777,7 @@ Avalia a seguranca de candidatas **sem recalcular** o ja validado (D4).
 
 ## Consulta offline completa (planejamento)
 
-Orquestracao de todo o fluxo offline numa chamada: **zona dinamica** (`envelope.adaptive_zone`, recorta o grafo da cidade inteira) -> **snapping** -> **busca** (`search.MultiObjectiveAStar`) -> **avaliacao fisica completa** (`evaluation.assess_candidates`) -> **previsao** (`ml.predict_effort`, preditor local) -> **classificacao** (`intelligence.classify_routes`). O box e **dinamico** (origem, destino e tracado de todas as rotas) e limita a busca e a altimetria. Sem modelo calibrado, cada rota fica `physical_only` com RPE `None` — nunca um valor inventado.
+Orquestracao de todo o fluxo offline numa chamada: **corredor de busca** (`planning._search_zone`: box dos pinos com margens automaticas, ou o extent do grafo em `use_full_graph`; recorta a zona via `envelope.graph_for_bbox`) -> **snapping** -> **busca unica** (`search.MultiObjectiveAStar`) -> **avaliacao fisica completa** (`evaluation.assess_candidates`) -> **previsao** (`ml.predict_effort`, preditor local) -> **classificacao** (`intelligence.classify_routes`). O corredor e definido **uma vez** e limita a busca (sem crescimento de zona, como no `toporide`); o box final cobre os pinos e o tracado das rotas devolvidas e e o que limita a altimetria. Sem modelo calibrado, cada rota fica `physical_only` com RPE `None` — nunca um valor inventado.
 
 ### `PlannedRoute`
 
@@ -1790,7 +1790,7 @@ Uma rota descoberta, com fisica completa, previsao e classificacao.
 ### `RoutePlanResult`
 
 ```python
-class RoutePlanResult(origin: tuple[float, float], destination: tuple[float, float], profile_id: str, search_bbox: tuple[float, float, float, float], bbox: tuple[float, float, float, float], reached: bool, zone_nodes: int, zone_arcs: int, graph_nodes: int, graph_arcs: int, iterations: int, routes: tuple[router.app.planning.PlannedRoute, ...] = (), rejected: tuple[router.app.planning.PlannedRoute, ...] = (), warnings: tuple[str, ...] = (), pareto_route_count: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, preference: router.core.EffortPreference | None = None)
+class RoutePlanResult(origin: tuple[float, float], destination: tuple[float, float], profile_id: str, search_bbox: tuple[float, float, float, float], bbox: tuple[float, float, float, float], reached: bool, zone_nodes: int, zone_arcs: int, graph_nodes: int, graph_arcs: int, iterations: int, routes: tuple[router.app.planning.PlannedRoute, ...] = (), rejected: tuple[router.app.planning.PlannedRoute, ...] = (), warnings: tuple[str, ...] = (), pareto_route_count: int = 0, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, preference: router.core.EffortPreference | None = None, search_mode: str = 'exact', search_complete: bool = True, optimality_proven: bool = True)
 ```
 
 Plano de consulta offline: box, zona e rotas descobertas.
@@ -1798,7 +1798,7 @@ Plano de consulta offline: box, zona e rotas descobertas.
 ### `plan_offline_routes`
 
 ```python
-plan_offline_routes(graph: router.core.data.RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, profile: str | router.core.RouteProfile = 'fastest', snap_options: router.core.data.snapping.SnapOptions | None = None, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_speed_mps: float = 0.0, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, pacing: router.core.physics.pacing.ReferencePacing | None = None, demand_field: router.core.physics.demand.ArcDemandField | None = None, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, preference: router.core.EffortPreference | None = None, deduplicator: router.core.RouteDeduplicator | None = None, max_routes: int | None = None, growth: float = 1.6, max_iterations: int | None = 8, pad_m: float = 80.0, on_progress: collections.abc.Callable[[str, router.contracts.route.RoutePlan | None, dict], None] | None = None, explore_full_coverage: bool = False, use_full_graph: bool = False, should_cancel: collections.abc.Callable[[], bool] | None = None) -> router.app.planning.RoutePlanResult
+plan_offline_routes(graph: router.core.data.RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, profile: str | router.core.RouteProfile = 'fastest', snap_options: router.core.data.snapping.SnapOptions | None = None, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_speed_mps: float = 0.0, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, pacing: router.core.physics.pacing.ReferencePacing | None = None, demand_field: router.core.physics.demand.ArcDemandField | None = None, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, preference: router.core.EffortPreference | None = None, deduplicator: router.core.RouteDeduplicator | None = None, max_routes: int | None = None, collapse_similar: bool = True, search_mode: str = 'exact', progressive_max_similarity: float | None = None, growth: float = 1.6, max_iterations: int | None = 8, pad_m: float = 80.0, on_progress: collections.abc.Callable[[str, router.contracts.route.RoutePlan | None, dict], None] | None = None, progress_event_every: int = 1, explore_full_coverage: bool = False, use_full_graph: bool = False, should_cancel: collections.abc.Callable[[], bool] | None = None) -> router.app.planning.RoutePlanResult
 ```
 
 Descobre rotas offline entre ``origin`` e ``destination`` e as classifica.
@@ -1880,7 +1880,7 @@ Ponto do perfil da rota.
 ### `RouteMetrics`
 
 ```python
-class RouteMetrics(source: str, distance_m: float, time_s: float, energy_j: float, ascent_m: float, descent_m: float, max_grade_pct: float | None = None, meters_band: tuple[float, float, float] = (0.0, 0.0, 0.0), contra_m: float | None = None, walk_m: float | None = None)
+class RouteMetrics(source: str, distance_m: float, time_s: float, energy_j: float, ascent_m: float, descent_m: float, max_grade_pct: float | None = None, meters_band: tuple[float, float, float] = (0.0, 0.0, 0.0), contra_m: float | None = None)
 ```
 
 Metricas agregadas da rota.
@@ -1888,7 +1888,7 @@ Metricas agregadas da rota.
 ### `RouteML`
 
 ```python
-class RouteML(mean_rpe: float, peak_rpe: float, calibrated: bool, is_measurement: bool, band_distance_fraction: dict[str, float] = <factory>, band_duration_fraction: dict[str, float] | None = None, method_id: str = '', model_version: str = '', borg_scale: str = '')
+class RouteML(mean_rpe: float, peak_rpe: float, calibrated: bool, is_measurement: bool, band_distance_fraction: dict[str, float] = <factory>, band_duration_fraction: dict[str, float] | None = None, method_id: str = '', model_version: str = '', borg_scale: str = '', mean_rpe_time_weighted: float | None = None)
 ```
 
 Estimativa de intensidade (RPE/faixas) — **nao calibrada**.
@@ -1936,7 +1936,7 @@ Tamanho da zona de busca versus grafo total.
 ### `RoutePlan`
 
 ```python
-class RoutePlan(request: router.contracts.route.RouteRequest, reached: bool, search_bbox: router.contracts.geo.BBox, bbox: router.contracts.geo.BBox, zone: router.contracts.route.Zone, iterations: int, pareto_route_count: int, physiological_count: int, routes: tuple[router.contracts.route.Route, ...] = (), rejected: tuple[router.contracts.route.Route, ...] = (), warnings: tuple[str, ...] = (), recommended_route_id: str | None = None, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, format: str = 'roteamento.cycling-route-plan', version: int = 1)
+class RoutePlan(request: router.contracts.route.RouteRequest, reached: bool, search_bbox: router.contracts.geo.BBox, bbox: router.contracts.geo.BBox, zone: router.contracts.route.Zone, iterations: int, pareto_route_count: int, physiological_count: int, routes: tuple[router.contracts.route.Route, ...] = (), rejected: tuple[router.contracts.route.Route, ...] = (), warnings: tuple[str, ...] = (), recommended_route_id: str | None = None, truncated: bool = False, frontier_truncated: bool = False, dropped_labels: int = 0, search_mode: str = 'exact', search_complete: bool = True, optimality_proven: bool = True, format: str = 'roteamento.cycling-route-plan', version: int = 1)
 ```
 
 Envelope versionado de uma consulta de rotas.

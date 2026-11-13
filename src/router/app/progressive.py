@@ -38,17 +38,19 @@ def plan_routes_progressive(
     should_cancel: Callable[[], bool] | None = None,
     **options: Any,
 ) -> RouteProgress:
-    """Busca por zonas crescentes até esgotar a cobertura do grafo.
+    """Busca **unica** no corredor da consulta; publica rotas validadas.
 
-    Cada candidata publicada passa pela avaliação completa, predição de
-    intensidade e segurança. A fila e fronteira de cada busca permanecem vivas
-    entre notificações; ao ampliar a zona, uma nova busca é necessária. Em
-    múltiplas pernas, cada perna busca independentemente e só um trajeto
-    completo é publicado. O modelo v1 não encadeia fadiga entre pernas.
+    A busca ocorre **uma vez** (o box do corredor e definido e limita a busca,
+    como no ``toporide``): nao ha ampliacao de zona nem nova busca. Cada
+    candidata publicada passa pela avaliacao completa, predicao de intensidade e
+    seguranca. Sem ``on_event``, nenhum preview e executado; com assinante,
+    ``progress_event_every`` controla a frequencia (padrao: 4 candidatas).
+    Em multiplas pernas, cada perna busca independentemente e so um
+    trajeto completo e publicado. O modelo v1 nao encadeia fadiga entre pernas.
 
-    A busca não impõe limite silencioso de tempo, regiões ou labels. A API
-    permite cancelamento cooperativo; sem cancelamento, a conclusão depende
-    também de a busca multiobjetivo terminar no modelo de estados adotado.
+    A busca nao impoe limite silencioso de tempo, regioes ou labels. A API
+    permite cancelamento cooperativo; sem cancelamento, a conclusao depende
+    tambem de a busca multiobjetivo terminar no modelo de estados adotado.
     """
     profile = route_profile_for(profile).id
     points = (origin, *tuple((float(a), float(b)) for a, b in stops), destination)
@@ -56,13 +58,29 @@ def plan_routes_progressive(
         if _same_coord(a, b):
             raise ValueError("pontos consecutivos iguais")
     # O grafo offline pode representar a cidade inteira, mas a busca de uma
-    # consulta começa no corredor da BBox. Só cresce quando a rede local não
-    # conecta os pontos; explorar a cidade inteira por padrão desperdiça custo.
+    # consulta roda apenas no corredor da BBox (definido uma unica vez); explorar
+    # a cidade inteira por padrao desperdica custo — ``use_full_graph`` so quando
+    # explicitamente pedido.
     use_full_graph = bool(options.pop("use_full_graph", False))
+    max_workers = options.pop("max_workers", min(len(points) - 1, 4))
+    if (
+        isinstance(max_workers, bool)
+        or not isinstance(max_workers, int)
+        or max_workers <= 0
+    ):
+        raise ValueError("max_workers deve ser um inteiro positivo")
+    progress_event_every = options.pop("progress_event_every", 4)
+    if (
+        isinstance(progress_event_every, bool)
+        or not isinstance(progress_event_every, int)
+        or progress_event_every <= 0
+    ):
+        raise ValueError("progress_event_every deve ser um inteiro positivo")
     growth = float(options.get("growth", 1.6))
     if not math.isfinite(growth) or growth <= 1:
         raise ValueError("growth deve ser maior que 1")
-    # A expansão é guiada pela cobertura, não pelo limite antigo de iterações.
+    # ``max_iterations`` e legado (inerte no plano): aceitamos o parametro para
+    # nao quebrar chamadas antigas, mas a busca escala nao existe mais.
     requested_iterations = options.pop("max_iterations", None)
     if requested_iterations is not None and use_full_graph:
         raise ValueError("A busca progressiva cobre o grafo; max_iterations não se aplica")
@@ -101,12 +119,18 @@ def plan_routes_progressive(
         # Simuladores possuem caches mutáveis; cada thread recebe sua cópia.
         if opts.get("traversal") is not None:
             opts["traversal"] = deepcopy(opts["traversal"])
+        progress_callback = (
+            None
+            if on_event is None
+            else lambda status, plan, details: update(index, status, plan, details)
+        )
         return plan_offline_routes(
             graph, points[index], points[index + 1], cyclist=cyclist, bicycle=bicycle,
             profile=profile, max_iterations=(1 if use_full_graph else (requested_iterations or 8)), explore_full_coverage=False,
             use_full_graph=use_full_graph,
             should_cancel=cancelled,
-            on_progress=lambda status, plan, details: update(index, status, plan, details),
+            on_progress=progress_callback,
+            progress_event_every=progress_event_every,
             **opts,
         ).to_contract()
 
@@ -115,7 +139,10 @@ def plan_routes_progressive(
             completed = [run_leg(0)]
         else:
             completed = [None] * total
-            with ThreadPoolExecutor(max_workers=total, thread_name_prefix="route-leg") as executor:
+            with ThreadPoolExecutor(
+                max_workers=min(total, max_workers),
+                thread_name_prefix="route-leg",
+            ) as executor:
                 jobs = {executor.submit(run_leg, i): i for i in range(total)}
                 try:
                     for job in as_completed(jobs):

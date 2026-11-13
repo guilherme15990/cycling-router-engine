@@ -143,6 +143,7 @@ def _ml(**kwargs) -> RouteML:
         method_id="borg-estimate@1",
         model_version="1",
         borg_scale="borg_cr10",
+        mean_rpe_time_weighted=12.0,
     )
     base.update(kwargs)
     return RouteML(**base)

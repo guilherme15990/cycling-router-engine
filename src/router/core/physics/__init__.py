@@ -79,7 +79,6 @@ from .models import (
 from .speed import MIN_SPEED_MPS, SpeedStep, advance_speed
 from .traversal import (
     DEFAULT_ACCELERATION_LIMIT_MPS2,
-    DEFAULT_DISMOUNT_SPEED_MPS,
     DEFAULT_STEP_M,
     DEFAULT_STEP_M_BY_MODE,
     PhysicalTraversal,
@@ -95,7 +94,6 @@ __all__ = [
     "CALIBRATED_LEVEL",
     "CyclistModel",
     "DEFAULT_ACCELERATION_LIMIT_MPS2",
-    "DEFAULT_DISMOUNT_SPEED_MPS",
     "DEFAULT_RECOVERY_FACTOR",
     "DEFAULT_STEP_M",
     "DEFAULT_STEP_M_BY_MODE",

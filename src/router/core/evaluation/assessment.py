@@ -154,7 +154,7 @@ class RouteAssessment:
         """Limitacoes declaradas (codigos estaveis; nada e ocultado).
 
         Codigos: ``circulation_violation``, ``circulation_unresolved``,
-        ``dismount_used``, ``simulation_degraded``, ``simulation_unavailable``,
+        ``simulation_degraded``, ``simulation_unavailable``,
         ``min_speed_regularization``, ``elevation_missing``, ``stalled``,
         ``intensity_not_calibrated`` (a estimativa de intensidade e sempre
         declarada nao calibrada — ADR-029 D6) e ``physiology_<status>`` (a
@@ -165,8 +165,6 @@ class RouteAssessment:
             codes.append("circulation_violation")
         if self.circulation.unresolved:
             codes.append("circulation_unresolved")
-        if self.circulation.dismount_used:
-            codes.append("dismount_used")
         if self.path.result_status is SimulationStatus.DEGRADED:
             codes.append("simulation_degraded")
         elif self.path.result_status is SimulationStatus.UNAVAILABLE:

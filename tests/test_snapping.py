@@ -319,38 +319,6 @@ def test_query_graph_origin_equals_destination_is_connected():
 
 
 # --------------------------------------------------------------------------
-# Dismount
-# --------------------------------------------------------------------------
-def test_no_dismount_skips_dismount_arcs():
-    graph = RoutingGraph()
-    graph.add_node(Node(id=1, lat=0.0, lon=0.0))
-    graph.add_node(Node(id=2, lat=0.0, lon=0.001))
-    segment = Segment(
-        id="s0",
-        distance_m=111.19,
-        geometry=((0.0, 0.0), (0.0, 0.001)),
-        bicycle_access=BicycleAccess.DISMOUNT,
-    )
-    graph.add_arc(
-        Arc(
-            id="e0",
-            source=1,
-            target=2,
-            segments=(segment,),
-        )
-    )
-
-    with pytest.raises(SnapError):
-        SpatialSnapper(
-            graph, SnapOptions(allow_dismount=False)
-        ).snap((0.0, 0.0005))
-
-    result = SpatialSnapper(graph).snap((0.0, 0.0005))
-    assert result.virtual
-    assert result.candidate.arc_id == "e0"
-
-
-# --------------------------------------------------------------------------
 # CLI
 # --------------------------------------------------------------------------
 def test_cli_snap_json(tmp_path, capsys):

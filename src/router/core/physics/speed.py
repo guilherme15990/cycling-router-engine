@@ -74,6 +74,8 @@ def advance_speed(
     max_speed_mps: float | None = None,
     acceleration_limit_mps2: float = 2.0,
     drivetrain_efficiency: float | None = None,
+    equilibrium_speed_mps_value: float | None = None,
+    terminal_speed_mps_value: float | None = None,
 ) -> SpeedStep:
     """Avanca a velocidade por ``distance_m`` metros.
 
@@ -163,27 +165,35 @@ def advance_speed(
 
     # Nao permite ultrapassar a velocidade de equilibrio do modelo.
     if pedaling:
-        equilibrium = equilibrium_speed_mps(
-            slope_rad,
-            mass_kg,
-            frontal_area_m2,
-            bicycle,
-            environment,
-            power,
-            drivetrain_efficiency=efficiency,
-            max_speed_mps=limit,
+        equilibrium = (
+            equilibrium_speed_mps_value
+            if equilibrium_speed_mps_value is not None
+            else equilibrium_speed_mps(
+                slope_rad,
+                mass_kg,
+                frontal_area_m2,
+                bicycle,
+                environment,
+                power,
+                drivetrain_efficiency=efficiency,
+                max_speed_mps=limit,
+            )
         )
         v1 = min(v1, max(v0, equilibrium))
     else:
-        terminal = equilibrium_speed_mps(
-            slope_rad,
-            mass_kg,
-            frontal_area_m2,
-            bicycle,
-            environment,
-            0.0,
-            drivetrain_efficiency=efficiency,
-            max_speed_mps=limit,
+        terminal = (
+            terminal_speed_mps_value
+            if terminal_speed_mps_value is not None
+            else equilibrium_speed_mps(
+                slope_rad,
+                mass_kg,
+                frontal_area_m2,
+                bicycle,
+                environment,
+                0.0,
+                drivetrain_efficiency=efficiency,
+                max_speed_mps=limit,
+            )
         )
         if terminal > 0.0:
             v1 = min(v1, max(v0, terminal))

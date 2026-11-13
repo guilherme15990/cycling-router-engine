@@ -43,7 +43,6 @@ class SearchRoute:
     elevation_uncertainty: ElevationUncertainty | None = None
     used_min_speed_regularization: bool = False
     stalled: bool = False
-    dismount_used: bool = False
 
     @property
     def is_degraded(self) -> bool:
@@ -85,7 +84,6 @@ class SearchRoute:
             "result_status": self.result_status.value,
             "used_min_speed_regularization": self.used_min_speed_regularization,
             "stalled": self.stalled,
-            "dismount_used": self.dismount_used,
             "elevation_uncertainty": (
                 None
                 if self.elevation_uncertainty is None
@@ -124,7 +122,6 @@ def route_from_state(state: SearchState) -> SearchRoute:
         elevation_uncertainty=state.elevation_uncertainty,
         used_min_speed_regularization=state.used_min_speed_regularization,
         stalled=state.stalled,
-        dismount_used=state.dismount_used,
     )
 
 

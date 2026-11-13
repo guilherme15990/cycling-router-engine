@@ -29,6 +29,8 @@ from router.core.data.graph.model import RoutingGraph
 from router.app.planning import plan_offline_routes
 from router.core.physics.bicycle import BicycleModel
 from router.core.physics.cyclist import CyclistModel
+from router.core.physics.demand import ArcDemandField
+from router.core.physics.traversal import PhysicalTraversal
 from router.core.prediction.intensity import band_for_rpe, rpe_label
 from router.contracts import (
     DEMAND_BANDS,
@@ -121,7 +123,6 @@ def _merge_metrics(legs: Sequence[Route]) -> RouteMetrics:
         max_grade_pct=max(max_grades) if max_grades else None,
         meters_band=(band[0], band[1], band[2]),
         contra_m=_sum_optional([leg.metrics.contra_m for leg in legs]),
-        walk_m=_sum_optional([leg.metrics.walk_m for leg in legs]),
     )
 
 
@@ -161,6 +162,17 @@ def _merge_ml(legs: Sequence[Route]) -> RouteML:
 
     return RouteML(
         mean_rpe=_weighted_mean([leg.ml.mean_rpe for leg in legs], weights),
+        mean_rpe_time_weighted=(
+            None
+            if any(leg.ml.mean_rpe_time_weighted is None for leg in legs)
+            else _weighted_mean(
+                [
+                    float(leg.ml.mean_rpe_time_weighted)
+                    for leg in legs
+                ],
+                durations,
+            )
+        ),
         peak_rpe=max(leg.ml.peak_rpe for leg in legs),
         calibrated=all(leg.ml.calibrated for leg in legs),
         is_measurement=all(leg.ml.is_measurement for leg in legs),
@@ -467,6 +479,17 @@ def plan_routes(
                 f"({start[0]!r}, {start[1]!r})"
             )
 
+    shared_options = dict(options)
+    shared_traversal = shared_options.get("traversal")
+    if shared_traversal is None:
+        shared_traversal = PhysicalTraversal()
+        shared_options["traversal"] = shared_traversal
+    if (
+        shared_options.get("pacing") is not None
+        and shared_options.get("demand_field") is None
+    ):
+        shared_options["demand_field"] = ArcDemandField(shared_traversal)
+
     leg_plans = [
         plan_offline_routes(
             graph,
@@ -475,7 +498,7 @@ def plan_routes(
             cyclist=cyclist,
             bicycle=bicycle,
             profile=profile,
-            **options,
+            **shared_options,
         )
         for start, end in zip(waypoints, waypoints[1:])
     ]

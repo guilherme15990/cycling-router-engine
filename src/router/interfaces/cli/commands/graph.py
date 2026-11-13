@@ -86,7 +86,6 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     options = BuildOptions(
         allow_footway=args.allow_footway,
-        allow_dismount=not args.no_dismount,
     )
     graph, build_stats = build_graph(data, options)
     print(
@@ -184,9 +183,6 @@ def cmd_stats(args: argparse.Namespace) -> int:
             f"{name} ({count})" for name, count in summary["elevation_sources"].items()
         )
         print(f"fonte de elevacao: {sources}")
-    if summary["dismount_length_m"]:
-        print(f"trechos com bicycle=dismount: {summary['dismount_length_m']} m")
-
     print_surface_table(summary)
 
     errors = [issue for issue in issues if issue.severity == "error"]
@@ -227,7 +223,6 @@ def cmd_snap(args: argparse.Namespace) -> int:
         node_preference_m=args.node_preference,
         node_offset_tolerance_m=args.node_tolerance,
         min_split_distance_m=args.min_split,
-        allow_dismount=not args.no_dismount,
     )
 
     try:
@@ -302,7 +297,6 @@ def cmd_physical(args: argparse.Namespace) -> int:
         )
         traversal = PhysicalTraversal(
             step_m=args.step,
-            dismount_speed_mps=args.dismount_speed,
             mode=SimulationMode(args.mode),
         )
         result = traversal.traverse(

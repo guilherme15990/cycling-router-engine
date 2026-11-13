@@ -100,3 +100,9 @@ class SpeedBucketDominance:
         return pareto_dominates(
             self.objectives.values(a), self.objectives.values(b)
         )
+
+    def dominates_values(
+        self, values_a: tuple[float, ...], values_b: tuple[float, ...]
+    ) -> bool:
+        """Dominancia para valores ja extraidos da label."""
+        return pareto_dominates(values_a, values_b)

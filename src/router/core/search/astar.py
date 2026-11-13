@@ -146,6 +146,8 @@ class SearchResult:
 
     * ``truncated`` — a busca foi **interrompida** por ``max_expansions`` (a
       fronteira de destino pode estar incompleta);
+    * ``stopped_early`` / ``stop_reason`` — uma politica externa de candidatas
+      encerrou a busca antes da exaustao; isso nao prova optimalidade global;
     * ``frontier_truncated`` / ``dropped_labels`` — ``max_labels_per_key``
       removeu labels **nao dominadas** dentro de uma chave, sem interromper a
       busca. Nao confundir com ``truncated`` nem com a deduplicacao posterior
@@ -161,6 +163,8 @@ class SearchResult:
     truncated: bool = False
     frontier_truncated: bool = False
     dropped_labels: int = 0
+    stopped_early: bool = False
+    stop_reason: str | None = None
 
     @property
     def reached(self) -> bool:
@@ -188,6 +192,8 @@ class SearchResult:
             "truncated": self.truncated,
             "frontier_truncated": self.frontier_truncated,
             "dropped_labels": self.dropped_labels,
+            "stopped_early": self.stopped_early,
+            "stop_reason": self.stop_reason,
             "labels": [label.to_dict() for label in self.labels],
         }
 
@@ -342,6 +348,7 @@ class MultiObjectiveAStar:
         expanded = 0
         generated = 0
         truncated = False
+        stopped_early = False
 
         while not queue.is_empty:
             if should_cancel is not None and should_cancel():
@@ -359,6 +366,7 @@ class MultiObjectiveAStar:
                 if on_candidate_state is not None:
                     on_candidate_state(label)
                 if stop_when_candidate is not None and stop_when_candidate():
+                    stopped_early = True
                     break
                 continue
 
@@ -375,7 +383,7 @@ class MultiObjectiveAStar:
                 if self._guardrails_active and self._has_turn_restrictions
                 else ()
             )
-            for arc in self.graph.out_arcs(label.node_id):
+            for arc in self.graph.iter_out_arcs(label.node_id):
                 # [G1] acesso do arco / [G2] conversao — antes de gastar fisica.
                 if self._guardrails_active and not self._allows(
                     label, arc, history_way_ids
@@ -411,6 +419,8 @@ class MultiObjectiveAStar:
             truncated=truncated,
             frontier_truncated=manager.frontier_truncated,
             dropped_labels=manager.dropped_labels,
+            stopped_early=stopped_early,
+            stop_reason="candidate_policy" if stopped_early else None,
         )
 
     # -------------------------------------------------------------- interno
@@ -423,8 +433,8 @@ class MultiObjectiveAStar:
         """Guardrail de circulacao: ``False`` se acesso ou conversao proibidos.
 
         Apenas consulta o contrato (``arc_decision``/``transition_decision``);
-        nao recalcula fisica nem cria custo. A política conservadora pode
-        resolver ``UNKNOWN`` como ``FORBID``.
+        nao recalcula fisica nem cria custo. A política padrão permite
+        ``UNKNOWN`` sem ocultar o estado não resolvido.
         """
         if self._has_access_rules:
             access = arc_decision(

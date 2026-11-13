@@ -263,15 +263,6 @@ def test_degraded_simulation_degrades_but_stays_eligible():
     assert kinds & {ReasonKind.SIMULATION_DEGRADED, ReasonKind.ELEVATION_MISSING}
 
 
-def test_dismount_degrades_but_stays_eligible():
-    assessment = assess(
-        two_arc_graph(bicycle_access=BicycleAccess.DISMOUNT), **moving()
-    )
-    safety = classify_safety(assessment)
-    assert safety.state is RouteSafetyState.DEGRADED
-    assert ReasonKind.DISMOUNT_USED in {r.kind for r in safety.reasons}
-
-
 @pytest.mark.parametrize(
     "mutate, expected",
     [
@@ -373,7 +364,7 @@ def test_missing_assessment_is_ineligibility_not_infeasibility():
 
 def test_degraded_route_can_be_recommended_with_warning():
     degraded = _candidate("deg", ("a12", "a23"))
-    assessments = {"deg": assess(two_arc_graph(bicycle_access=BicycleAccess.DISMOUNT), **moving())}
+    assessments = {"deg": assess(two_arc_graph(points=None), **moving())}
     report = evaluate_candidates([degraded], assessments=assessments)
     assert report.recommended is not None
     assert report.recommended.safety.state is RouteSafetyState.DEGRADED
@@ -471,6 +462,5 @@ _STATE_KINDS = {
     ReasonKind.SIMULATION_UNAVAILABLE,
     ReasonKind.MIN_SPEED_REGULARIZATION,
     ReasonKind.STALLED,
-    ReasonKind.DISMOUNT_USED,
     ReasonKind.EVALUATION_MISSING,
 }

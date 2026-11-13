@@ -13,16 +13,13 @@ Politica (conservadora, ADR-026 §3):
 * **permissao explicita** -> ``ALLOW`` (legalidade declarada);
 * **ausencia de regra** -> ``ALLOW`` para rotear, mas a legalidade **nao** e
   afirmada (``legality_asserted=False``);
-* **condicao/contexto nao avaliavel** -> ``UNKNOWN``, resolvido pela politica
-  conservadora para ``FORBID`` (nunca "permitido por padrao");
-* ``bicycle_access = DISMOUNT`` -> ``ALLOW`` com **limitacao** (a fisica ja
-  caminha a ``DEFAULT_DISMOUNT_SPEED_MPS``; nao ha constante nova).
-
+* **condicao/contexto nao avaliavel** -> ``UNKNOWN``, reportado sem bloquear a
+  rota quando a politica padrao o permite;
 Contexto real do grafo (build OSM): ``bicycle=no``/``access=no`` sao resolvidos
 na **construcao** (a via nao entra no grafo); por isso, nos arcos, as regras de
-acesso representadas sao **condicionais** (``*:conditional``) mais o
-``BicycleAccess.DISMOUNT``. O contrato cobre tambem regras incondicionais, para
-grafos montados a mao e para a validacao de rotas geradas pelo ML.
+acesso representadas sao **condicionais** (``*:conditional``). O contrato cobre
+tambem regras incondicionais, para grafos montados a mao e para a validacao de
+rotas geradas pelo ML.
 
 Ref.: ADR-026 e ``docs/adr/026-contrato-circulacao.md`` §2-§3.
 """
@@ -33,7 +30,7 @@ from collections.abc import Callable, Hashable, Sequence
 from dataclasses import dataclass
 from enum import Enum
 
-from router.core.data.graph.model import Arc, BicycleAccess, RoutingGraph
+from router.core.data.graph.model import Arc, RoutingGraph
 from router.core.data.graph.restrictions import AccessRule, TurnRestriction
 
 #: Avaliador de condicao: ``True``/``False`` se avaliavel; ``None`` se nao.
@@ -85,7 +82,6 @@ class DecisionReason(str, Enum):
     CONDITIONAL_ALLOWED = "conditional_allowed"
     CONDITION_UNRESOLVED = "condition_unresolved"
     CONTEXT_INSUFFICIENT = "context_insufficient"
-    DISMOUNT = "dismount"
     TURN_FORBIDDEN = "turn_forbidden"
     TURN_ONLY_SATISFIED = "turn_only_satisfied"
     TURN_ONLY_VIOLATED = "turn_only_violated"
@@ -98,7 +94,8 @@ class Decision:
 
     ``verdict`` ja e o veredito **efetivo** (apos a politica); ``raw_verdict``
     e o veredito **bruto** antes da politica, onde ``UNKNOWN`` distingue uma
-    decisao que dependeu de resolucao conservadora.
+    decisao que permanece incerta mesmo quando a regra de produto permite
+    continuar.
 
     ``legality_asserted`` e ``True`` **apenas** quando uma regra explicita
     permite a circulacao; permanece ``False`` na ausencia de regra (roteavel sem
@@ -109,7 +106,6 @@ class Decision:
     reason: DecisionReason
     raw_verdict: Verdict = Verdict.ALLOW
     legality_asserted: bool = False
-    dismount: bool = False
     restriction_id: str | None = None
 
     @property
@@ -131,7 +127,6 @@ class Decision:
             "raw_verdict": self.raw_verdict.value,
             "reason": self.reason.value,
             "legality_asserted": self.legality_asserted,
-            "dismount": self.dismount,
             "restriction_id": self.restriction_id,
         }
 
@@ -140,12 +135,12 @@ class Decision:
 class CirculationPolicy:
     """Politica **declarativa** para vereditos ``UNKNOWN`` (brutos).
 
-    Por padrao, ``UNKNOWN`` vira ``FORBID`` (conservador): uma condicao sem
-    contexto suficiente nunca e "permitido por padrao". Configuravel apenas para
-    experimento/teste explicito — ``ALLOW`` nao e compatavel com o ADR-026.
+    Por padrao, ``UNKNOWN`` vira ``ALLOW``, mas continua reportado em
+    ``raw_verdict``/``unresolved``. Isso permite rotear sem afirmar que a
+    legalidade foi comprovada.
     """
 
-    unresolved_verdict: Verdict = Verdict.FORBID
+    unresolved_verdict: Verdict = Verdict.ALLOW
 
     def __post_init__(self) -> None:
         if self.unresolved_verdict is Verdict.UNKNOWN:
@@ -168,7 +163,6 @@ def _decision(
     policy: CirculationPolicy,
     *,
     legality_asserted: bool = False,
-    dismount: bool = False,
     restriction_id: str | None = None,
 ) -> Decision:
     """Monta uma ``Decision`` resolvendo o veredito bruto pela politica."""
@@ -177,7 +171,6 @@ def _decision(
         reason=reason,
         raw_verdict=raw,
         legality_asserted=legality_asserted,
-        dismount=dismount,
         restriction_id=restriction_id,
     )
 
@@ -240,8 +233,8 @@ def arc_decision(
 ) -> Decision:
     """Decide o acesso de ``arc``.
 
-    Ordem: regras de acesso (escopo mais especifico primeiro) -> ``DISMOUNT`` ->
-    ausencia de regra. Nao consulta a fisica nem cria custo.
+    Ordem: regras de acesso (escopo mais especifico primeiro) -> ausencia de
+    regra. Nao consulta a fisica nem cria custo.
     """
     for scope in ACCESS_SCOPES:
         for rule in arc.restrictions:
@@ -251,10 +244,6 @@ def arc_decision(
             if decision is not None:
                 return decision
 
-    if arc.bicycle_access is BicycleAccess.DISMOUNT:
-        return _decision(
-            Verdict.ALLOW, DecisionReason.DISMOUNT, policy, dismount=True
-        )
     return _decision(Verdict.ALLOW, DecisionReason.NO_RULE, policy)
 
 
@@ -426,15 +415,12 @@ class RouteValidation:
     steps: tuple[Decision, ...]
     violations: tuple[Decision, ...]
     unresolved: tuple[Decision, ...]
-    dismount_used: bool
-
     def to_dict(self) -> dict[str, object]:
         return {
             "compliant": self.compliant,
             "steps": len(self.steps),
             "violations": [decision.to_dict() for decision in self.violations],
             "unresolved": [decision.to_dict() for decision in self.unresolved],
-            "dismount_used": self.dismount_used,
         }
 
 
@@ -456,12 +442,9 @@ def validate_route(
 
     steps: list[Decision] = []
     ways: list[int | None] = []
-    dismount_used = False
-
     for index, arc in enumerate(arcs):
         access = arc_decision(arc, evaluator=evaluator, policy=policy)
         steps.append(access)
-        dismount_used = dismount_used or access.dismount
 
         if index > 0:
             transition = transition_decision(
@@ -485,7 +468,6 @@ def validate_route(
         steps=frozen,
         violations=violations,
         unresolved=unresolved,
-        dismount_used=dismount_used,
     )
 
 

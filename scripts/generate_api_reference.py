@@ -248,8 +248,8 @@ LAYERS: list[tuple[str, str, list[str]]] = [
     (
         "Busca: contrato de circulacao (guardrails)",
         "Contrato de circulacao (ADR-026): veredito tri-estado "
-        "(`ALLOW`/`FORBID`/`UNKNOWN`) e politica conservadora (`UNKNOWN -> "
-        "FORBID`), decisao de acesso do arco, decisao de conversao (via-node e "
+        "(`ALLOW`/`FORBID`/`UNKNOWN`) e politica de produto (`UNKNOWN -> "
+        "ALLOW`, ainda reportado), decisao de acesso do arco, decisao de conversao (via-node e "
         "via-way ordenado), validador independente de rota e os nos com "
         "restricao de conversao. **Nao** altera a fisica.",
         [
@@ -373,15 +373,18 @@ LAYERS: list[tuple[str, str, list[str]]] = [
     ),
     (
         "Consulta offline completa (planejamento)",
-        "Orquestracao de todo o fluxo offline numa chamada: **zona dinamica** "
-        "(`envelope.adaptive_zone`, recorta o grafo da cidade inteira) -> "
-        "**snapping** -> **busca** (`search.MultiObjectiveAStar`) -> **avaliacao "
-        "fisica completa** (`evaluation.assess_candidates`) -> **previsao** "
+        "Orquestracao de todo o fluxo offline numa chamada: **corredor de busca** "
+        "(`planning._search_zone`: box dos pinos com margens automaticas, ou o "
+        "extent do grafo em `use_full_graph`; recorta a zona via "
+        "`envelope.graph_for_bbox`) -> **snapping** -> **busca unica** "
+        "(`search.MultiObjectiveAStar`) -> **avaliacao fisica completa** "
+        "(`evaluation.assess_candidates`) -> **previsao** "
         "(`ml.predict_effort`, preditor local) -> **classificacao** "
-        "(`intelligence.classify_routes`). O box e **dinamico** (origem, destino "
-        "e tracado de todas as rotas) e limita a busca e a altimetria. Sem "
-        "modelo calibrado, cada rota fica `physical_only` com RPE `None` — "
-        "nunca um valor inventado.",
+        "(`intelligence.classify_routes`). O corredor e definido **uma vez** e "
+        "limita a busca (sem crescimento de zona, como no `toporide`); o box final "
+        "cobre os pinos e o tracado das rotas devolvidas e e o que limita a "
+        "altimetria. Sem modelo calibrado, cada rota fica `physical_only` com RPE "
+        "`None` — nunca um valor inventado.",
         [
             "PlannedRoute",
             "RoutePlanResult",

@@ -16,7 +16,6 @@ como degradado.
 
 import pytest
 from router.core.data.graph.model import (
-    BicycleAccess,
     Arc,
     ElevationQuality,
     ElevationSample,
@@ -39,7 +38,7 @@ CYCLIST = CyclistModel(
 BICYCLE = BicycleModel()
 
 
-def make_arc(samples=(), *, distance_m=100.0, arc_id="e0", dismount=False):
+def make_arc(samples=(), *, distance_m=100.0, arc_id="e0"):
     """Arco de um segmento com amostras de elevacao de qualidade explicita."""
     profile = tuple(
         ElevationSample(
@@ -65,9 +64,6 @@ def make_arc(samples=(), *, distance_m=100.0, arc_id="e0", dismount=False):
         elevation_gain_m=ascent,
         elevation_loss_m=descent,
         elevation_profile=profile,
-        bicycle_access=(
-            BicycleAccess.DISMOUNT if dismount else BicycleAccess.YES
-        ),
     )
     return Arc(id=arc_id, source=1, target=2, segments=(segment,))
 

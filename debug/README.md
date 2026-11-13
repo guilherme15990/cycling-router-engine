@@ -3,9 +3,9 @@
 Aplicativo de depuração que consome a **API E2E** do motor:
 
 ```python
-from router.integration import plan_routes
+from router.integration import plan_routes_progressive
 
-plan = plan_routes(
+progress = plan_routes_progressive(
     graph,
     origin,
     destination,
@@ -25,8 +25,9 @@ download e limpeza.
 
 1. Carregue o grafo e monte o cenário na aba **Consulta**: pontos, paradas,
    perfil de rota, ciclista e bicicleta.
-2. Ajuste ambiente, velocidade inicial, passo da simulação, snapping,
-   expansão da zona e margem do bbox. Para experimentar predição local,
+2. Ajuste ambiente, velocidade inicial, passo da simulação, snapping e margem
+   do bbox. O corredor é usado por padrão; marque **Buscar no grafo inteiro**
+   somente quando quiser expandir explicitamente a cobertura. Para experimentar predição local,
    informe o diretório do `ModelStore`, a versão do artefato e, se necessário,
    o perfil fisiológico. A API não treina um modelo automaticamente.
 3. Mantenha **Capturar entradas, cálculos e saídas das camadas** habilitado e
@@ -38,15 +39,17 @@ download e limpeza.
 5. Baixe `camadas-e2e.json` para guardar o cenário e os diagnósticos. O
    `route-plan.json` completo continua disponível em Consulta.
 
-A captura acompanha a chamada real de `router.integration.plan_routes` com
+A captura acompanha a chamada real de `router.integration.plan_routes_progressive` com
 `sys.monitoring` quando disponível (com fallback para `sys.settrace`); não substitui funções nem reimplementa
 o algoritmo. Também observa a serialização pública. As seis vistas cobrem
 dados/snapping/bbox, física/matemática, perfis/busca, ML/predição,
 avaliação/seleção e contrato/resultado. As funções instrumentadas são
 explicitadas em `debug/layer_trace.py`.
 
-As chamadas instrumentadas são contadas. Por padrão, uma amostra de cada
-função tem snapshot, e coleções grandes são
+As chamadas instrumentadas são contadas. A captura inclui a orquestração
+comum `router.core.search.candidate_search.search_candidates`, o recorte por
+índice espacial, o pré-cálculo de equilíbrios da física, os limites da
+heurística e a seleção estrutural. Por padrão, uma amostra de cada função tem snapshot, e coleções grandes são
 truncadas com contagem explícita. Os tempos são inclusivos, com custo de
 depuração, e não representam benchmark. Uma camada sem chamada observada
 não é automaticamente considerada ausente. Exceções tratadas pelo motor
@@ -54,6 +57,13 @@ aparecem como observações; a falha externa da API aparece separadamente.
 Se houver um debugger Python ativo, desligue a captura ou o debugger.
 
 A API publica a primeira rota validada enquanto a busca continua. O mapa mostra o resultado parcial e atualiza alternativas conforme são encontradas. A inspeção contém amostras das chamadas, não uma animação nem execução pausada entre etapas.
+
+### Diagnóstico de desempenho
+
+Depois da execução, **Inspeção por camada** mostra o caminho de orquestração,
+o escopo da busca, a presença do índice espacial persistente, o tamanho das
+caches de perfis/passos/equilíbrio e a política de publicação do preview. Esses
+valores são diagnósticos da execução, não uma medição de benchmark.
 
 ## Escolher os pontos no mapa
 
@@ -185,16 +195,24 @@ Se o navegador for fechado durante uma consulta, o worker encerra o cálculo
 após 30 segundos sem heartbeat; isso evita processos órfãos sem limitar
 consultas ativas.
 
-## Busca progressiva
+## Busca e publicação progressiva
 
-A consulta expande a zona até cobrir o grafo carregado; a cada expansão uma
-nova busca é iniciada e, dentro dela, a fila é preservada entre atualizações.
-A primeira rota e as alternativas são exibidas depois da simulação completa e
-da avaliação de segurança. Com paradas, só são exibidos trajetos com todas as
-pernas válidas. O cancelamento mantém a última rota parcial.
+A consulta faz uma única busca multiobjetivo no corredor definido pelos pinos
+e pela margem do bbox. **Buscar no grafo inteiro** é uma expansão explícita da
+área de busca; não existe ampliação silenciosa nem uma segunda busca. O índice
+espacial persistente reduz o custo de recortar o corredor em grafos grandes.
 
-A conclusão cobre apenas o grafo fornecido e não é uma prova de otimalidade
-global. O crescimento geográfico termina na cobertura do grafo; a busca
-multiobjetivo dentro de uma zona ainda não tem prova geral de terminação para
-estados físicos contínuos. Não se configura limite fixo de labels; use
-Cancelar ou um tempo opcional se necessário. Veja `docs/reference/progressive.md`.
+Quando há um assinante (como o debug), a API pode publicar a primeira rota
+validada e previews posteriores. O controle **Publicar preview a cada N
+candidatas** reduz a frequência de avaliação/publicação; as avaliações e a
+geometria do preview são reutilizadas na finalização quando a identidade do
+traçado e os parâmetros coincidem. Sem assinante, a API não executa preview.
+
+Com paradas, as pernas podem ser processadas em paralelo; **Máximo de pernas
+simultâneas** limita essa concorrência e cada perna mantém seus caches
+mutáveis isolados. O cancelamento mantém a última rota parcial.
+
+A conclusão cobre apenas o escopo escolhido no grafo fornecido e não é uma
+prova de otimalidade fora dele. A busca multiobjetivo pode continuar limitada
+por estados físicos contínuos; use **Cancelar** ou um tempo opcional se
+necessário. Veja `docs/reference/progressive.md`.

@@ -92,7 +92,7 @@ def test_worker_stops_when_session_heartbeat_is_stale(tmp_path):
             'profile': 'fastest', 'max_routes': None},
         'settings': {'capture_layers': False, 'trace_samples': 1, 'wind_mps': 0., 'air_density': 1.225,
             'gravity': 9.80665, 'speed_cap_kmh': 79.2, 'initial_kmh': 0., 'physics_step': 5.,
-            'require_elevation': False, 'snap_radius': 100., 'allow_dismount': True, 'bbox_growth': 1.6,
+            'require_elevation': False, 'snap_radius': 100., 'bbox_growth': 1.6,
             'bbox_padding': 80., 'predictor_enabled': False, 'predictor_store': '', 'predictor_version': '',
             'rider_enabled': False, 'rider_ftp': 0., 'rider_hr_max': 0., 'rider_hr_rest': 0.},
     }

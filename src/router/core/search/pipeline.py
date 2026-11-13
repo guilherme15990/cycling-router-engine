@@ -26,8 +26,8 @@ from dataclasses import dataclass
 
 from router.core.data.graph.model import RoutingGraph
 from router.core.physics.energy_model import BatteryConfig, EnergyModel
-from .astar import MultiObjectiveAStar
-from .candidates import RouteCandidatePool, RouteDeduplicator
+from .candidates import RouteDeduplicator
+from .candidate_search import search_candidates
 from .config import SearchConfig
 from .energy import RouteEnergyEstimate, estimate_route_energy
 from .explanation import RouteExplanation, RouteExplainer
@@ -193,17 +193,19 @@ def search_profile(
         >>> response.count  # doctest: +SKIP
         1
     """
-    astar = MultiObjectiveAStar(
+    search = search_candidates(
         graph,
         traversal,
         request.profile.to_search_profile(),
+        request.origin,
+        request.destination,
         heuristic=heuristic,
-        config=search_config,
+        search_config=search_config,
         initial_speed_mps=request.initial_speed_mps,
+        deduplicator=deduplicator,
     )
-    result = astar.search(request.origin, request.destination)
-
-    pool = RouteCandidatePool.from_result(result, deduplicator=deduplicator)
+    result = search.result
+    pool = search.pool
     config = selection_config or SelectionConfig(
         max_routes=request.max_routes,
         min_routes=request.max_routes,

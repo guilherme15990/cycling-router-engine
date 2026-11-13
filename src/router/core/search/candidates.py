@@ -103,10 +103,6 @@ class RouteCandidate:
     def stalled(self) -> bool:
         return self.route.stalled
 
-    @property
-    def dismount_used(self) -> bool:
-        return self.route.dismount_used
-
     def to_dict(self) -> dict[str, object]:
         return {
             "route_id": self.route_id,
@@ -116,7 +112,6 @@ class RouteCandidate:
             "result_status": self.route.result_status.value,
             "used_min_speed_regularization": self.route.used_min_speed_regularization,
             "stalled": self.route.stalled,
-            "dismount_used": self.route.dismount_used,
         }
 
 

@@ -111,7 +111,6 @@ def cmd_plan(args: argparse.Namespace) -> int:
         )
         traversal = PhysicalTraversal(
             step_m=args.step,
-            dismount_speed_mps=args.dismount_speed,
             mode=SimulationMode(args.mode),
         )
         snap_options = SnapOptions(
@@ -119,7 +118,6 @@ def cmd_plan(args: argparse.Namespace) -> int:
             node_preference_m=args.node_preference,
             node_offset_tolerance_m=args.node_tolerance,
             min_split_distance_m=args.min_split,
-            allow_dismount=not args.no_dismount,
         )
         plan = plan_offline_routes(
             graph,

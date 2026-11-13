@@ -67,7 +67,6 @@ def test_arc_explicit_forbidden_is_hard_forbid():
     assert decision.reason is DecisionReason.EXPLICIT_FORBIDDEN
     assert decision.raw_verdict is Verdict.FORBID
     assert not decision.legality_asserted
-    assert not decision.dismount
 
 
 def test_arc_explicit_allowed_asserts_legality():
@@ -107,25 +106,15 @@ def test_arc_conditional_forbidden_false_is_inactive():
     assert decision.reason is DecisionReason.NO_RULE
 
 
-def test_arc_conditional_without_context_is_conservative_forbid():
+def test_arc_conditional_without_context_is_unknown_but_does_not_block():
     arc = make_arc(
         "a12", 1, 2, restrictions=(rule("bicycle", "no", "(Mo-Fr 07:00-10:00)"),)
     )
     decision = arc_decision(arc)  # sem avaliador
-    assert decision.verdict is Verdict.FORBID
+    assert decision.verdict is Verdict.ALLOW
     assert decision.raw_verdict is Verdict.UNKNOWN
     assert decision.reason is DecisionReason.CONDITION_UNRESOLVED
     assert decision.unresolved
-    assert not decision.legality_asserted
-
-
-def test_arc_dismount_allows_with_limitation():
-    arc = make_arc("a12", 1, 2, bicycle_access=BicycleAccess.DISMOUNT)
-    decision = arc_decision(arc)
-    assert decision.verdict is Verdict.ALLOW
-    assert decision.reason is DecisionReason.DISMOUNT
-    assert decision.dismount
-    # Desmontar nao afirma legalidade de circulacao ciclavel.
     assert not decision.legality_asserted
 
 
@@ -145,10 +134,10 @@ def test_arc_scope_precedence_falls_through_inactive_specific_rule():
     assert decision.reason is DecisionReason.EXPLICIT_FORBIDDEN
 
 
-def test_arc_unsupported_value_is_conservative_forbid():
+def test_arc_unsupported_value_is_unknown_but_does_not_block():
     arc = make_arc("a12", 1, 2, restrictions=(rule("bicycle", "unknown_value"),))
     decision = arc_decision(arc)
-    assert decision.verdict is Verdict.FORBID
+    assert decision.verdict is Verdict.ALLOW
     assert decision.raw_verdict is Verdict.UNKNOWN
     assert decision.reason is DecisionReason.UNSUPPORTED
 
@@ -194,7 +183,7 @@ def test_decision_properties_and_serialization():
             restrictions=(rule("bicycle", "no", "(Mo-Fr 07:00-10:00)"),),
         )
     )
-    assert conservative.forbids and conservative.unresolved
+    assert conservative.allows and conservative.unresolved
     assert conservative.to_dict()["raw_verdict"] == "unknown"
 
 
@@ -313,13 +302,13 @@ def test_transition_unresolved_condition_is_conservative_forbid():
     decision = transition_decision(
         graph, graph.get_arc("a12"), graph.get_arc("a24"), 2
     )
-    # Sem avaliador, a condicao nao e resolvida; conservador.
-    assert decision.verdict is Verdict.FORBID
+    # Sem avaliador, a condicao nao e resolvida; a regra de produto nao bloqueia.
+    assert decision.verdict is Verdict.ALLOW
     assert decision.raw_verdict is Verdict.UNKNOWN
     assert decision.reason is DecisionReason.CONDITION_UNRESOLVED
 
 
-def test_transition_unsupported_type_is_conservative_forbid():
+def test_transition_unsupported_type_is_unknown_but_does_not_block():
     graph = make_turn_graph(
         [
             TurnRestriction(
@@ -334,7 +323,7 @@ def test_transition_unsupported_type_is_conservative_forbid():
     decision = transition_decision(
         graph, graph.get_arc("a12"), graph.get_arc("a24"), 2
     )
-    assert decision.verdict is Verdict.FORBID
+    assert decision.verdict is Verdict.ALLOW
     assert decision.raw_verdict is Verdict.UNKNOWN
     assert decision.reason is DecisionReason.UNSUPPORTED
 
@@ -402,12 +391,12 @@ def test_transition_via_way_order_is_significant():
     assert decision.reason is DecisionReason.NO_RULE
 
 
-def test_transition_via_way_without_history_is_conservative_forbid():
+def test_transition_via_way_without_history_is_unknown_but_does_not_block():
     graph = make_via_way_graph()
     decision = transition_decision(
         graph, graph.get_arc("a23"), graph.get_arc("a34"), 4
     )
-    assert decision.verdict is Verdict.FORBID
+    assert decision.verdict is Verdict.ALLOW
     assert decision.raw_verdict is Verdict.UNKNOWN
     assert decision.reason is DecisionReason.CONTEXT_INSUFFICIENT
 
@@ -424,7 +413,6 @@ def test_validate_route_without_restrictions_is_compliant_but_not_asserted():
     assert result.compliant
     assert not result.violations
     assert not result.unresolved
-    assert not result.dismount_used
     assert {step.reason for step in result.steps} == {DecisionReason.NO_RULE}
 
 
@@ -468,20 +456,7 @@ def test_validate_route_rejects_violated_only_turn():
     )
 
 
-def test_validate_route_tracks_dismount_usage():
-    graph = make_graph(
-        [
-            make_arc("a12", 1, 2, way_id=10, bicycle_access=BicycleAccess.DISMOUNT),
-            make_arc("a23", 2, 3, way_id=20),
-        ],
-        (1, 2, 3),
-    )
-    result = validate_route(graph, ("a12", "a23"))
-    assert result.compliant
-    assert result.dismount_used
-
-
-def test_validate_route_reports_conservative_unresolved_block():
+def test_validate_route_reports_unresolved_without_blocking():
     graph = make_graph(
         [
             make_arc(
@@ -496,7 +471,7 @@ def test_validate_route_reports_conservative_unresolved_block():
         (1, 2, 3),
     )
     result = validate_route(graph, ("a12", "a23"))
-    assert not result.compliant
+    assert result.compliant
     assert len(result.unresolved) == 1
     assert result.unresolved[0].reason is DecisionReason.CONDITION_UNRESOLVED
 

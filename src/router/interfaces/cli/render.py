@@ -96,6 +96,13 @@ def print_plan(plan: RoutePlanResult) -> None:
         f"rotas descobertas: {total_routes} "
         f"(fronteira Pareto={plan.pareto_route_count}{trunc})"
     )
+    if plan.search_mode == "progressive":
+        print(
+            "aviso: busca progressiva — completude Pareto relaxada; "
+            f"resultado finalizado={plan.search_complete}"
+        )
+    elif not plan.optimality_proven:
+        print("aviso: optimalidade global nao foi comprovada")
     if plan.frontier_truncated:
         print(
             f"aviso: fronteira podada por max_labels_per_node "

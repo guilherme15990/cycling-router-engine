@@ -130,20 +130,6 @@ def test_guardrails_inactive_without_restrictions():
     assert constrained_nodes(graph) == frozenset()
 
 
-def test_dismount_is_not_a_restriction_and_is_used():
-    graph = make_graph(
-        [
-            make_arc("a12", 1, 2, way_id=10, bicycle_access=BicycleAccess.DISMOUNT),
-            make_arc("a23", 2, 3, way_id=20),
-        ],
-        (1, 2, 3),
-    )
-    table = {"a12": {"time_s": 100.0}, "a23": {"time_s": 100.0}}
-    result = search(graph, table)
-    assert result.reached
-    assert tuple(route_arcs(result.labels[0])) == ("a12", "a23")
-
-
 def test_dominance_key_unchanged_without_constrained_nodes():
     # Guardrail inerte: sem nos restritos, a chave volta a ser ``(no, bucket)``.
     label = _arrival_label(node=2, incoming="a12x", speed_mps=5.0)
@@ -388,20 +374,6 @@ def test_boolean_limitations_propagate_as_or():
     candidate = RouteCandidate.from_route(route)
     assert candidate.stalled
     assert candidate.used_min_speed_regularization
-
-
-def test_dismount_used_propagates_from_arc():
-    graph = make_graph(
-        [
-            make_arc("a12", 1, 2, way_id=10, bicycle_access=BicycleAccess.DISMOUNT),
-            make_arc("a23", 2, 3, way_id=20),
-        ],
-        (1, 2, 3),
-    )
-    table = {"a12": {"time_s": 100.0}, "a23": {"time_s": 100.0}}
-    route = route_from_state(search(graph, table).labels[0])
-    assert route.dismount_used
-    assert RouteCandidate.from_route(route).dismount_used
 
 
 def test_elevation_uncertainty_combines_along_route():

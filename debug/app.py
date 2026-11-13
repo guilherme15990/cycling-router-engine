@@ -1,7 +1,8 @@
 """Debug E2E do motor de roteamento, em Streamlit.
 
 A aba **Consulta** e a interface principal: carrega um grafo v4, monta a
-consulta, chama ``router.integration.plan_routes`` e mostra o resultado.
+consulta, chama ``router.integration.plan_routes_progressive`` e mostra o
+resultado validado, incluindo previews enquanto a busca continua.
 A aba **Logs** e separada e registra cada etapa da sessao.
 
 Uso (a partir da raiz do repositorio)::
@@ -18,7 +19,6 @@ import csv
 import inspect
 import io
 import json
-import math
 import random
 import sys
 import time
@@ -50,6 +50,7 @@ from router.integration import (
     load_graph,
     plan_routes,
 )
+from router.core.data.geo import haversine_m
 
 PAGE_TITLE = "Roteamento E2E — debug"
 GRAPH_CACHE = Path(__file__).resolve().parent / ".cache" / "graph_v4.json"
@@ -67,7 +68,6 @@ ALTIMETRY_CACHE = Path(__file__).resolve().parent / ".cache"
 FALLBACK_MAP_CENTER = (-17.379, -51.73)
 FALLBACK_MAP_ZOOM = 12
 MAX_LOG_ENTRIES = 2000
-EARTH_RADIUS_M = 6_371_000.0
 
 LOG_LEVELS = ("DEBUG", "INFO", "OK", "WARN", "ERROR")
 
@@ -387,6 +387,7 @@ def _default_state() -> dict[str, Any]:
         "stops_text": "",
         "profile_select": "fastest" if "fastest" in PROFILE_IDS else PROFILE_IDS[0],
         "max_routes": 0,
+        "collapse_similar": True,
         "sustained_power": 200.0,
         "cyclist_mass": 75.0,
         "max_power": 600.0,
@@ -487,18 +488,6 @@ def _parse_stops(text: str) -> tuple[tuple[float, float], ...]:
     return tuple(stops)
 
 
-def _haversine_m(a: tuple[float, float], b: tuple[float, float]) -> float:
-    lat1, lon1 = math.radians(a[0]), math.radians(a[1])
-    lat2, lon2 = math.radians(b[0]), math.radians(b[1])
-    dlat = lat2 - lat1
-    dlon = lon2 - lon1
-    h = (
-        math.sin(dlat / 2.0) ** 2
-        + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2.0) ** 2
-    )
-    return 2.0 * EARTH_RADIUS_M * math.asin(min(1.0, math.sqrt(h)))
-
-
 def _suggest_pair(
     graph: Any, target_m: float = 5_000.0, max_nodes: int = 4_000
 ) -> tuple[tuple[float, float], tuple[float, float]] | None:
@@ -508,7 +497,8 @@ def _suggest_pair(
     esteja a pelo menos ``target_m`` da origem (ou o mais distante visitado),
     garantindo que exista caminho direcionado entre o par sugerido.
     """
-    starts = [node for node in graph.nodes.values() if graph.out_arcs(node.id)]
+    out_arcs = getattr(graph, "iter_out_arcs", graph.out_arcs)
+    starts = [node for node in graph.nodes.values() if any(out_arcs(node.id))]
     if len(starts) < 2:
         return None
 
@@ -521,7 +511,7 @@ def _suggest_pair(
         queue = deque([origin])
         while queue and len(seen) < max_nodes:
             current = queue.popleft()
-            for arc in graph.out_arcs(current.id):
+            for arc in out_arcs(current.id):
                 if arc.target in seen:
                     continue
                 node = graph.nodes.get(arc.target)
@@ -530,7 +520,7 @@ def _suggest_pair(
                 seen.add(node.id)
                 queue.append(node)
                 coord = (float(node.lat), float(node.lon))
-                distance = _haversine_m(origin_coord, coord)
+                distance = haversine_m(origin_coord, coord)
                 if distance >= target_m:
                     return origin_coord, coord
                 if best is None or distance > best[0]:
@@ -752,6 +742,7 @@ def _execute_plan(
     cyclist: CyclistModel,
     bicycle: BicycleModel,
     max_routes: int,
+    collapse_similar: bool = True,
 ) -> tuple[Any, float]:
     _log(
         "INFO",
@@ -770,6 +761,7 @@ def _execute_plan(
         bicycle=bicycle,
         profile=profile,
         max_routes=max_routes or None,
+        collapse_similar=collapse_similar,
     )
     elapsed = time.perf_counter() - started
 
@@ -832,6 +824,11 @@ def _render_sidebar() -> None:
                 f"{graph.node_count:,} nós · {graph.arc_count:,} arcos",
                 icon=":material/check_circle:",
             )
+            if hasattr(graph, "has_spatial_index"):
+                st.caption(
+                    "Índice espacial persistente: "
+                    + ("ativo" if graph.has_spatial_index() else "será construído sob demanda")
+                )
             if st.session_state.graph_path:
                 st.caption(_display_path(Path(st.session_state.graph_path)))
 
@@ -870,7 +867,7 @@ def _render_sidebar() -> None:
         with st.expander("Construir grafo v4 a partir de PBF"):
             st.caption(
                 "Preparacao local (opcional). O fluxo principal continua sendo "
-                "a chamada E2E em `plan_routes`."
+                "a chamada E2E em `plan_routes_progressive`."
             )
             st.text_input("PBF local", key="pbf_path_input")
             st.text_input("Saida do grafo", key="graph_out_input")
@@ -895,7 +892,7 @@ def _render_sidebar() -> None:
             st.markdown(
                 "A aba **Consulta** configura e executa a API. **Inspeção por camada** mostra entradas, cálculos e saídas reais. A aba **Logs** "
                 "registra cada etapa da sessao.\n\n"
-                "API E2E: `router.integration.plan_routes`.\n\n"
+                "API E2E: `router.integration.plan_routes_progressive`.\n\n"
                 "Clique no mapa para escolher origem/destino; a rota aparece "
                 "no mesmo mapa depois do calculo."
             )
@@ -926,11 +923,17 @@ def _render_form() -> None:
         c3, c4, c5 = st.columns(3)
         c3.selectbox("Perfil", list(PROFILE_IDS), key="profile_select")
         c4.number_input(
-            "Max. rotas (0 = todas)",
+            "Max. rotas (0 = automatico)",
             min_value=0,
             max_value=50,
             step=1,
             key="max_routes",
+            help=(
+                "Com o colapso ligado: 0 devolve o conjunto distinto (corte no "
+                "maior salto) e N devolve as N rotas mais dissimiles "
+                "(farthest-first). Com o colapso desligado: 0 devolve a "
+                "fronteira inteira e N limita as N primeiras da ordem do perfil."
+            ),
         )
         c5.number_input(
             "Potencia sustentada (W)",
@@ -939,6 +942,17 @@ def _render_form() -> None:
             step=10.0,
             key="sustained_power",
             help="0 usa o padrao do motor: min(200, potencia maxima).",
+        )
+
+        st.checkbox(
+            "Colapsar rotas quase-iguais (conjunto distinto)",
+            key="collapse_similar",
+            help=(
+                "Ligado (padrao): apresenta apenas as rotas estruturalmente "
+                "distintas — a fronteira Pareto costuma ter dezenas de "
+                "quase-duplicatas. Desligue para comparar com a fronteira "
+                "inteira, sem colapso."
+            ),
         )
 
         with st.expander("Ciclista e bicicleta"):
@@ -1037,6 +1051,7 @@ def _render_form() -> None:
             cyclist=cyclist, bicycle=bicycle,
             profile=st.session_state.profile_select,
             max_routes=int(st.session_state.max_routes) or None,
+            collapse_similar=bool(st.session_state.collapse_similar),
         )
     except Exception as exc:
         st.session_state.last_plan = None
@@ -1069,6 +1084,21 @@ def _render_plan(plan: Any) -> None:
             f"Execucao {run['timestamp']} em {run['elapsed']:.2f}s | "
             f"{run['profile']} | {run['sustained_power']:.0f} W | "
             f"paradas={run['stops']}"
+        )
+
+    pareto = int(getattr(plan, "pareto_route_count", 0) or 0)
+    presented = len(plan.routes)
+    collapsed = bool(st.session_state.get("collapse_similar", True))
+    if pareto > presented and collapsed:
+        st.caption(
+            f"Fronteira Pareto: {pareto} rota(s) nao dominada(s) -> "
+            f"{presented} distinta(s) apresentada(s) "
+            "(colapso de quase-iguais; veja `route_set`)."
+        )
+    elif pareto and not collapsed:
+        st.caption(
+            f"Fronteira Pareto: {pareto} rota(s) nao dominada(s) | "
+            "colapso desligado — fronteira inteira apresentada."
         )
 
     if plan.truncated:
@@ -2058,7 +2088,7 @@ def _render_system() -> None:
         )
     st.caption(
         "Consulta E2E via "
-        "`router.integration.plan_routes` (grafo -> snapping -> fisica -> "
+        "`router.integration.plan_routes_progressive` (grafo -> snapping -> fisica -> "
         "intensidade -> contrato)."
     )
 

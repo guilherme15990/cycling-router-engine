@@ -261,13 +261,6 @@ def test_degraded_height_data_is_propagated_not_masked():
     assert "simulation_degraded" in assessment.limitations
 
 
-def test_dismount_route_reports_limitation():
-    graph = two_arc_graph(bicycle_access=BicycleAccess.DISMOUNT)
-    assessment = assess(graph)
-    assert assessment.circulation.dismount_used
-    assert "dismount_used" in assessment.limitations
-
-
 # --------------------------------------------------------------------------
 # Serializacao e determinismo
 # --------------------------------------------------------------------------

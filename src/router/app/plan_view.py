@@ -70,10 +70,10 @@ def _to_route_contract(route: PlannedRoute, *, profile_id: str) -> Route:
             max_grade_pct=max(0.0, max_grade),
             meters_band=(meters_band[0], meters_band[1], meters_band[2]),
             contra_m=None,
-            walk_m=None,
         ),
         ml=RouteML(
-            mean_rpe=intensity.mean_rpe,
+            mean_rpe=intensity.mean_rpe_distance_weighted,
+            mean_rpe_time_weighted=intensity.mean_rpe_time_weighted,
             peak_rpe=intensity.peak_rpe,
             calibrated=intensity.calibrated,
             is_measurement=intensity.is_measurement,
@@ -109,6 +109,7 @@ def partial_contract(
     *, origin, destination, profile_id, search_bbox, bbox,
     zone_nodes, zone_arcs, graph_nodes, graph_arcs, iterations,
     routes, pareto_route_count, physiological_count,
+    search_mode="exact", search_complete=False, optimality_proven=False,
 ) -> RoutePlan:
     """Projeta resultados validados enquanto a fronteira ainda está aberta."""
     return RoutePlan(
@@ -118,6 +119,9 @@ def partial_contract(
         iterations=iterations, routes=routes, pareto_route_count=pareto_route_count,
         physiological_count=physiological_count, recommended_route_id=routes[0].id,
         warnings=("Resultado parcial: a fronteira de busca não foi concluída.",),
+        search_mode=search_mode,
+        search_complete=search_complete,
+        optimality_proven=optimality_proven,
     )
 
 
@@ -159,4 +163,7 @@ def to_contract(plan: RoutePlanResult) -> RoutePlan:
         truncated=plan.truncated,
         frontier_truncated=plan.frontier_truncated,
         dropped_labels=plan.dropped_labels,
+        search_mode=plan.search_mode,
+        search_complete=plan.search_complete,
+        optimality_proven=plan.optimality_proven,
     )

@@ -2,7 +2,6 @@ import json
 import pytest
 from router.interfaces.cli import main
 from router.core.data.graph.model import (
-    BicycleAccess,
     RoutingGraph,
     Arc,
     Segment,
@@ -41,7 +40,6 @@ def make_arc(
     arc_id: str = "e0",
     surface: Surface = Surface.ASPHALT,
     max_speed_kmh: float | None = None,
-    dismount: bool = False,
 ) -> Arc:
     if points is None:
         if distance_m is None:
@@ -82,9 +80,6 @@ def make_arc(
         min_elevation_m=minimum,
         max_elevation_m=maximum,
         elevation_profile=profile,
-        bicycle_access=(
-            BicycleAccess.DISMOUNT if dismount else BicycleAccess.YES
-        ),
         max_speed_kmh=max_speed_kmh,
     )
     return Arc(id=arc_id, source=1, target=2, segments=(segment,))
@@ -303,17 +298,30 @@ def test_zero_power_downhill_accelerates(cyclist, bicycle, traversal):
     assert result.rider_energy_j == 0.0
 
 
-def test_dismount_uses_walking_speed(cyclist, bicycle, traversal):
-    arc = make_arc([(0.0, 0.0), (140.0, 0.0)], dismount=True)
+def test_equilibrium_limits_are_cached_across_initial_speeds(
+    cyclist, bicycle, traversal, monkeypatch
+):
+    import router.core.physics.traversal as traversal_module
+
+    arc = make_arc([(0.0, 0.0), (100.0, 5.0)])
+    original = traversal_module.equilibrium_speed_mps
+    calls = 0
+
+    def counted(*args, **kwargs):
+        nonlocal calls
+        calls += 1
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(traversal_module, "equilibrium_speed_mps", counted)
+    traversal.traverse(arc, cyclist, bicycle, initial_state=state(0.0))
+    first_call_count = calls
     result = traversal.traverse(
         arc, cyclist, bicycle, initial_state=state(5.0)
     )
 
-    assert result.final_speed_mps == pytest.approx(1.4)
-    assert result.time_s == pytest.approx(100.0)
-    assert result.rider_energy_j == 0.0
-    assert result.mechanical_energy_j == 0.0
-    assert result.braking_energy_j > 0.0
+    assert first_call_count == 2 * len(traversal.steps(arc))
+    assert calls == first_call_count
+    assert result.initial_speed_mps == pytest.approx(5.0)
 
 
 def test_surface_is_not_converted_to_rolling_resistance(

@@ -99,7 +99,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="lista de highway=* separada por virgula (padrao: rede ciclavel urbana)",
     )
     build.add_argument("--allow-footway", action="store_true")
-    build.add_argument("--no-dismount", action="store_true")
     build.add_argument(
         "--no-simplify",
         action="store_true",
@@ -189,11 +188,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="distancia minima das pontas para dividir o arco (padrao: 1 m)",
-    )
-    snap.add_argument(
-        "--no-dismount",
-        action="store_true",
-        help="nao conecta em trechos bicycle=dismount",
     )
     snap.add_argument(
         "--out-query",
@@ -290,12 +284,6 @@ def build_parser() -> argparse.ArgumentParser:
         help="vento de frente em m/s (negativo = cauda; padrao: 0)",
     )
     physical.add_argument(
-        "--dismount-speed",
-        type=float,
-        default=1.4,
-        help="velocidade a pe em trechos dismount (m/s; padrao: 1.4)",
-    )
-    physical.add_argument(
         "--json", action="store_true", help="imprime o resultado em JSON"
     )
     physical.set_defaults(handler=cmd_physical)
@@ -346,11 +334,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=1.0,
         help="distancia minima das pontas para dividir o arco (padrao: 1 m)",
-    )
-    plan.add_argument(
-        "--no-dismount",
-        action="store_true",
-        help="nao conecta em trechos bicycle=dismount",
     )
     plan.add_argument(
         "--cyclist-mass", type=float, default=75.0, help="massa do ciclista (kg)"
@@ -417,12 +400,6 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=0.0,
         help="vento de frente em m/s (negativo = cauda; padrao: 0)",
-    )
-    plan.add_argument(
-        "--dismount-speed",
-        type=float,
-        default=1.4,
-        help="velocidade a pe em trechos dismount (m/s; padrao: 1.4)",
     )
     plan.add_argument(
         "--model-store",

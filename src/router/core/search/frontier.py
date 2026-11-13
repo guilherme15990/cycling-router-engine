@@ -270,6 +270,7 @@ class FrontierManager:
         self.max_labels_per_key = max_labels_per_key
         self._on_discard = on_discard
         self._frontiers: dict[Hashable, list[Any]] = {}
+        self._values: dict[Hashable, list[tuple[float, ...]]] = {}
         # Labels removidas por ``max_labels_per_key`` (controle de desempenho),
         # **nao** por dominancia normal. Distinto de ``max_expansions``, que
         # interrompe a busca. Exposto para nao silenciar a perda de completude.
@@ -325,6 +326,37 @@ class FrontierManager:
         key = self.dominance.key(candidate)
         frontier = self._frontiers.setdefault(key, [])
 
+        dominates_values = getattr(self.dominance, "dominates_values", None)
+        if dominates_values is not None:
+            candidate_values = tuple(self.dominance.objectives.values(candidate))
+            frontier_values = self._values.setdefault(key, [])
+            for existing_values in frontier_values:
+                if dominates_values(existing_values, candidate_values):
+                    self._discard(candidate)
+                    return False
+
+            survivors: list[Any] = []
+            survivor_values: list[tuple[float, ...]] = []
+            for existing_item, existing_values in zip(frontier, frontier_values):
+                if dominates_values(candidate_values, existing_values):
+                    self._discard(existing_item)
+                else:
+                    survivors.append(existing_item)
+                    survivor_values.append(existing_values)
+            survivors.append(candidate)
+            survivor_values.append(candidate_values)
+
+            if (
+                self.max_labels_per_key is not None
+                and len(survivors) > self.max_labels_per_key
+            ):
+                survivors, survivor_values = self._truncate(
+                    survivors, survivor_values
+                )
+            self._frontiers[key] = survivors
+            self._values[key] = survivor_values
+            return True
+
         for existing in frontier:
             if self.dominance.dominates(existing, candidate):
                 self._discard(candidate)
@@ -342,7 +374,7 @@ class FrontierManager:
             self.max_labels_per_key is not None
             and len(survivors) > self.max_labels_per_key
         ):
-            survivors = self._truncate(survivors)
+            survivors, _ = self._truncate(survivors)
 
         self._frontiers[key] = survivors
         return True
@@ -365,17 +397,23 @@ class FrontierManager:
         if self._on_discard is not None:
             self._on_discard(label)
 
-    def _truncate(self, labels: list[Any]) -> list[Any]:
+    def _truncate(
+        self,
+        labels: list[Any],
+        values: list[tuple[float, ...]] | None = None,
+    ) -> tuple[list[Any], list[tuple[float, ...]]]:
         """Mantem os melhores por ordem lexicografica (controle de desempenho)."""
         assert self.max_labels_per_key is not None
-        ranked = sorted(
-            labels,
-            key=lambda label: self.dominance.objectives.values(label),
-        )
-        kept = ranked[: self.max_labels_per_key]
-        kept_ids = {id(label) for label in kept}
+        if values is None:
+            values = [tuple(self.dominance.objectives.values(label)) for label in labels]
+        ranked = sorted(range(len(labels)), key=lambda index: values[index])
+        kept_indices = ranked[: self.max_labels_per_key]
+        kept_ids = {id(labels[index]) for index in kept_indices}
         for label in labels:
             if id(label) not in kept_ids:
                 self.dropped_labels += 1
                 self._discard(label)
-        return kept
+        return (
+            [labels[index] for index in kept_indices],
+            [values[index] for index in kept_indices],
+        )

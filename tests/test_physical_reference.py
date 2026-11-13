@@ -17,7 +17,6 @@ Os valores de caracterizacao vem de `docs/adr/025-auditoria-fisica.md` (secao
 import math
 import pytest
 from router.core.data.graph.model import (
-    BicycleAccess,
     Arc,
     Segment,
     ElevationSample,
@@ -54,7 +53,6 @@ def make_arc(
     arc_id="e0",
     surface=Surface.ASPHALT,
     max_speed_kmh=None,
-    dismount=False,
 ):
     if points is None:
         if distance_m is None:
@@ -88,9 +86,6 @@ def make_arc(
         min_elevation_m=minimum,
         max_elevation_m=maximum,
         elevation_profile=profile,
-        bicycle_access=(
-            BicycleAccess.DISMOUNT if dismount else BicycleAccess.YES
-        ),
         max_speed_kmh=max_speed_kmh,
     )
     return Arc(id=arc_id, source=1, target=2, segments=(segment,))

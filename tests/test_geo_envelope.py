@@ -203,6 +203,26 @@ def test_graph_for_bbox_does_not_mutate_source():
     assert graph.arc_count == 3
 
 
+def test_graph_for_bbox_builds_and_reuses_spatial_index():
+    graph = _line_graph()
+    assert graph.has_spatial_index() is False
+
+    zone = graph_for_bbox(graph, (-0.01, -0.01, 0.01, 0.01))
+
+    assert graph.has_spatial_index() is True
+    assert tuple(graph.query_node_ids((-0.01, -0.01, 0.01, 0.01))) == (
+        "a",
+        "b",
+        "c",
+    )
+    assert set(graph.query_arc_ids((-0.01, -0.01, 0.01, 0.01))) == {
+        "ab",
+        "bc",
+        "c_far",
+    }
+    assert set(zone.node_ids()) == {"a", "b", "c"}
+
+
 def test_graph_for_bbox_covers_everything_when_box_is_huge():
     graph = _line_graph()
     zone = graph_for_bbox(graph, (-90.0, -180.0, 90.0, 180.0))

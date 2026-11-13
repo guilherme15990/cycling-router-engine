@@ -188,7 +188,7 @@ Regras que o contrato garante (e que o consumidor pode assumir):
 
 - `format`/`version` sempre presentes; versão desconhecida é erro;
 - `dist_m` monotônico ao longo de `geometry`;
-- `None` significa **não calculado** (`contra_m`, `walk_m`, `ele` sem
+- `None` significa **não calculado** (`contra_m`, `ele` sem
   altimetria), nunca zero inventado;
 - `ml.calibrated`/`ml.is_measurement` explícitos — a estimativa atual é
   computacional, não calibrada;

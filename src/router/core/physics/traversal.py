@@ -15,12 +15,13 @@ from __future__ import annotations
 from enum import Enum
 from typing import Sequence
 
-from router.core.data.graph.model import BicycleAccess, Arc
+from router.core.data.graph.model import Arc
 from ._validation import non_negative, positive
 from .bicycle import BicycleModel
 from .cyclist import CyclistModel
 from .arc_profile import ArcProfile, ProfileStep
 from .environment import Environment
+from .forces import equilibrium_speed_mps
 from .models import (
     PhysicsRouteMetrics,
     SimulationState,
@@ -34,7 +35,6 @@ from .speed import advance_speed
 
 DEFAULT_STEP_M = 5.0
 DEFAULT_ACCELERATION_LIMIT_MPS2 = 2.0
-DEFAULT_DISMOUNT_SPEED_MPS = 1.4
 
 
 class SimulationMode(str, Enum):
@@ -76,7 +76,6 @@ class PhysicalTraversal:
         self,
         step_m: float | None = None,
         acceleration_limit_mps2: float = DEFAULT_ACCELERATION_LIMIT_MPS2,
-        dismount_speed_mps: float = DEFAULT_DISMOUNT_SPEED_MPS,
         require_elevation: bool = False,
         *,
         mode: SimulationMode | str = SimulationMode.SEARCH,
@@ -87,16 +86,17 @@ class PhysicalTraversal:
         )
         positive("step_m", resolved_step)
         non_negative("acceleration_limit_mps2", acceleration_limit_mps2)
-        positive("dismount_speed_mps", dismount_speed_mps)
 
         self.step_m = resolved_step
         self.acceleration_limit_mps2 = float(acceleration_limit_mps2)
-        self.dismount_speed_mps = float(dismount_speed_mps)
         #: Se True, um trecho sem elevacao produz ``UNAVAILABLE`` em vez de
         #: ``DEGRADED`` (ADR-025, decisao 2).
         self.require_elevation = bool(require_elevation)
         self._profiles: dict[str, tuple[Arc, ArcProfile]] = {}
         self._steps: dict[str, tuple[Arc, tuple[ProfileStep, ...]]] = {}
+        self._equilibrium: dict[
+            tuple[object, ...], tuple[tuple[float, float], ...]
+        ] = {}
 
     # ------------------------------------------------------------------ cache
     def profile(self, arc: Arc) -> ArcProfile:
@@ -114,6 +114,64 @@ class PhysicalTraversal:
         steps = self.profile(arc).steps(self.step_m)
         self._steps[arc.id] = (arc, steps)
         return steps
+
+    def equilibrium_speeds(
+        self,
+        arc: Arc,
+        cyclist: CyclistModel,
+        bicycle: BicycleModel,
+        environment: Environment,
+        power_w: float,
+    ) -> tuple[tuple[float, float], ...]:
+        """Precalcula limites de equilibrio invariantes à velocidade inicial.
+
+        Cada par é ``(pedalando, rolando)`` e acompanha ``self.steps(arc)``.
+        O resultado depende apenas do arco, dos modelos e do cenário da
+        consulta; a velocidade inicial continua sendo aplicada por
+        :func:`advance_speed`. Isso permite reutilizar a bisseção quando A*
+        visita o mesmo arco a partir de labels com velocidades diferentes.
+        """
+        key = (
+            arc.id,
+            id(arc),
+            self.step_m,
+            self.acceleration_limit_mps2,
+            cyclist.mass_kg + bicycle.mass_kg,
+            cyclist.frontal_area_m2,
+            bicycle,
+            environment,
+            float(power_w),
+        )
+        cached = self._equilibrium.get(key)
+        if cached is not None:
+            return cached
+
+        mass = cyclist.mass_kg + bicycle.mass_kg
+        values = tuple(
+            (
+                equilibrium_speed_mps(
+                    step.slope_rad,
+                    mass,
+                    cyclist.frontal_area_m2,
+                    bicycle,
+                    environment,
+                    power_w,
+                    max_speed_mps=step.max_speed_mps,
+                ),
+                equilibrium_speed_mps(
+                    step.slope_rad,
+                    mass,
+                    cyclist.frontal_area_m2,
+                    bicycle,
+                    environment,
+                    0.0,
+                    max_speed_mps=step.max_speed_mps,
+                ),
+            )
+            for step in self.steps(arc)
+        )
+        self._equilibrium[key] = values
+        return values
 
     # -------------------------------------------------------------- travessia
     def traverse(
@@ -160,6 +218,9 @@ class PhysicalTraversal:
         profile = self.profile(arc)
         steps = self.steps(arc)
         mass = cyclist.mass_kg + bicycle.mass_kg
+        equilibrium = self.equilibrium_speeds(
+            arc, cyclist, bicycle, environment, power
+        )
 
         speed = max(0.0, float(initial_speed))
         time_s = 0.0
@@ -171,17 +232,8 @@ class PhysicalTraversal:
         stalled = False
         used_regularization = False
 
-        for step in steps:
-            if step.bicycle_access is BicycleAccess.DISMOUNT:
-                walking_speed = self.dismount_speed_mps
-                if speed > walking_speed:
-                    braking_energy_j += 0.5 * mass * (
-                        speed * speed - walking_speed * walking_speed
-                    )
-                speed = walking_speed
-                time_s += step.distance_m / walking_speed
-                continue
-
+        for index, step in enumerate(steps):
+            equilibrium_speed, terminal_speed = equilibrium[index]
             step_result = advance_speed(
                 distance_m=step.distance_m,
                 slope_rad=step.slope_rad,
@@ -193,6 +245,8 @@ class PhysicalTraversal:
                 environment=environment,
                 max_speed_mps=step.max_speed_mps,
                 acceleration_limit_mps2=self.acceleration_limit_mps2,
+                equilibrium_speed_mps_value=equilibrium_speed,
+                terminal_speed_mps_value=terminal_speed,
             )
             time_s += step_result.time_s
             wheel_energy_j += step_result.wheel_energy_j

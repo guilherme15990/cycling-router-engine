@@ -13,9 +13,12 @@ Ordem de eventos (espelhada de `toporide/.../routePipeline.ts` +
    cache local e, na ausencia, o treinaria de dados **computacionalmente
    gerados**. Hoje a busca usa apenas o A\\* Pareto (nenhum roteador neural
    implementado), entao este passo e um ponto de extensao documentado;
-1. **CANDIDATAS** — ``envelope.adaptive_zone`` recorta a zona e roda a busca
-   ``search.MultiObjectiveAStar`` (perfil), devolvendo o tracado real de **todas**
-   as rotas da fronteira;
+1. **CANDIDATAS** — ``_search_zone`` define **uma vez** o box do corredor
+   (pins + margens automaticas) e recorta a zona; a busca
+   ``search.MultiObjectiveAStar`` (perfil) roda **uma unica vez** nessa zona,
+   devolvendo o tracado real de **todas** as rotas da fronteira. Nao ha
+   crescimento iterativo nem segunda busca (como no ``toporide``); um corredor
+   que nao conecte origem e destino resulta em ``reached=False``;
 2. **GUARDRAILS** — validacao de circulacao (``search.circulation``);
 3. **FISICA COMPLETA** — ``evaluation.assess_candidates`` reavalia cada
    candidata no **simulador completo** e extrai ``EffortFeatures``;
@@ -46,10 +49,11 @@ Ref.: ADR-025 §10, ADR-026 §3/§5, ADR-027 §0/§3/§6, ADR-028 §D7.
 
 from __future__ import annotations
 
+from bisect import bisect_left
 from dataclasses import dataclass, replace
 from collections.abc import Callable
 
-from router.core.data.envelope import adaptive_zone
+from router.core.data.envelope import graph_for_bbox
 from router.core.evaluation.assessment import (
     AssessmentOutcome,
     RouteAssessment,
@@ -60,7 +64,13 @@ from router.core.evaluation.safety import (
     RouteSafetyState,
     evaluate_candidates,
 )
-from router.core.data.geo import GeoBBox, Coord, bbox_contains, cumulative_distances, query_bbox
+from router.core.data.geo import (
+    Coord,
+    GeoBBox,
+    cumulative_distances,
+    expand_bbox,
+    query_bbox,
+)
 from router.core.data.graph.model import RoutingGraph
 from router.core.evaluation.classification import (
     EffortPreference,
@@ -101,14 +111,20 @@ from router.core.physiology import (
     RiderProfile,
 )
 from router.core.search import (
-    MultiObjectiveAStar,
     PhysicalTraversalModel,
     RouteCandidate,
     RouteCandidatePool,
     RouteProfile,
     RouteDeduplicator,
+    arc_jaccard,
     route_profile_for,
     routes_from_result,
+    select_distinct_routes,
+)
+from router.core.search.candidate_search import search_candidates
+from router.core.search.route_set import (
+    IncrementalSimilarityMatrix,
+    similarity_cache_scope,
 )
 from router.contracts import (
     DemandScenarioRef,
@@ -208,11 +224,14 @@ class PlannedRoute:
 class RoutePlanResult:
     """Plano de consulta offline: box, zona e rotas descobertas.
 
-    ``search_bbox`` e a zona que a busca percorreu (dimensionada para manter a
-    rede conectada); ``bbox`` e o box **final** — uniao do box dos pinos com o
-    tracado de **todas as rotas devolvidas** (recomendada + alternativas),
-    calculado **depois** da ML (ADR-028 D7) — que limita a altimetria e e o que
-    deve ser exibido. Ambos sao dinamicos e derivados apenas da origem, do
+    ``search_bbox`` e o corredor **que limitou a busca** — o box dos pinos com as
+    margens automaticas por eixo (ou o extent do grafo, em ``use_full_graph``) — e
+    e **fixo** numa consulta: a busca ocorre uma unica vez dentro dele. ``bbox`` e
+    o box **final** — uniao do box dos pinos com o tracado de **todas as rotas
+    devolvidas** (recomendada + alternativas), calculado **depois** da ML
+    (ADR-028 D7) — que limita a altimetria e e o que deve ser exibido; ele **pode**
+    exceder o corredor quando um trecho desvia para fora (como no ``toporide``, o
+    box cresce so para exibicao, sem nova busca). Ambos sao derivados da origem, do
     destino e das rotas calculadas.
 
     Seguranca (ADR-029 D4): ``routes`` contem apenas as rotas **elegiveis**
@@ -247,6 +266,9 @@ class RoutePlanResult:
     frontier_truncated: bool = False
     dropped_labels: int = 0
     preference: EffortPreference | None = None
+    search_mode: str = "exact"
+    search_complete: bool = True
+    optimality_proven: bool = True
 
     @property
     def count(self) -> int:
@@ -286,6 +308,38 @@ class RoutePlanResult:
         return self.to_contract().to_dict()
 
 
+def _search_zone(
+    graph: RoutingGraph,
+    pins: tuple[Coord, ...],
+    *,
+    use_full_graph: bool,
+    pad_m: float,
+) -> tuple[GeoBBox, RoutingGraph]:
+    """Box de busca **definido uma vez** e a zona que ele recorta.
+
+    Semana de corredor: com ``use_full_graph=False`` (padrao), o box e o
+    envelope dos pinos com as margens automaticas por eixo (``query_bbox``) e a
+    busca roda apenas na zona correspondente. Com ``use_full_graph=True``, o box
+    e o extent do grafo carregado (mais ``pad_m``) e a busca roda no grafo
+    inteiro. Em nenhum caso ha crescimento nem segunda busca.
+    """
+    if use_full_graph:
+        nodes = tuple(graph.nodes.values())
+        if not nodes:
+            box = query_bbox(pins)
+            assert box is not None
+            return box, graph
+        south = min(node.lat for node in nodes)
+        north = max(node.lat for node in nodes)
+        west = min(node.lon for node in nodes)
+        east = max(node.lon for node in nodes)
+        box = expand_bbox((south, west, north, east), pad_m, (south + north) / 2.0)
+        return box, graph
+    box = query_bbox(pins)
+    assert box is not None
+    return box, graph_for_bbox(graph, box)
+
+
 def plan_offline_routes(
     graph: RoutingGraph,
     origin: Coord,
@@ -308,10 +362,14 @@ def plan_offline_routes(
     preference: EffortPreference | None = None,
     deduplicator: RouteDeduplicator | None = None,
     max_routes: int | None = None,
+    collapse_similar: bool = True,
+    search_mode: str = "exact",
+    progressive_max_similarity: float | None = None,
     growth: float = 1.6,
     max_iterations: int | None = 8,
     pad_m: float = 80.0,
     on_progress: Callable[[str, RoutePlan | None, dict], None] | None = None,
+    progress_event_every: int = 1,
     explore_full_coverage: bool = False,
     use_full_graph: bool = False,
     should_cancel: Callable[[], bool] | None = None,
@@ -322,9 +380,10 @@ def plan_offline_routes(
     guardrails de circulacao -> fisica completa -> **ML em toda rota** (estimativa
     de intensidade) -> classificacao -> **avaliacao final de seguranca** (ADR-029
     D4, sem recalculo) -> **box por ultimo**, a partir das rotas **devolvidas**. A
-    busca roda sobre uma zona **dinamica** (nao o grafo inteiro); a avaliacao
-    fisica usa o **simulador completo**. O preditor, quando informado, e sempre
-    **local** (artefato em disco); a funcao nunca toca a rede.
+    busca roda **uma unica vez** na zona do corredor (pins + margens automaticas,
+    nao o grafo inteiro); a avaliacao fisica usa o **simulador completo**. O
+    preditor, quando informado, e sempre **local** (artefato em disco); a funcao
+    nunca toca a rede.
 
     Args:
         graph: Grafo carregado (a cidade inteira). Nao e alterado.
@@ -353,12 +412,34 @@ def plan_offline_routes(
             ``UNAVAILABLE`` (nenhum RPE inventado).
         preference: Preferencia de esforco declarada, para a classificacao.
         deduplicator: Estrategia de deduplicacao das candidatas.
-        max_routes: Se informado, limita as rotas a N **melhores pela ordem do
-            perfil** (a ordem da fronteira). ``None`` mantem todas.
-        growth: Fator de crescimento da zona a cada iteracao sem rota (politica
-            de conectividade; nao e parametro de fisica).
-        max_iterations: Numero maximo de crescimentos da zona.
+        max_routes: ``None`` devolve o conjunto **estruturalmente distinto** —
+            uma rota por grupo de quase-duplicatas da fronteira (corte no maior
+            salto, ``route_set``); um inteiro positivo ``N`` devolve as ``N``
+            rotas **mais dissimiles** (farthest-first, max-min Jaccard). Em
+            ambos os modos a rota de indice 0 (a "pick") e preservada e nenhum
+            limiar de similaridade e escolhido a mao.
+        collapse_similar: quando ``True`` (padrao), aplica a selecao
+            estrutural acima (``route_set``). Quando ``False``, mantem a
+            **fronteira inteira** apos a deduplicacao PATH e ``max_routes``
+            limita apenas as ``N`` primeiras na ordem do perfil — modo de
+            comparacao/observabilidade, sem colapso.
+        search_mode: ``"exact"`` (padrao) esgota a busca Pareto; ``"progressive"``
+            interrompe explicitamente quando ``max_routes`` candidatas elegiveis
+            atingem o limite estrutural declarado em ``progressive_max_similarity``.
+            O modo progressivo relaxa a completude e nunca e ativado por padrao.
+        progressive_max_similarity: maior Jaccard de arcos permitido entre as
+            candidatas progressivas selecionadas. Obrigatorio em ``progressive``
+            e deve estar em ``[0, 1]``.
+        growth: **Inerte** (compatibilidade de assinatura). A busca atual e unica:
+            nao ha crescimento da zona (ver ``_search_zone``).
+        max_iterations: **Inerte** (compatibilidade de assinatura).
+        explore_full_coverage: **Inerte** (compatibilidade de assinatura); use
+            ``use_full_graph`` para buscar no grafo inteiro.
         pad_m: Margem (m) somada ao envelope das rotas no box final.
+        progress_event_every: publica/avalia o preview a cada N candidatas no
+            modo exato com ``on_progress``. A primeira candidata sempre pode
+            ser publicada. O modo ``search_mode="progressive"`` não aplica
+            esse intervalo, pois usa cada candidata para seu critério de parada.
 
     Returns:
         ``RoutePlanResult`` com o box (calculado **depois** da ML, a partir das rotas
@@ -372,9 +453,31 @@ def plan_offline_routes(
 
     Raises:
         ValueError: perfil desconhecido ou ``max_routes`` invalido.
-        snapping.SnapError: nunca — o snapping e tentado por iteracao; uma zona
-            desconectada leva ao crescimento, nao a excecao.
+        snapping.SnapError: nunca — o snapping e tentado na zona; uma zona
+            desconectada devolve ``reached=False``, sem crescimento.
     """
+    if search_mode not in ("exact", "progressive"):
+        raise ValueError("search_mode deve ser 'exact' ou 'progressive'")
+    if search_mode == "progressive":
+        if max_routes is None:
+            raise ValueError(
+                "search_mode='progressive' exige max_routes explícito"
+            )
+        if progressive_max_similarity is None or not 0.0 <= progressive_max_similarity <= 1.0:
+            raise ValueError(
+                "progressive_max_similarity deve estar em [0, 1] no modo progressivo"
+            )
+    elif progressive_max_similarity is not None:
+        raise ValueError(
+            "progressive_max_similarity só pode ser usado no modo progressivo"
+        )
+    if (
+        isinstance(progress_event_every, bool)
+        or not isinstance(progress_event_every, int)
+        or progress_event_every <= 0
+    ):
+        raise ValueError("progress_event_every deve ser um inteiro positivo")
+
     if max_routes is not None and (
         isinstance(max_routes, bool) or not isinstance(max_routes, int) or max_routes <= 0
     ):
@@ -403,11 +506,22 @@ def plan_offline_routes(
 
     pins: tuple[Coord, ...] = (origin, destination)
     captured: dict[str, object] = {"calls": 0}
-    # Só guardamos os DTOs públicos compactos, não as simulações completas nem
-    # labels que manteriam cadeias inteiras da busca vivas entre expansões.
-    partials: list[tuple[tuple[float, ...], Route, bool]] = []
+    # Preview incremental. Guardamos apenas os DTOs públicos compactos e a
+    # ``SearchRoute`` (arcos) de cada candidata descoberta — barato. A física
+    # completa + ML roda **só** nas rotas que sobrevivem à seleção estrutural
+    # (as distintas), e o resultado é memorizado por traçado (``path``): assim o
+    # preview avalia poucas candidatas em vez de todas as da fronteira, e vê a
+    # **mesma** seleção do resultado final.
+    discovered: list[tuple[tuple[float, ...], RouteCandidate, tuple[str | None, ...]]] = []
+    preview_contracts: dict[
+        tuple[str | None, ...], tuple[Route, bool] | None
+    ] = {}
+    preview_assessments: dict[tuple[str | None, ...], RouteAssessment] = {}
+    preview_elevation_cache: dict[str, _PreparedElevationProfile] = {}
+    preview_similarity_cache = IncrementalSimilarityMatrix()
     seen_paths: set[tuple[str | None, ...]] = set()
     valid_candidate_found = False
+    progressive_stop_ready = False
     current_box = query_bbox(pins)
     assert current_box is not None
 
@@ -430,16 +544,42 @@ def plan_offline_routes(
             query = build_query_graph(zone, origin, destination, options)
         except SnapError:
             return ()
-        astar = MultiObjectiveAStar(
-            query.graph,
-            search_model,
-            search_profile,
-            initial_speed_mps=initial_speed_mps,
-        )
+        def build_partial(candidate: RouteCandidate) -> tuple[Route, bool] | None:
+            """Avalia UMA candidata (física completa + ML) e devolve seu contrato.
 
-        def publish_candidate(label) -> None:
-            nonlocal valid_candidate_found
-            if on_progress is None:
+            Só é chamado para as candidatas que **sobrevivem** à seleção
+            estrutural do preview — não para toda label que chega ao destino.
+            """
+            assessment = assess_candidates(
+                query.graph, (candidate,), cyclist=cyclist, bicycle=bicycle,
+                traversal=simulator, environment=environment, initial_state=start_state,
+                power_w=power_w, rider=rider, context=context, predictor=predictor,
+                pacing=pacing, demand_field=resolved_demand_field,
+            )[0]
+            preview_assessments[tuple(candidate.route.arc_ids)] = assessment
+            classification = classify_routes((assessment,), preference)[0]
+            report = evaluate_candidates((candidate,), assessments={candidate.route_id: assessment})
+            if not report.routes:
+                return None
+            item = report.routes[0]
+            partial_demand, partial_telemetry = _route_demand_and_telemetry(
+                query, candidate, assessment
+            )
+            planned = PlannedRoute(candidate, assessment, classification, item.safety,
+                                   geometry=_route_points(
+                                       query,
+                                       candidate,
+                                       assessment,
+                                       elevation_cache=preview_elevation_cache,
+                                   ),
+                                   demand=partial_demand, telemetry=partial_telemetry)
+            from router.app.plan_view import _to_route_contract
+            return (_to_route_contract(planned, profile_id=route_profile.id),
+                    assessment.prediction.status.is_available)
+
+        def publish_candidate(label, search_engine) -> None:
+            nonlocal valid_candidate_found, progressive_stop_ready
+            if on_progress is None and search_mode != "progressive":
                 return
             from router.core.search.astar import SearchResult
             from router.core.search.state import route_arcs
@@ -453,32 +593,55 @@ def plan_offline_routes(
             if not pool.candidates:
                 return
             candidate = replace(pool.candidates[0], route_id=f"partial-{len(seen_paths)}")
-            assessment = assess_candidates(
-                query.graph, (candidate,), cyclist=cyclist, bicycle=bicycle,
-                traversal=simulator, environment=environment, initial_state=start_state,
-                power_w=power_w, rider=rider, context=context, predictor=predictor,
-                pacing=pacing, demand_field=resolved_demand_field,
-            )[0]
-            classification = classify_routes((assessment,), preference)[0]
-            report = evaluate_candidates((candidate,), assessments={candidate.route_id: assessment})
-            if not report.routes:
+            discovered.append((search_profile.values(label), candidate, path))
+            discovered.sort(key=lambda item: item[0])
+            if (
+                search_mode != "progressive"
+                and len(discovered) > 1
+                and len(discovered) % progress_event_every != 0
+            ):
+                return
+            # O preview aplica a MESMA seleção estrutural do resultado final
+            # (``collapse_similar``), porém **antes** da física/ML: seleciona
+            # sobre os arcos (barato) e avalia só as distintas. Sem isso, a lista
+            # mostrada durante a busca avaliaria toda a fronteira (quase-duplicatas).
+            if collapse_similar:
+                ordered = tuple(item[1].route for item in discovered)
+                with similarity_cache_scope(preview_similarity_cache):
+                    picked = select_distinct_routes(ordered, max_routes=max_routes)
+                chosen = [discovered[index] for index in picked.indices]
+            else:
+                chosen = discovered if max_routes is None else discovered[:max_routes]
+            contracts: list[Route] = []
+            available_flags: list[bool] = []
+            for _, chosen_candidate, chosen_path in chosen:
+                if chosen_path not in preview_contracts:
+                    cached = build_partial(chosen_candidate)
+                    preview_contracts[chosen_path] = cached
+                else:
+                    cached = preview_contracts[chosen_path]
+                if cached is None:
+                    continue
+                contracts.append(cached[0])
+                available_flags.append(cached[1])
+            if not contracts:
                 return
             valid_candidate_found = True
-            item = report.routes[0]
-            partial_demand, partial_telemetry = _route_demand_and_telemetry(
-                query, candidate, assessment
-            )
-            planned = PlannedRoute(candidate, assessment, classification, item.safety,
-                                   geometry=_route_points(query, candidate, assessment),
-                                   demand=partial_demand, telemetry=partial_telemetry)
-            from router.app.plan_view import _to_route_contract, partial_contract
-            partials.append((search_profile.values(label),
-                             _to_route_contract(planned, profile_id=route_profile.id),
-                             assessment.prediction.status.is_available))
-            partials.sort(key=lambda item: item[0])
-            chosen = partials if max_routes is None else partials[:max_routes]
+            if search_mode == "progressive" and max_routes is not None:
+                selected_routes = [item[1].route for item in chosen]
+                progressive_stop_ready = (
+                    len(contracts) >= max_routes
+                    and len(selected_routes) >= max_routes
+                    and all(
+                        arc_jaccard(selected_routes[i], selected_routes[j])
+                        <= float(progressive_max_similarity)
+                        for i in range(len(selected_routes))
+                        for j in range(i + 1, len(selected_routes))
+                    )
+                )
+            from router.app.plan_view import partial_contract
             routes = tuple(replace(route, recommended=index == 0)
-                           for index, (_, route, _) in enumerate(chosen))
+                           for index, route in enumerate(contracts))
             lines = [[(point.lat, point.lon) for point in route.geometry] for route in routes]
             box = query_bbox(pins, lines, pad_m=pad_m)
             assert box is not None
@@ -488,36 +651,65 @@ def plan_offline_routes(
                 zone_nodes=zone.node_count, zone_arcs=zone.arc_count,
                 graph_nodes=graph.node_count, graph_arcs=graph.arc_count,
                 iterations=int(captured["calls"]), routes=routes,
-                pareto_route_count=len(astar.frontier.labels_at(query.destination_id)) if astar.frontier else 0,
-                physiological_count=sum(available for _, _, available in chosen),
+                pareto_route_count=(
+                    len(search_engine.frontier.labels_at(query.destination_id))
+                    if search_engine.frontier
+                    else 0
+                ),
+                physiological_count=sum(available_flags),
+                search_mode=search_mode,
+                search_complete=False,
+                optimality_proven=False,
             )
-            on_progress("route_found", interim,
-                        {"bbox": current_box, "iteration": int(captured["calls"])})
+            if on_progress is not None:
+                on_progress("route_found", interim,
+                            {"bbox": current_box, "iteration": int(captured["calls"])})
 
-        result = astar.search(query.origin_id, query.destination_id,
-                              on_candidate_state=publish_candidate if on_progress else None,
-                                  should_cancel=should_cancel,
-                                  stop_when_candidate=(lambda: valid_candidate_found) if use_full_graph else None)
+        if search_mode == "progressive":
+            stop_when_candidate = lambda: progressive_stop_ready
+        elif use_full_graph:
+            stop_when_candidate = lambda: valid_candidate_found
+        else:
+            stop_when_candidate = None
+
+        search = search_candidates(
+            query.graph,
+            search_model,
+            search_profile,
+            query.origin_id,
+            query.destination_id,
+            initial_speed_mps=initial_speed_mps,
+            on_candidate_state=(
+                publish_candidate
+                if on_progress is not None or search_mode == "progressive"
+                else None
+            ),
+            should_cancel=should_cancel,
+            stop_when_candidate=stop_when_candidate,
+        )
+        result = search.result
         if not result.reached:
             return ()
         captured["zone"] = zone
         captured["query"] = query
         captured["result"] = result
+        captured["pool"] = search.pool
         return _route_geometries(query, result)
 
-    # 1) CANDIDATAS: a zona cresce ate envolver o tracado de TODAS as rotas da
-    #    fronteira — assim qualquer rota devolvida cabe na zona de busca.
-    search_bbox, zone, frontier_geometries = adaptive_zone(
-        graph,
-        pins,
-        probe,
-        growth=growth,
-        max_iterations=max_iterations,
-        pad_m=pad_m,
-        explore_full_coverage=explore_full_coverage,
-        use_full_graph=use_full_graph,
-        on_zone=zone_started if on_progress is not None or should_cancel is not None else None,
+    # 1) CANDIDATAS: **uma** busca. O box do corredor (pins + margens
+    #    automaticas) e definido **uma vez** e limita a busca — como no
+    #    ``toporide`` (``solveAll``): uma geracao de candidatas, nao um ciclo de
+    #    crescimento. Nao ha segunda busca: se o corredor nao conectar origem e
+    #    destino, o resultado e ``reached=False`` (honesto), sem crescer a zona.
+    #    (Os parametros legados ``growth``/``max_iterations``/
+    #    ``explore_full_coverage`` ficam inertes — ver a docstring.)
+    search_bbox, zone = _search_zone(
+        graph, pins, use_full_graph=use_full_graph, pad_m=pad_m
     )
+    assert search_bbox is not None
+    if on_progress is not None or should_cancel is not None:
+        zone_started(search_bbox, zone, 1)
+    frontier_geometries = probe(zone)
 
     query = captured.get("query")
     result = captured.get("result")
@@ -534,6 +726,7 @@ def plan_offline_routes(
         graph_arcs=graph.arc_count,
         iterations=int(captured["calls"]),
         preference=preference,
+        search_mode=search_mode,
     )
 
     # Sem rota conectada: box apenas dos pinos; nada e inventado.
@@ -542,28 +735,64 @@ def plan_offline_routes(
         assert pins_bbox is not None
         return RoutePlanResult(reached=False, routes=(), bbox=pins_bbox, **base)
 
-    pool = RouteCandidatePool.from_result(result, deduplicator=deduplicator)
-    candidates = pool.candidates
-    if max_routes is not None:
-        candidates = candidates[:max_routes]
+    pool = captured.get("pool")
+    if not isinstance(pool, RouteCandidatePool):
+        pool = RouteCandidatePool.from_result(result, deduplicator=deduplicator)
+    if collapse_similar:
+        # 1b) DISTINTAS: a fronteira Pareto multiplica quase-duplicatas
+        #     (pequenos desvios trocam segundos por metros). Colapsa-as antes da
+        #     fisica/ML, **sem limiar arbitrario**: sem ``max_routes``, corta no
+        #     maior salto (natural break); com ``N``, escolhe as N mais
+        #     dissimiles (farthest-first). A rota de indice 0 (a "pick") nunca e
+        #     descartada.
+        selection = select_distinct_routes(pool.routes, max_routes=max_routes)
+        candidates = tuple(pool.candidates[index] for index in selection.indices)
+    else:
+        # Comparacao/observabilidade: a fronteira inteira, sem colapso
+        # estrutural. ``max_routes`` limita as N primeiras na ordem do perfil.
+        candidates = pool.candidates
+        if max_routes is not None:
+            candidates = candidates[:max_routes]
 
     # 3) FISICA COMPLETA + 4) ML (sempre): a avaliacao traz, para CADA rota, a
     #    estimativa de intensidade (RPE + faixas; nao calibrada) ADR-028.
     # 5) CLASSIFICACAO: fisica + intensidade + preferencia declarada.
-    assessments = assess_candidates(
-        query.graph,
-        candidates,
-        cyclist=cyclist,
-        bicycle=bicycle,
-        traversal=simulator,
-        environment=environment,
-        initial_state=start_state,
-        power_w=power_w,
-        pacing=pacing,
-        demand_field=resolved_demand_field,
-        rider=rider,
-        context=context,
-        predictor=predictor,
+    assessments_by_path: dict[tuple[str | None, ...], RouteAssessment] = {}
+    missing_candidates: list[RouteCandidate] = []
+    for candidate in candidates:
+        path_key = tuple(candidate.route.arc_ids)
+        cached = preview_assessments.get(path_key)
+        if cached is None:
+            missing_candidates.append(candidate)
+        else:
+            assessments_by_path[path_key] = cached
+    if missing_candidates:
+        fresh_assessments = assess_candidates(
+            query.graph,
+            missing_candidates,
+            cyclist=cyclist,
+            bicycle=bicycle,
+            traversal=simulator,
+            environment=environment,
+            initial_state=start_state,
+            power_w=power_w,
+            pacing=pacing,
+            demand_field=resolved_demand_field,
+            rider=rider,
+            context=context,
+            predictor=predictor,
+        )
+        assessments_by_path.update(
+            {
+                tuple(candidate.route.arc_ids): assessment
+                for candidate, assessment in zip(
+                    missing_candidates, fresh_assessments
+                )
+            }
+        )
+    assessments = tuple(
+        assessments_by_path[tuple(candidate.route.arc_ids)]
+        for candidate in candidates
     )
     classifications = classify_routes(assessments, preference)
 
@@ -583,10 +812,20 @@ def plan_offline_routes(
     }
     # Geometria de apresentacao/contrato: usa o grafo de CONSULTA (com arcos
     # virtuais do snapping) e os resultados fisicos/estimativa ja calculados.
-    geometry_by_id = {
-        candidate.route_id: _route_points(query, candidate, assessment)
-        for candidate, assessment in zip(candidates, assessments)
-    }
+    geometry_by_id: dict[str, tuple[RoutePoint, ...]] = {}
+    emitted_geometries_list: list[tuple[Coord, ...]] = []
+    elevation_cache: dict[str, _PreparedElevationProfile] = {}
+    for candidate, assessment in zip(candidates, assessments):
+        geometry = _route_points(
+            query,
+            candidate,
+            assessment,
+            elevation_cache=elevation_cache,
+        )
+        geometry_by_id[candidate.route_id] = geometry
+        emitted_geometries_list.append(
+            tuple((point.lat, point.lon) for point in geometry)
+        )
     demand_by_id: dict[str, RouteDemand | None] = {}
     telemetry_by_id: dict[str, RouteTelemetry | None] = {}
     for candidate, assessment in zip(candidates, assessments):
@@ -611,18 +850,14 @@ def plan_offline_routes(
     rejected = tuple(_planned(item) for item in report.excluded)
 
     # 6) BOX por ultimo, a partir do tracado das rotas DEVOLVIDAS (a recomendada
-    #    — primeira ELEGIVEL, nunca REJECTED — mais as alternativas do A*). Como
-    #    devolvidas ⊆ candidatas ⊆ fronteira, e a zona ja contem toda a fronteira,
-    #    o box final cabe na zona de busca.
-    emitted_geometries = tuple(
-        _candidate_geometry(query, candidate) for candidate in candidates
-    )
+    #    — primeira ELEGIVEL, nunca REJECTED — mais as alternativas do A*). A
+    #    busca rodou no corredor (``search_bbox``); o box de exibicao/altimetria
+    #    e a uniao do corredor com o envelope das rotas, e **pode** exceder o
+    #    corredor quando um trecho desvia para fora dele — como no toporide, o
+    #    box cresce so para a exibicao, sem nova busca.
+    emitted_geometries = tuple(emitted_geometries_list)
     final_bbox = query_bbox(pins, emitted_geometries, pad_m=pad_m)
     assert final_bbox is not None  # pins sempre presentes -> base existe
-    if not use_full_graph and not bbox_contains(search_bbox, final_bbox):  # pragma: no cover - defensivo
-        raise AssertionError(
-            "box final saiu da zona de busca: rota devolvida fora da zona"
-        )
 
     return RoutePlanResult(
         reached=result.reached,
@@ -634,24 +869,15 @@ def plan_offline_routes(
         truncated=bool(result.truncated),
         frontier_truncated=bool(result.frontier_truncated),
         dropped_labels=int(result.dropped_labels),
+        search_complete=not result.stopped_early and not result.truncated,
+        optimality_proven=(
+            search_mode == "exact"
+            and not result.stopped_early
+            and not result.truncated
+            and not result.frontier_truncated
+        ),
         **base,
     )
-
-
-def _candidate_geometry(
-    query: QueryGraph, candidate: RouteCandidate
-) -> tuple[Coord, ...]:
-    """Tracado real de uma candidata, no grafo de consulta.
-
-    Usa o grafo de **consulta** (com arcos virtuais do snapping), de modo que
-    nenhum trecho perto da origem/destino fique sem geometria.
-    """
-    points: list[Coord] = []
-    for arc_id in candidate.route.arc_ids:
-        if arc_id is None:
-            continue
-        points.extend(query.graph.arc_geometry(arc_id))
-    return tuple(points)
 
 
 #: Faixa de 3 cores do contrato a partir das faixas de intensidade (Borg).
@@ -669,35 +895,56 @@ def _band_index(band: str | None) -> int | None:
     return None if band is None else _BAND_TO_COLOR.get(band)
 
 
+@dataclass(frozen=True, slots=True)
+class _PreparedElevationProfile:
+    distances: tuple[float, ...]
+    elevations: tuple[float, ...]
+
+
+def _prepare_elevation_profile(profile) -> _PreparedElevationProfile:
+    """Ordena e materializa as amostras uma vez por arco."""
+    samples = sorted(
+        (
+            (float(sample.distance_m), float(sample.elevation_m))
+            for sample in profile
+            if sample.elevation_m is not None
+        ),
+        key=lambda item: item[0],
+    )
+    return _PreparedElevationProfile(
+        distances=tuple(item[0] for item in samples),
+        elevations=tuple(item[1] for item in samples),
+    )
+
+
 def _elevation_at(profile, distance_m: float) -> float | None:
     """Interpola a elevacao do arco na distancia dada.
 
     Retorna ``None`` quando o perfil nao cobre a distancia (nunca inventa
     altitude zero). Fora do intervalo por mais de 0,5 m, a ausencia e explicita.
     """
-    samples = [
-        (float(sample.distance_m), float(sample.elevation_m))
-        for sample in profile
-        if sample.elevation_m is not None
-    ]
-    if not samples:
+    if not isinstance(profile, _PreparedElevationProfile):
+        profile = _prepare_elevation_profile(profile)
+    distances = profile.distances
+    elevations = profile.elevations
+    if not distances:
         return None
-    samples.sort(key=lambda item: item[0])
-    first_distance, first_elevation = samples[0]
-    last_distance, last_elevation = samples[-1]
+    first_distance, first_elevation = distances[0], elevations[0]
+    last_distance, last_elevation = distances[-1], elevations[-1]
     if distance_m < first_distance - 0.5 or distance_m > last_distance + 0.5:
         return None
     if distance_m <= first_distance:
         return first_elevation
     if distance_m >= last_distance:
         return last_elevation
-    for (start_d, start_e), (end_d, end_e) in zip(samples, samples[1:]):
-        if start_d <= distance_m <= end_d:
-            if end_d <= start_d:
-                return end_e
-            fraction = (distance_m - start_d) / (end_d - start_d)
-            return start_e + fraction * (end_e - start_e)
-    return last_elevation
+    end_index = bisect_left(distances, distance_m)
+    start_index = max(0, end_index - 1)
+    start_d, end_d = distances[start_index], distances[end_index]
+    start_e, end_e = elevations[start_index], elevations[end_index]
+    if end_d <= start_d:
+        return end_e
+    fraction = (distance_m - start_d) / (end_d - start_d)
+    return start_e + fraction * (end_e - start_e)
 
 
 def reference_pacing_for(
@@ -844,6 +1091,8 @@ def _route_points(
     query: QueryGraph,
     candidate: RouteCandidate,
     assessment: RouteAssessment,
+    *,
+    elevation_cache: dict[str, _PreparedElevationProfile] | None = None,
 ) -> tuple[RoutePoint, ...]:
     """Constroi os pontos do contrato para uma rota avaliada.
 
@@ -877,7 +1126,13 @@ def _route_points(
         )
         cumulative = cumulative_distances(coords)
         geometry_total = cumulative[-1] if cumulative else 0.0
-        elevation_profile = arc.elevation_profile
+        if elevation_cache is None:
+            elevation_profile = _prepare_elevation_profile(arc.elevation_profile)
+        else:
+            elevation_profile = elevation_cache.get(arc_id)
+            if elevation_profile is None:
+                elevation_profile = _prepare_elevation_profile(arc.elevation_profile)
+                elevation_cache[arc_id] = elevation_profile
         speed_kmh = float(result.average_speed_kmh)
         grade_pct = (
             100.0 * (float(result.ascent_m) - float(result.descent_m)) / arc_distance

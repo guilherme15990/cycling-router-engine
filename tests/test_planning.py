@@ -163,13 +163,14 @@ def test_plan_zone_is_smaller_than_whole_graph():
     assert plan.zone_arcs >= 1
 
 
-def test_plan_bbox_contains_pins_and_is_inside_search_box():
+def test_plan_bbox_contains_pins_and_covers_search_box():
     plan = _plan()
 
     pins_box = bbox_of([ORIGIN, DESTINATION])
     assert bbox_contains(plan.bbox, pins_box)
-    # O box final (altimetria/exibicao) cabe na zona efetivamente buscada.
-    assert bbox_contains(plan.search_bbox, plan.bbox)
+    # O box final (altimetria/exibicao) e a uniao do corredor com o tracado das
+    # rotas devolvidas: sempre cobre o corredor em que a busca ocorreu.
+    assert bbox_contains(plan.bbox, plan.search_bbox)
 
 
 def test_plan_normalizes_profile_name():
@@ -182,6 +183,23 @@ def test_plan_max_routes_limits_discovered_routes():
     limited = _plan(max_routes=1)
     assert limited.count == min(1, full.count)
     assert limited.count >= 1
+
+
+def test_progressive_search_is_explicitly_incomplete():
+    plan = _plan(
+        search_mode="progressive",
+        max_routes=1,
+        progressive_max_similarity=0.0,
+    )
+
+    assert plan.count == 1
+    assert plan.search_mode == "progressive"
+    assert plan.search_complete is False
+    assert plan.optimality_proven is False
+    payload = plan.to_contract().to_dict()
+    assert payload["search_mode"] == "progressive"
+    assert payload["search_complete"] is False
+    assert payload["optimality_proven"] is False
 
 
 def test_plan_to_dict_is_json_serializable():
@@ -268,10 +286,10 @@ def test_plan_intensity_present_without_predictor():
     assert all(route.mean_rpe > 0.0 for route in plan.routes)
 
 
-def test_plan_box_is_within_search_zone_and_final_after_ml():
-    """O box final (pos-ML) cabe na zona buscada e cobre os pinos."""
+def test_plan_final_box_covers_search_zone_after_ml():
+    """O box final (pos-ML) cobre a zona buscada e os pinos."""
     plan = _plan()
-    assert bbox_contains(plan.search_bbox, plan.bbox)
+    assert bbox_contains(plan.bbox, plan.search_bbox)
     assert bbox_contains(plan.bbox, bbox_of([ORIGIN, DESTINATION]))
 
 
@@ -280,6 +298,49 @@ def test_plan_recommended_with_max_routes_single():
     assert limited.count == 1
     assert limited.recommended is limited.routes[0]
     assert limited.recommended.recommended is True
+
+
+def test_plan_collapse_similar_uses_route_set_selection(monkeypatch):
+    """O E2E passa as candidatas pela selecao estrutural (``route_set``)."""
+    import router.app.planning as planning
+    from router.core.search.route_set import METHOD_FARTHEST_FIRST, RouteSetSelection
+
+    seen: list[int | None] = []
+
+    def only_best(routes, *, max_routes=None, similarity=None):
+        seen.append(max_routes)
+        return RouteSetSelection(
+            routes=(routes[0],), indices=(0,), method=METHOD_FARTHEST_FIRST
+        )
+
+    monkeypatch.setattr(planning, "select_distinct_routes", only_best)
+    plan = _plan()
+    assert seen == [None]  # colapso ligado por padrao
+    assert plan.count == 1  # so a "pick" sobreviveu
+    assert plan.recommended is plan.routes[0]
+
+
+def test_plan_collapse_similar_false_bypasses_selection(monkeypatch):
+    """``collapse_similar=False`` mantem a fronteira inteira (comparacao)."""
+    import router.app.planning as planning
+
+    def never_called(*args, **kwargs):  # pragma: no cover - falha se chamado
+        raise AssertionError("select_distinct_routes nao deveria ser chamado")
+
+    monkeypatch.setattr(planning, "select_distinct_routes", never_called)
+    plan = _plan(collapse_similar=False)
+    assert plan.count == plan.pareto_route_count
+    assert plan.count >= 1
+
+
+def test_plan_default_collapse_never_adds_routes():
+    """O colapso estrutural so pode reduzir (nunca inventa rotas)."""
+    default = _plan()
+    raw = _plan(collapse_similar=False)
+    assert default.count <= raw.count
+    assert default.count <= default.pareto_route_count
+    # A recomendada (primeira elegivel na ordem) e a mesma nos dois modos.
+    assert default.recommended.route_id == raw.recommended.route_id
 
 
 

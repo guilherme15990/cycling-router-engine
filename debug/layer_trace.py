@@ -35,7 +35,16 @@ def snapshot(value, depth=0, _budget=None):
     if isinstance(value, Path):
         return str(value)
     if hasattr(type(value), "node_count") and hasattr(type(value), "arc_count"):
-        return {"type": type(value).__name__, "nodes": value.node_count, "arcs": value.arc_count}
+        return {
+            "type": type(value).__name__,
+            "nodes": value.node_count,
+            "arcs": value.arc_count,
+            "spatial_index": (
+                type(getattr(value, "_node_spatial_index", None)).__name__
+                if getattr(value, "_node_spatial_index", None) is not None
+                else None
+            ),
+        }
     if depth >= 4:
         return {"type": type(value).__name__, **({"count": len(value)} if isinstance(value, (tuple, list, dict)) else {})}
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
@@ -62,17 +71,30 @@ def snapshot(value, depth=0, _budget=None):
 
 
 def layer_for(module, name):
-    if module.startswith("router.core.data") and name in {"adaptive_zone", "graph_for_bbox", "build_query_graph", "query_bbox", "snap"}:
+    if module.startswith("router.core.data") and name in {
+        "adaptive_zone", "graph_for_bbox", "build_query_graph", "query_bbox", "snap",
+        "build_spatial_index", "query_node_ids", "query_arc_ids", "iter_out_arcs",
+    }:
         return "01"
-    if module.startswith("router.core.physics") and name in {"traverse", "traverse_arc", "forces_at", "advance_speed", "gravity_force_n", "rolling_force_n", "aerodynamic_force_n", "equilibrium_speed_mps", "required_rider_power_w"}:
+    if module.startswith("router.core.physics") and name in {
+        "traverse", "traverse_arc", "equilibrium_speeds", "forces_at", "advance_speed",
+        "gravity_force_n", "rolling_force_n", "aerodynamic_force_n",
+        "equilibrium_speed_mps", "required_rider_power_w",
+    }:
         return "02"
-    if module.startswith("router.core.search") and name in {"search", "route_profile_for", "routes_from_result", "from_result", "order_labels"}:
+    if module.startswith("router.core.search") and name in {
+        "search", "search_candidates", "bounds", "route_profile_for", "routes_from_result",
+        "from_result", "order_labels", "select_distinct_routes", "arc_jaccard",
+    }:
         return "03"
     if module.startswith(("router.core.prediction", "router.core.physiology")) and name in {"estimate_intensity", "segment_rpe", "segments_from_traversal", "predict", "load_predictor", "load_compatible", "extract_features", "predict_response", "estimate_rider_response"}:
         return "04"
     if module.startswith("router.core.evaluation") and name in {"assess_route", "assess_candidates", "classify_routes", "classify_route", "evaluate_candidates", "classify_safety"}:
         return "05"
-    if module.startswith(("router.app", "router.contracts")) and name in {"plan_routes", "to_contract", "_to_route_contract", "dumps", "_merge_leg_plans"}:
+    if module.startswith(("router.app", "router.contracts")) and name in {
+        "plan_routes", "plan_routes_progressive", "plan_offline_routes",
+        "to_contract", "_to_route_contract", "dumps", "_merge_leg_plans",
+    }:
         return "06"
     return None
 

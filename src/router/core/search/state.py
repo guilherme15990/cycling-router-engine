@@ -19,7 +19,7 @@ from __future__ import annotations
 from collections.abc import Hashable
 from dataclasses import dataclass, field
 
-from router.core.data.graph.model import Arc, BicycleAccess
+from router.core.data.graph.model import Arc
 from router.core.physics.energy import kinetic_energy_j
 from router.core.physics.models import (
     ElevationUncertainty,
@@ -75,7 +75,6 @@ class SearchState:
     elevation_uncertainty: "ElevationUncertainty | None" = None
     used_min_speed_regularization: bool = False
     stalled: bool = False
-    dismount_used: bool = False
 
     @property
     def speed_mps(self) -> float:
@@ -109,7 +108,6 @@ class SearchState:
             "result_status": self.result_status.value,
             "used_min_speed_regularization": self.used_min_speed_regularization,
             "stalled": self.stalled,
-            "dismount_used": self.dismount_used,
             "elevation_uncertainty": (
                 None
                 if self.elevation_uncertainty is None
@@ -145,7 +143,7 @@ def advance_state(
 
     A busca nao recalcula velocidade: usa ``result.final_speed_mps`` como
     estado fisico de saida. A qualidade e a limitacao do trecho (status, incerteza
-    altimetrica, regularizacao de baixa velocidade, ``stalled``, desmontagem) sao
+    altimetrica, regularizacao de baixa velocidade e ``stalled``) sao
     agregadas de forma **monotona** (ADR-026 §6).
     """
     return SearchState(
@@ -172,10 +170,6 @@ def advance_state(
             or result.used_min_speed_regularization
         ),
         stalled=current.stalled or result.stalled,
-        dismount_used=(
-            current.dismount_used
-            or arc.bicycle_access is BicycleAccess.DISMOUNT
-        ),
     )
 
 

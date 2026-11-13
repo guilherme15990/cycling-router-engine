@@ -173,7 +173,7 @@ class RouteMetrics:
     um ponto e a **rampa media** do arco (ganho/distancia), nao o pico
     instantaneo (``arcMaxPct``), que a travessia nao expoe. ``meters_band``
     distribui a distancia dos trechos nas 3 cores de apresentacao; ``contra_m``
-    e ``walk_m`` so sao preenchidos por quem os calcula (hoje: ``None``).
+    permanece opcional quando nao e calculado.
     """
 
     source: str
@@ -185,7 +185,6 @@ class RouteMetrics:
     max_grade_pct: float | None = None
     meters_band: tuple[float, float, float] = (0.0, 0.0, 0.0)
     contra_m: float | None = None
-    walk_m: float | None = None
 
     def __post_init__(self) -> None:
         if self.source not in ("search", "assessment"):
@@ -200,7 +199,6 @@ class RouteMetrics:
         for value in self.meters_band:
             _float(value, "metrics.meters_band[]", minimum=0.0)
         _float(self.contra_m, "metrics.contra_m", allow_none=True, minimum=0.0)
-        _float(self.walk_m, "metrics.walk_m", allow_none=True, minimum=0.0)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -213,7 +211,6 @@ class RouteMetrics:
             "max_grade_pct": _round(self.max_grade_pct, 3),
             "meters_band": [round(value, 3) for value in self.meters_band],
             "contra_m": _round(self.contra_m, 3),
-            "walk_m": _round(self.walk_m, 3),
         }
 
     @classmethod
@@ -236,7 +233,6 @@ class RouteMetrics:
                 _float(raw_band[2], "metrics.meters_band[2]", minimum=0.0),  # type: ignore[arg-type]
             ),
             contra_m=_float(item.get("contra_m"), "metrics.contra_m", allow_none=True, minimum=0.0),
-            walk_m=_float(item.get("walk_m"), "metrics.walk_m", allow_none=True, minimum=0.0),
         )
 
 
@@ -245,8 +241,9 @@ class RouteML:
     """Estimativa de intensidade (RPE/faixas) — **nao calibrada**.
 
     ``calibrated`` e ``is_measurement`` sao explicitos e sempre ``False`` para
-    a estimativa computacional atual. ``band_*_fraction`` sao fracoes em
-    ``i1``..``i5``.
+    a estimativa computacional atual. ``mean_rpe`` preserva a semantica legada
+    ponderada por distancia do contrato v1; ``mean_rpe_time_weighted`` e o
+    agregado temporal aditivo. ``band_*_fraction`` sao fracoes em ``i1``..``i5``.
     """
 
     mean_rpe: float
@@ -258,9 +255,15 @@ class RouteML:
     method_id: str = ""
     model_version: str = ""
     borg_scale: str = ""
+    mean_rpe_time_weighted: float | None = None
 
     def __post_init__(self) -> None:
         _float(self.mean_rpe, "ml.mean_rpe")
+        _float(
+            self.mean_rpe_time_weighted,
+            "ml.mean_rpe_time_weighted",
+            allow_none=True,
+        )
         _float(self.peak_rpe, "ml.peak_rpe")
         _bool(self.calibrated, "ml.calibrated")
         _bool(self.is_measurement, "ml.is_measurement")
@@ -271,6 +274,11 @@ class RouteML:
     def to_dict(self) -> dict[str, object]:
         return {
             "mean_rpe": round(self.mean_rpe, 2),
+            "mean_rpe_time_weighted": (
+                None
+                if self.mean_rpe_time_weighted is None
+                else round(self.mean_rpe_time_weighted, 2)
+            ),
             "peak_rpe": round(self.peak_rpe, 2),
             "calibrated": self.calibrated,
             "is_measurement": self.is_measurement,
@@ -311,6 +319,11 @@ class RouteML:
             method_id=_str(item.get("method_id", ""), "ml.method_id", allow_empty=True),
             model_version=_str(item.get("model_version", ""), "ml.model_version", allow_empty=True),
             borg_scale=_str(item.get("borg_scale", ""), "ml.borg_scale", allow_empty=True),
+            mean_rpe_time_weighted=_float(
+                item.get("mean_rpe_time_weighted"),
+                "ml.mean_rpe_time_weighted",
+                allow_none=True,
+            ),
         )
 
 
@@ -865,7 +878,9 @@ class RoutePlan:
 
     ``routes`` contem apenas rotas elegiveis; ``rejected`` preserva as
     rejeitadas para auditoria. ``recommended_route_id`` e sempre uma rota de
-    ``routes`` (ou ``None``).
+    ``routes`` (ou ``None``). ``search_mode`` identifica se a busca foi exata
+    ou progressiva; no modo progressivo, ``optimality_proven`` permanece
+    falso porque a completude Pareto foi relaxada explicitamente.
     """
 
     request: RouteRequest
@@ -883,6 +898,9 @@ class RoutePlan:
     truncated: bool = False
     frontier_truncated: bool = False
     dropped_labels: int = 0
+    search_mode: str = "exact"
+    search_complete: bool = True
+    optimality_proven: bool = True
     format: str = CONTRACT_FORMAT
     version: int = CONTRACT_VERSION
 
@@ -903,6 +921,16 @@ class RoutePlan:
         _int(self.dropped_labels, "dropped_labels", minimum=0)
         _bool(self.truncated, "truncated")
         _bool(self.frontier_truncated, "frontier_truncated")
+        if self.search_mode not in ("exact", "progressive"):
+            raise RouteContractError(
+                "search_mode deve ser 'exact' ou 'progressive'"
+            )
+        _bool(self.search_complete, "search_complete")
+        _bool(self.optimality_proven, "optimality_proven")
+        if self.search_mode == "progressive" and self.optimality_proven:
+            raise RouteContractError(
+                "busca progressiva nao pode declarar optimality_proven"
+            )
 
         ids = [route.id for route in self.routes]
         if len(ids) != len(set(ids)):
@@ -931,6 +959,9 @@ class RoutePlan:
             "truncated": self.truncated,
             "frontier_truncated": self.frontier_truncated,
             "dropped_labels": self.dropped_labels,
+            "search_mode": self.search_mode,
+            "search_complete": self.search_complete,
+            "optimality_proven": self.optimality_proven,
             "iterations": self.iterations,
             "search_bbox": self.search_bbox.to_dict(),
             "bbox": self.bbox.to_dict(),
@@ -994,6 +1025,13 @@ class RoutePlan:
             ),
             dropped_labels=_int(
                 item.get("dropped_labels", 0), "dropped_labels", minimum=0
+            ),
+            search_mode=_str(item.get("search_mode", "exact"), "search_mode"),
+            search_complete=_bool(
+                item.get("search_complete", True), "search_complete"
+            ),
+            optimality_proven=_bool(
+                item.get("optimality_proven", True), "optimality_proven"
             ),
         )
 

@@ -63,11 +63,21 @@ class Heuristic:
                 )
         self.graph = graph
         self.max_speed_mps = max_speed_mps
+        self._bounds_cache: dict[tuple[object, object, float | None, float | None], HeuristicBounds] = {}
 
     def bounds(self, node_id: object, goal_id: object) -> HeuristicBounds:
         """Limites inferiores do no atual ate o destino."""
         node = self.graph.get_node(node_id)
         goal = self.graph.get_node(goal_id)
+
+        # Coordenadas dos nos sao imutaveis; as elevacoes podem ser anexadas
+        # posteriormente, por isso entram na chave e invalidam logicamente o
+        # valor antigo sem exigir uma referencia fragil ao ciclo de vida do
+        # grafo.
+        cache_key = (node_id, goal_id, node.elevation_m, goal.elevation_m)
+        cached = self._bounds_cache.get(cache_key)
+        if cached is not None:
+            return cached
 
         distance = haversine_m(node.coord, goal.coord)
         if self.max_speed_mps is None:
@@ -79,11 +89,13 @@ class Heuristic:
         if node.elevation_m is not None and goal.elevation_m is not None:
             ascent = max(0.0, goal.elevation_m - node.elevation_m)
 
-        return HeuristicBounds(
+        bounds = HeuristicBounds(
             time_s=time_lb,
             distance_m=distance,
             ascent_m=ascent,
         )
+        self._bounds_cache[cache_key] = bounds
+        return bounds
 
     def values(
         self,

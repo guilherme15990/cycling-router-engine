@@ -6,6 +6,57 @@ e [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+**Busca única no corredor — fim da expansão de zona.** A consulta offline passa a
+fazer **uma** busca, dentro do **corredor** (box dos pinos com as margens
+automáticas por eixo, `use_full_graph=False`; ou o extent do grafo em
+`use_full_graph=True`). O box é definido **antes** da busca e a limita — como no
+`toporide` (`solveAll`): não há ampliação de zona nem segunda busca. Um corredor
+desconexo devolve `no_route` honesto, sem crescer. `planning._search_zone`
+substitui `envelope.adaptive_zone` no fluxo; `growth`/`max_iterations`/
+`explore_full_coverage` permanecem na **assinatura** mas são **inertes** (fachada
+congelada intacta: `adaptive_zone`/`graph_for_bbox`/`scale_bbox` seguem
+exportados). `bbox` (exibição/altimetria) deixa de ser assertivamente contido em
+`search_bbox` e passa a ser a **união** do corredor com o traçado das rotas
+devolvidas (pode exceder o corredor, como no `toporide`). Medido no grafo real no
+job que motivou a mudança (origem/destino do `consulta-ywm7idug`, `fastest`,
+`max_routes=None`, `collapse_similar=True`): antes o motor fazia até 8 buscas
+(cada uma ~118 s, 83.396 expansões do A\*) e foi cancelado aos **605 s** com 2
+rotas; agora é **1** busca e a consulta **completa** em **111,3 s** com **4**
+rotas distintas.
+
+**Preview incremental: seleciona antes de avaliar.** Durante a busca, cada
+candidata descoberta disparava física completa + ML. Agora o preview aplica a
+**mesma seleção estrutural** do resultado final (`select_distinct_routes`, sobre
+os arcos — barato) **antes** da física/ML e avalia **só as distintas**,
+memorizando os contratos por traçado (`path`). `route_set._similarity_matrix`
+memoiza o conjunto de arcos de cada rota (evita reconstruí-lo a cada par). No
+mesmo job medido: `select_distinct_routes` **26,6 s/316 → 6,7 s/236** e
+`assess_candidates` no preview **8,6 s/316 → 0,3 s/10**. Suíte: **954 testes**.
+
+**Conjunto de rotas distintas — corte estrutural sem limiar fixo (núcleo + E2E).**
+`core.search.route_set` reduz uma fronteira Pareto que multiplica quase-duplicatas
+(medido no grafo real: `max_routes=None` devolvia **87** rotas não dominadas, com
+`shared_distance_ratio > 0,70` em **1677/3741** pares). Dois modos, **sem valor de
+corte arbitrário**: sem `max_routes`, corta a árvore geradora (máxima) do grafo de
+similaridades (`arc_jaccard`, estrutural sobre as arestas) no **maior salto** entre
+pesos consecutivos — single-linkage, corte no ponto médio do intervalo; com
+`max_routes=N`, **farthest-first** (max-min Jaccard) limitado a `N`. Sem salto, nada
+é colapsado (ausência **explícita**, nunca imputada). Duplicatas exatas colapsam
+antes do corte; a rota de índice 0 (a "pick" — no fluxo E2E, a escolhida pelo ML)
+nunca é descartada. Definição versionada: `structural-natural-break@1`.
+
+**Ligado ao E2E e ao app de depuração.** `plan_offline_routes` passa as candidatas
+por `select_distinct_routes` **antes** da física/ML (o antigo `candidates[:max_routes]`
+ignorava a seleção) — inclusive no **preview incremental** (`on_progress`/
+`publish_candidate`), que antes mostrava todos os parciais quase-duplicatas durante
+a busca e só encolhia no fim. Confirmado no grafo real: `max_routes=None` → **2**
+rotas (natural break, grupos 77+10), `max_routes=3` → as 3 mais dissimilares; o
+preview passa por ~9 no início e converge para o resultado final; a recomendada é
+preservada. O parâmetro `collapse_similar=True` (padrão) liga o colapso;
+`collapse_similar=False` mantém a **fronteira inteira** (modo de
+comparação/observabilidade) e o `debug/app.py` expõe um *checkbox* + a contagem
+`pareto_route_count` → rotas apresentadas. Suíte: **954 testes** (924 + 30).
+
 **Normalização das faixas de intensidade (ADR-028).** As cinco faixas (`i1`..`i5`)
 passam a ter uma **única definição** no sistema: os cortes Borg `9, 12, 14 e 16`
 e os rótulos (`muito leve`/`leve`/`moderado`/`intenso`/`muito intenso`) vivem em
