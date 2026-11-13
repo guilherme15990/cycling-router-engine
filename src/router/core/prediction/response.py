@@ -543,8 +543,16 @@ def estimate_rider_response(
     rider: RiderModel,
     borg_scale: BorgScale = DEFAULT_BORG_SCALE,
     config: ResponseConfig = DEFAULT_RESPONSE_CONFIG,
+    pacing_owns_fatigue: bool = False,
 ) -> RiderResponseEstimate:
-    """Estima RPE, FC e zonas provisórias a partir da intensidade mecânica."""
+    """Estima RPE, FC e zonas provisórias a partir da intensidade mecânica.
+
+    ``pacing_owns_fatigue`` declara que a política de ritmo já contabilizou o
+    orçamento anaeróbio (``core.physics.pacing``): a potência alcançada por
+    trecho já reflete a depleção de ``W'``. Nesse caso a resposta **não** roda
+    um segundo ledger de CP/W' — a fadiga aparece no ritmo, não como termo
+    aditivo de RPE.
+    """
     if not isinstance(mechanical, MechanicalIntensity):
         raise ValueError("mechanical deve ser um MechanicalIntensity")
     if not isinstance(rider, RiderModel):
@@ -555,7 +563,7 @@ def estimate_rider_response(
     distances = mechanical.segment_distance_m
     segment_count = len(relative)
 
-    use_cp = rider.has_critical_power_model
+    use_cp = rider.has_critical_power_model and not pacing_owns_fatigue
     fatigue_model = FatigueModel.CP_W_PRIME if use_cp else FatigueModel.NONE
     w_balance = rider.w_prime_j if use_cp else None
     segment_rpes: list[float] = []
@@ -563,6 +571,9 @@ def estimate_rider_response(
         base_rpe = _rpe_for_intensity(
             relative[index], borg_scale=borg_scale, config=config
         )
+        # A inclinação não entra como termo aditivo: a gravidade já está no
+        # trabalho de pedivela e, com a política de ritmo, a rampa aparece na
+        # potência alcançada e no orçamento de W'.
         fatigue_fraction = 0.0
         if use_cp:
             assert w_balance is not None

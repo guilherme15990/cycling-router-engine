@@ -29,10 +29,13 @@ from router.core.data.graph.model import RoutingGraph
 from router.app.planning import plan_offline_routes
 from router.core.physics.bicycle import BicycleModel
 from router.core.physics.cyclist import CyclistModel
+from router.core.prediction.intensity import band_for_rpe, rpe_label
 from router.contracts import (
+    DEMAND_BANDS,
     INTENSITY_BANDS,
     BBox,
     Reason,
+    RouteDemand,
     RouteML,
     RouteMetrics,
     RoutePlan,
@@ -40,6 +43,7 @@ from router.contracts import (
     RouteProvenance,
     RouteRequest,
     RouteSafety,
+    RouteTelemetry,
     Route,
     Zone,
 )
@@ -207,6 +211,105 @@ def _merge_safety(legs: Sequence[Route]) -> RouteSafety:
     )
 
 
+def _merge_demand(legs: Sequence[Route]) -> RouteDemand | None:
+    """Funde o custo do terreno; ``None`` quando nao e fundivel com honestidade.
+
+    So funde quando **todas** as pernas calcularam a demanda e compartilham o
+    mesmo cenario de ritmo. Cenarios diferentes (referencia, CP/W' ou politica)
+    nao sao combinados como se fossem uma medida unica.
+    """
+    demands = [leg.demand for leg in legs]
+    if any(demand is None for demand in demands):
+        return None
+    typed = [demand for demand in demands if demand is not None]
+    scenario = typed[0].scenario
+    if any(demand.scenario != scenario for demand in typed):
+        return None
+
+    weights = [max(leg.metrics.distance_m, 0.0) for leg in legs]
+    total = sum(weights)
+    by_band = {
+        name: sum(demand.distance_by_band_m.get(name, 0.0) for demand in typed)
+        for name in DEMAND_BANDS
+    }
+    fractions = (
+        {name: value / total for name, value in by_band.items()}
+        if total > 0.0
+        else {}
+    )
+    grades = tuple(
+        sum(demand.distance_by_grade_bin_m[index] for demand in typed)
+        for index in range(3)
+    )
+    mean_power = (
+        sum(
+            demand.mean_demand_power_w * weight
+            for demand, weight in zip(typed, weights)
+        )
+        / total
+        if total > 0.0
+        else 0.0
+    )
+    return RouteDemand(
+        scenario=scenario,
+        mean_demand_power_w=mean_power,
+        distance_fraction_by_band=fractions,
+        distance_by_band_m=by_band,
+        distance_by_grade_bin_m=grades,
+        band_definition=typed[0].band_definition,
+    )
+
+
+def _merge_telemetry(legs: Sequence[Route]) -> RouteTelemetry | None:
+    """Funde os observaveis do esforco; ``None`` se as pernas nao concordam.
+
+    O RPE medio e ponderado por tempo e a inercia por distancia. O saldo de
+    ``W'`` de um trajeto fundido **nao** tem significado (a fisica nao e
+    encadeada entre pernas) e permanece desconhecido. Zonas cardiacas nunca
+    sao inventadas.
+    """
+    telemetries = [leg.telemetry for leg in legs]
+    if any(telemetry is None for telemetry in telemetries):
+        return None
+    typed = [telemetry for telemetry in telemetries if telemetry is not None]
+    if len({telemetry.policy for telemetry in typed}) != 1:
+        return None
+
+    durations = [max(leg.metrics.time_s, 0.0) for leg in legs]
+    distances = [max(leg.metrics.distance_m, 0.0) for leg in legs]
+    total_duration = sum(durations) or 1.0
+    total_distance = sum(distances) or 1.0
+    mean_rpe = (
+        sum(
+            telemetry.mean_rpe * duration
+            for telemetry, duration in zip(typed, durations)
+        )
+        / total_duration
+    )
+    inertia = (
+        sum(
+            telemetry.inertia_fraction * distance
+            for telemetry, distance in zip(typed, distances)
+        )
+        / total_distance
+    )
+    return RouteTelemetry(
+        policy=typed[0].policy,
+        mean_rpe=mean_rpe,
+        peak_rpe=max(telemetry.peak_rpe for telemetry in typed),
+        rpe_band=band_for_rpe(mean_rpe),
+        rpe_label=rpe_label(mean_rpe),
+        inertia_fraction=max(0.0, min(1.0, inertia)),
+        arterial_entries=sum(telemetry.arterial_entries for telemetry in typed),
+        w_prime_start_j=None,
+        w_prime_end_j=None,
+        w_prime_is_provisional=all(
+            telemetry.w_prime_is_provisional for telemetry in typed
+        ),
+        heart_rate_zones=None,
+    )
+
+
 def _merge_route(legs: Sequence[Route], *, rank: int, profile: str) -> Route:
     return Route(
         id=f"m{rank}",
@@ -217,6 +320,8 @@ def _merge_route(legs: Sequence[Route], *, rank: int, profile: str) -> Route:
         ml=_merge_ml(legs),
         safety=_merge_safety(legs),
         provenance=RouteProvenance(kind="multi_leg", profile=profile),
+        demand=_merge_demand(legs),
+        telemetry=_merge_telemetry(legs),
     )
 
 

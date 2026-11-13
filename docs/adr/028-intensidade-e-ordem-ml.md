@@ -48,8 +48,11 @@ limitações** registradas. Ela:
 ### D4 — Faixas de intensidade (não zonas cardíacas)
 
 As cinco faixas reproduzem os cortes do `toporide` derivados do Borg 6–20
-(`10/12/14/16`), identificadas por uma **definição versionada**
-(`borg-intensity-bands@1`), nomeadas `i1`…`i5`. São **faixas de intensidade**.
+(`9/12/14/16`), identificadas por uma **definição versionada**
+(`borg-intensity-bands@2`), nomeadas `i1`…`i5`. São **faixas de intensidade**.
+O primeiro corte é `9` (faixa `i1` = 6–9), uma **divergência deliberada** do
+corte auditado (`10`) do `toporide` — ver
+`docs/adr/028-auditoria-rpe-toporide.md` e `CHANGELOG.md`.
 
 ### D5 — Distribuição por **distância** e por **duração**
 

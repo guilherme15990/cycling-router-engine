@@ -53,13 +53,62 @@ INTENSITY_MODEL_ID = "mechanical-response"
 INTENSITY_MODEL_VERSION = "2"
 
 #: Definição versionada das faixas de intensidade (derivadas do Borg 6–20).
-INTENSITY_BAND_DEFINITION = "borg-intensity-bands@1"
+#: ``@2`` corrige o primeiro corte (``9``, não ``10``) e passa a ser a **única**
+#: definição de faixa do sistema (o app deriva as cores daqui). É uma
+#: divergência **deliberada** do corte auditado do `toporide` (ver
+#: ``docs/adr/028-auditoria-rpe-toporide.md``).
+INTENSITY_BAND_DEFINITION = "borg-intensity-bands@2"
 
 #: Nomes das cinco faixas de intensidade (não são zonas cardíacas).
 INTENSITY_BAND_NAMES: tuple[str, ...] = ("i1", "i2", "i3", "i4", "i5")
 
-#: Cortes superiores (Borg) de cada faixa de intensidade.
-INTENSITY_BAND_EDGES: tuple[float, ...] = (10.0, 12.0, 14.0, 16.0)
+#: Cortes superiores (Borg) de cada faixa de intensidade. O corte é inclusivo:
+#: ``rpe <= corte`` cai na faixa. É a **única** definição de faixa do sistema —
+#: a escala de cores do app deriva daqui, sem cortes duplicados.
+INTENSITY_BAND_EDGES: tuple[float, ...] = (9.0, 12.0, 14.0, 16.0)
+
+#: Rótulos de apresentação das faixas de intensidade (do mais leve ao máximo).
+INTENSITY_BAND_LABELS: dict[str, str] = {
+    "i1": "muito leve",
+    "i2": "leve",
+    "i3": "moderado",
+    "i4": "intenso",
+    "i5": "muito intenso",
+}
+
+#: Definição versionada das faixas de **demanda** (custo do terreno relativo à
+#: potência de referência). Não são zonas de esforço: descrevem o que o
+#: terreno pede, não o que o ciclista gastou.
+DEMAND_BAND_DEFINITION = "demand-ratio-bands@1"
+
+#: Nomes das cinco faixas de demanda.
+DEMAND_BAND_NAMES: tuple[str, ...] = ("d1", "d2", "d3", "d4", "d5")
+
+#: Cortes superiores (razão ``P_req / P_ref``) de cada faixa de demanda.
+#: Geométricos: cada faixa dobra o custo relativo da anterior na primeira
+#: metade e cresce mais devagar na segunda.
+DEMAND_BAND_EDGES: tuple[float, ...] = (0.50, 0.80, 1.25, 2.00)
+
+#: Rótulos de apresentação das faixas de demanda.
+DEMAND_BAND_LABELS: dict[str, str] = {
+    "d1": "leve",
+    "d2": "moderada",
+    "d3": "forte",
+    "d4": "muito forte",
+    "d5": "severa",
+}
+
+#: Rótulos verbais do Borg (6–20) usados no cartão de esforço.
+RPE_LABELS: tuple[tuple[float, str], ...] = (
+    (7.0, "muito leve"),
+    (9.0, "leve"),
+    (11.0, "relativamente leve"),
+    (13.0, "um pouco forte"),
+    (15.0, "forte"),
+    (17.0, "muito forte"),
+    (19.0, "extremamente forte"),
+    (20.0, "máximo"),
+)
 
 #: Nome histórico do tipo de trecho.
 IntensitySegment = RouteSegment
@@ -75,6 +124,29 @@ def band_for_rpe(rpe: float) -> str:
         if rpe <= edge:
             return name
     return INTENSITY_BAND_NAMES[-1]
+
+
+def demand_band_for_ratio(ratio: float) -> str:
+    """Nome da faixa de demanda para ``P_req / P_ref``.
+
+    Uma razão de ``1.0`` significa "o terreno pede exatamente a potência de
+    referência declarada". Não é uma medida de esforço: o mesmo arco tem a
+    mesma demanda para ciclistas diferentes.
+    """
+    if not math.isfinite(ratio) or ratio < 0.0:
+        raise ValueError(f"ratio deve ser finito e nao negativo (recebido {ratio!r})")
+    for name, edge in zip(DEMAND_BAND_NAMES, DEMAND_BAND_EDGES):
+        if ratio <= edge:
+            return name
+    return DEMAND_BAND_NAMES[-1]
+
+
+def rpe_label(rpe: float) -> str:
+    """Rótulo verbal do Borg para um RPE (o primeiro corte que o contém)."""
+    for edge, label in RPE_LABELS:
+        if rpe <= edge:
+            return label
+    return RPE_LABELS[-1][1]
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,6 +338,7 @@ def segment_rpe(
     propulsion: PropulsionModel = DEFAULT_PROPULSION,
     borg_scale: BorgScale = DEFAULT_BORG_SCALE,
     config: ResponseConfig = DEFAULT_RESPONSE_CONFIG,
+    pacing_owns_fatigue: bool = False,
 ) -> float:
     """RPE provisório de um único trecho, dado um ``RiderModel``."""
     mechanical = estimate_mechanical_intensity(
@@ -276,6 +349,7 @@ def segment_rpe(
         rider=rider,
         borg_scale=borg_scale,
         config=config,
+        pacing_owns_fatigue=pacing_owns_fatigue,
     )
     return response.segment_rpes[0]
 
@@ -287,12 +361,16 @@ def estimate_intensity(
     propulsion: PropulsionModel = DEFAULT_PROPULSION,
     borg_scale: BorgScale = DEFAULT_BORG_SCALE,
     config: ResponseConfig = DEFAULT_RESPONSE_CONFIG,
+    pacing_owns_fatigue: bool = False,
 ) -> IntensityEstimate:
     """Estima intensidade mecânica, RPE e resposta provisória de uma rota.
 
     A função é determinística e sempre produz um artefato, inclusive sem
     trechos. O tráfego é agregado apenas como descritor; ele não altera a
     intensidade mecânica nem o RPE.
+
+    ``pacing_owns_fatigue`` repassa à resposta que o orçamento de ``W'`` já foi
+    contabilizado pela política de ritmo (ver ``core.physics.pacing``).
     """
     segment_tuple = tuple(segments)
     for segment in segment_tuple:
@@ -307,6 +385,7 @@ def estimate_intensity(
         rider=rider,
         borg_scale=borg_scale,
         config=config,
+        pacing_owns_fatigue=pacing_owns_fatigue,
     )
 
     distance_by_band: dict[str, float] = {name: 0.0 for name in INTENSITY_BAND_NAMES}
@@ -367,6 +446,16 @@ def segments_from_traversal(
         )
     segments: list[RouteSegment] = []
     for arc, result in zip(arcs, results):
+        peak_grade = 0.0
+        profile = tuple(getattr(arc, "elevation_profile", ()) or ())
+        for previous, current in zip(profile, profile[1:]):
+            dx = float(getattr(current, "distance_m", 0.0)) - float(getattr(previous, "distance_m", 0.0))
+            if dx <= 0.0:
+                continue
+            z0 = getattr(previous, "elevation_m", None)
+            z1 = getattr(current, "elevation_m", None)
+            if z0 is not None and z1 is not None:
+                peak_grade = max(peak_grade, 100.0 * (float(z1) - float(z0)) / dx)
         segments.append(
             RouteSegment(
                 distance_m=max(0.0, float(result.distance_m)),
@@ -378,6 +467,7 @@ def segments_from_traversal(
                 ascent_m=max(0.0, float(result.ascent_m)),
                 descent_m=max(0.0, float(result.descent_m)),
                 traffic_stress=hw_stress(getattr(arc, "highway", None)),
+                peak_grade_pct=max(0.0, peak_grade),
             )
         )
     return tuple(segments)
@@ -389,11 +479,19 @@ __all__ = [
     "INTENSITY_BAND_DEFINITION",
     "INTENSITY_BAND_NAMES",
     "INTENSITY_BAND_EDGES",
+    "INTENSITY_BAND_LABELS",
+    "DEMAND_BAND_DEFINITION",
+    "DEMAND_BAND_NAMES",
+    "DEMAND_BAND_EDGES",
+    "DEMAND_BAND_LABELS",
+    "RPE_LABELS",
     "IntensityCoefficients",
     "DEFAULT_INTENSITY_COEFFICIENTS",
     "IntensitySegment",
     "IntensityEstimate",
     "band_for_rpe",
+    "demand_band_for_ratio",
+    "rpe_label",
     "segment_rpe",
     "estimate_intensity",
     "segments_from_traversal",

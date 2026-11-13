@@ -100,6 +100,24 @@ def _to_route_contract(route: PlannedRoute, *, profile_id: str) -> Route:
             ),
         ),
         provenance=RouteProvenance(kind="search", profile=profile_id),
+        demand=route.demand,
+        telemetry=route.telemetry,
+    )
+
+
+def partial_contract(
+    *, origin, destination, profile_id, search_bbox, bbox,
+    zone_nodes, zone_arcs, graph_nodes, graph_arcs, iterations,
+    routes, pareto_route_count, physiological_count,
+) -> RoutePlan:
+    """Projeta resultados validados enquanto a fronteira ainda está aberta."""
+    return RoutePlan(
+        request=RouteRequest(origin=origin, destination=destination, profile=profile_id),
+        search_bbox=_to_bbox_contract(search_bbox), bbox=_to_bbox_contract(bbox), reached=True,
+        zone=Zone(nodes=zone_nodes, arcs=zone_arcs, graph_nodes=graph_nodes, graph_arcs=graph_arcs),
+        iterations=iterations, routes=routes, pareto_route_count=pareto_route_count,
+        physiological_count=physiological_count, recommended_route_id=routes[0].id,
+        warnings=("Resultado parcial: a fronteira de busca não foi concluída.",),
     )
 
 

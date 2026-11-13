@@ -9,6 +9,8 @@ from router.contracts._validation import (
     _bool,
     _coord,
     _coord_to_dict,
+    _demand_fractions,
+    _demand_fractions_from,
     _float,
     _fractions,
     _fractions_from,
@@ -17,10 +19,17 @@ from router.contracts._validation import (
     _round,
     _sequence,
     _str,
+    _unit_distribution,
 )
 from router.contracts.errors import RouteContractError
 from router.contracts.geo import BBox
-from router.contracts.version import CONTRACT_FORMAT, CONTRACT_VERSION
+from router.contracts.version import (
+    CONTRACT_FORMAT,
+    CONTRACT_VERSION,
+    DEMAND_BAND_DEFINITION,
+    DEMAND_BANDS,
+    INTENSITY_BANDS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,6 +76,10 @@ class RoutePoint:
     2 vermelho) derivada das faixas ``i1``..``i5``; ``None`` quando a
     intensidade nao foi calculada. ``rpe`` e a estimativa **nao calibrada**
     do trecho (Borg), nunca uma medicao.
+
+    ``arc_demand_w``/``arc_demand_ratio``/``demand_band`` descrevem o **custo
+    do terreno** no arco que termina neste ponto (potencia necessaria para
+    mante-lo no ritmo de referencia). Nao dependem do esforco do ciclista.
     """
 
     lat: float
@@ -78,6 +91,9 @@ class RoutePoint:
     band: int | None = None
     rpe: float | None = None
     watts: float | None = None
+    arc_demand_w: float | None = None
+    arc_demand_ratio: float | None = None
+    demand_band: str | None = None
 
     def __post_init__(self) -> None:
         _coord((self.lat, self.lon), "point")
@@ -89,6 +105,12 @@ class RoutePoint:
             raise RouteContractError("point.band deve ser 0, 1, 2 ou None")
         _float(self.rpe, "point.rpe", allow_none=True)
         _float(self.watts, "point.watts", allow_none=True, minimum=0.0)
+        _float(self.arc_demand_w, "point.arc_demand_w", allow_none=True, minimum=0.0)
+        _float(self.arc_demand_ratio, "point.arc_demand_ratio", allow_none=True, minimum=0.0)
+        if self.demand_band is not None and self.demand_band not in DEMAND_BANDS:
+            raise RouteContractError(
+                f"point.demand_band desconhecida: {self.demand_band!r}"
+            )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -101,6 +123,9 @@ class RoutePoint:
             "band": self.band,
             "rpe": _round(self.rpe, 2),
             "watts": _round(self.watts, 2),
+            "arc_demand_w": _round(self.arc_demand_w, 2),
+            "arc_demand_ratio": _round(self.arc_demand_ratio, 4),
+            "demand_band": self.demand_band,
         }
 
     @classmethod
@@ -120,6 +145,19 @@ class RoutePoint:
             ),
             rpe=_float(item.get("rpe"), "point.rpe", allow_none=True),
             watts=_float(item.get("watts"), "point.watts", allow_none=True, minimum=0.0),
+            arc_demand_w=_float(
+                item.get("arc_demand_w"), "point.arc_demand_w",
+                allow_none=True, minimum=0.0,
+            ),
+            arc_demand_ratio=_float(
+                item.get("arc_demand_ratio"), "point.arc_demand_ratio",
+                allow_none=True, minimum=0.0,
+            ),
+            demand_band=(
+                None
+                if item.get("demand_band") is None
+                else _str(item.get("demand_band"), "point.demand_band")
+            ),
         )
 
 
@@ -277,6 +315,347 @@ class RouteML:
 
 
 @dataclass(frozen=True, slots=True)
+class DemandScenarioRef:
+    """Parametros declarados em que a demanda do terreno foi medida.
+
+    ``reference_speed_kmh`` e o ritmo planejado declarado; **nao** e derivado
+    de ``reference_power_w``. ``critical_power_source``/``w_prime_source`` sao
+    ``measured``, ``profile_estimated`` ou ``provisional_default`` — o mesmo
+    vocabulario da fisiologia, repetido aqui para o contrato nao importar o
+    dominio.
+    """
+
+    reference_speed_kmh: float
+    reference_power_w: float
+    critical_power_w: float
+    w_prime_j: float
+    policy: str = "hold-reference-speed@2"
+    demand_model: str = "arc-demand@1"
+    critical_power_source: str = "provisional_default"
+    w_prime_source: str = "provisional_default"
+
+    def __post_init__(self) -> None:
+        for name in (
+            "reference_speed_kmh",
+            "reference_power_w",
+            "critical_power_w",
+            "w_prime_j",
+        ):
+            _float(getattr(self, name), f"demand.scenario.{name}", minimum=0.0)
+            if getattr(self, name) <= 0.0:
+                raise RouteContractError(
+                    f"demand.scenario.{name} deve ser positivo"
+                )
+        for name in (
+            "policy",
+            "demand_model",
+            "critical_power_source",
+            "w_prime_source",
+        ):
+            _str(getattr(self, name), f"demand.scenario.{name}")
+        for name in ("critical_power_source", "w_prime_source"):
+            value = getattr(self, name)
+            if value not in (
+                "measured",
+                "profile_estimated",
+                "calibrated_model_estimated",
+                "provisional_default",
+            ):
+                raise RouteContractError(
+                    f"demand.scenario.{name} desconhecida: {value!r}"
+                )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "reference_speed_kmh": round(self.reference_speed_kmh, 3),
+            "reference_power_w": round(self.reference_power_w, 3),
+            "critical_power_w": round(self.critical_power_w, 3),
+            "w_prime_j": round(self.w_prime_j, 3),
+            "policy": self.policy,
+            "demand_model": self.demand_model,
+            "critical_power_source": self.critical_power_source,
+            "w_prime_source": self.w_prime_source,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "DemandScenarioRef":
+        item = _mapping(data, "demand.scenario")
+        return cls(
+            reference_speed_kmh=_float(
+                item.get("reference_speed_kmh"),
+                "demand.scenario.reference_speed_kmh",
+                minimum=0.0,
+            ),  # type: ignore[arg-type]
+            reference_power_w=_float(
+                item.get("reference_power_w"),
+                "demand.scenario.reference_power_w",
+                minimum=0.0,
+            ),  # type: ignore[arg-type]
+            critical_power_w=_float(
+                item.get("critical_power_w"),
+                "demand.scenario.critical_power_w",
+                minimum=0.0,
+            ),  # type: ignore[arg-type]
+            w_prime_j=_float(
+                item.get("w_prime_j"), "demand.scenario.w_prime_j", minimum=0.0
+            ),  # type: ignore[arg-type]
+            policy=_str(
+                item.get("policy", "hold-reference-speed@2"),
+                "demand.scenario.policy",
+            ),
+            demand_model=_str(
+                item.get("demand_model", "arc-demand@1"),
+                "demand.scenario.demand_model",
+            ),
+            critical_power_source=_str(
+                item.get("critical_power_source", "provisional_default"),
+                "demand.scenario.critical_power_source",
+            ),
+            w_prime_source=_str(
+                item.get("w_prime_source", "provisional_default"),
+                "demand.scenario.w_prime_source",
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RouteDemand:
+    """Custo do terreno ao longo da rota, no ritmo de referencia.
+
+    ``distance_fraction_by_band`` e ``distance_by_band_m`` usam ``d1``..``d5``;
+    ``distance_by_grade_bin_m`` usa os tres baldes ``<=4%``, ``4-8%``, ``>8%``
+    (descidas contam no primeiro). Nada aqui e uma medida de esforco.
+    """
+
+    scenario: DemandScenarioRef
+    mean_demand_power_w: float
+    distance_fraction_by_band: dict[str, float]
+    distance_by_band_m: dict[str, float]
+    distance_by_grade_bin_m: tuple[float, float, float]
+    band_definition: str = DEMAND_BAND_DEFINITION
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.scenario, DemandScenarioRef):
+            raise RouteContractError("demand.scenario deve ser um DemandScenarioRef")
+        _float(
+            self.mean_demand_power_w,
+            "demand.mean_demand_power_w",
+            minimum=0.0,
+        )
+        _demand_fractions(
+            self.distance_fraction_by_band, "demand.distance_fraction_by_band"
+        )
+        _demand_fractions(self.distance_by_band_m, "demand.distance_by_band_m")
+        if len(self.distance_by_grade_bin_m) != 3:
+            raise RouteContractError(
+                "demand.distance_by_grade_bin_m deve ter 3 valores"
+            )
+        for value in self.distance_by_grade_bin_m:
+            _float(
+                value, "demand.distance_by_grade_bin_m[]", minimum=0.0
+            )
+        _str(self.band_definition, "demand.band_definition")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "scenario": self.scenario.to_dict(),
+            "mean_demand_power_w": round(self.mean_demand_power_w, 3),
+            "distance_fraction_by_band": {
+                name: round(value, 4)
+                for name, value in self.distance_fraction_by_band.items()
+            },
+            "distance_by_band_m": {
+                name: round(value, 3)
+                for name, value in self.distance_by_band_m.items()
+            },
+            "distance_by_grade_bin_m": [
+                round(value, 3) for value in self.distance_by_grade_bin_m
+            ],
+            "band_definition": self.band_definition,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "RouteDemand":
+        item = _mapping(data, "demand")
+        raw_grade = _sequence(
+            item.get("distance_by_grade_bin_m", [0.0, 0.0, 0.0]),
+            "demand.distance_by_grade_bin_m",
+        )
+        if len(raw_grade) != 3:
+            raise RouteContractError(
+                "demand.distance_by_grade_bin_m deve ter 3 valores"
+            )
+        return cls(
+            scenario=DemandScenarioRef.from_dict(item.get("scenario")),
+            mean_demand_power_w=_float(
+                item.get("mean_demand_power_w"),
+                "demand.mean_demand_power_w",
+                minimum=0.0,
+            ),  # type: ignore[arg-type]
+            distance_fraction_by_band=_demand_fractions_from(
+                item.get("distance_fraction_by_band", {}),
+                "demand.distance_fraction_by_band",
+            ),
+            distance_by_band_m=_demand_fractions_from(
+                item.get("distance_by_band_m", {}),
+                "demand.distance_by_band_m",
+            ),
+            distance_by_grade_bin_m=(
+                _float(
+                    raw_grade[0], "demand.distance_by_grade_bin_m[0]", minimum=0.0
+                ),  # type: ignore[arg-type]
+                _float(
+                    raw_grade[1], "demand.distance_by_grade_bin_m[1]", minimum=0.0
+                ),  # type: ignore[arg-type]
+                _float(
+                    raw_grade[2], "demand.distance_by_grade_bin_m[2]", minimum=0.0
+                ),  # type: ignore[arg-type]
+            ),
+            band_definition=_str(
+                item.get("band_definition", DEMAND_BAND_DEFINITION),
+                "demand.band_definition",
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class RouteTelemetry:
+    """Observaveis do esforco e do traçado, para o cartao de rota.
+
+    ``rpe_band`` usa ``i1``..``i5``; ``rpe_label`` e o rotulo verbal do Borg.
+    ``inertia_fraction`` e a fracao da distancia em que a velocidade de saida
+    do arco nao caiu mais que 0.2 m/s. ``arterial_entries`` conta **entradas**
+    em vias arteriais (trechos consecutivos contam uma vez).
+    ``heart_rate_zones`` fica ``None`` quando nao existe metodo fisiologico
+    real — o campo existe para nao inventar zonas cardiacas.
+    """
+
+    policy: str
+    mean_rpe: float
+    peak_rpe: float
+    rpe_band: str
+    rpe_label: str
+    inertia_fraction: float
+    arterial_entries: int
+    w_prime_start_j: float | None = None
+    w_prime_end_j: float | None = None
+    w_prime_is_provisional: bool = True
+    heart_rate_zones: dict[str, float] | None = None
+    heart_rate_zone_definition: str | None = None
+
+    def __post_init__(self) -> None:
+        _str(self.policy, "telemetry.policy")
+        for name in ("mean_rpe", "peak_rpe"):
+            value = _float(getattr(self, name), f"telemetry.{name}", minimum=0.0)
+            assert value is not None
+            if value > 20.0:
+                raise RouteContractError(
+                    f"telemetry.{name} deve estar em [0, 20] (Borg)"
+                )
+        if self.rpe_band not in INTENSITY_BANDS:
+            raise RouteContractError(
+                f"telemetry.rpe_band desconhecida: {self.rpe_band!r}"
+            )
+        _str(self.rpe_label, "telemetry.rpe_label")
+        inertia = _float(
+            self.inertia_fraction, "telemetry.inertia_fraction", minimum=0.0
+        )
+        assert inertia is not None
+        if inertia > 1.0:
+            raise RouteContractError("telemetry.inertia_fraction deve estar em [0, 1]")
+        _int(self.arterial_entries, "telemetry.arterial_entries", minimum=0)
+        _float(self.w_prime_start_j, "telemetry.w_prime_start_j", allow_none=True, minimum=0.0)
+        _float(self.w_prime_end_j, "telemetry.w_prime_end_j", allow_none=True, minimum=0.0)
+        _bool(self.w_prime_is_provisional, "telemetry.w_prime_is_provisional")
+        if self.heart_rate_zones is not None:
+            _unit_distribution(
+                self.heart_rate_zones, "telemetry.heart_rate_zones"
+            )
+            _str(
+                self.heart_rate_zone_definition,
+                "telemetry.heart_rate_zone_definition",
+            )
+        elif self.heart_rate_zone_definition is not None:
+            raise RouteContractError(
+                "telemetry.heart_rate_zone_definition exige heart_rate_zones"
+            )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "policy": self.policy,
+            "mean_rpe": round(self.mean_rpe, 2),
+            "peak_rpe": round(self.peak_rpe, 2),
+            "rpe_band": self.rpe_band,
+            "rpe_label": self.rpe_label,
+            "inertia_fraction": round(self.inertia_fraction, 4),
+            "arterial_entries": self.arterial_entries,
+            "w_prime_start_j": _round(self.w_prime_start_j, 3),
+            "w_prime_end_j": _round(self.w_prime_end_j, 3),
+            "w_prime_is_provisional": self.w_prime_is_provisional,
+            "heart_rate_zones": (
+                None
+                if self.heart_rate_zones is None
+                else {
+                    name: round(value, 4)
+                    for name, value in self.heart_rate_zones.items()
+                }
+            ),
+            "heart_rate_zone_definition": self.heart_rate_zone_definition,
+        }
+
+    @classmethod
+    def from_dict(cls, data: Any) -> "RouteTelemetry":
+        item = _mapping(data, "telemetry")
+        raw_zones = item.get("heart_rate_zones")
+        return cls(
+            policy=_str(item.get("policy"), "telemetry.policy"),
+            mean_rpe=_float(item.get("mean_rpe"), "telemetry.mean_rpe", minimum=0.0),  # type: ignore[arg-type]
+            peak_rpe=_float(item.get("peak_rpe"), "telemetry.peak_rpe", minimum=0.0),  # type: ignore[arg-type]
+            rpe_band=_str(item.get("rpe_band"), "telemetry.rpe_band"),
+            rpe_label=_str(item.get("rpe_label"), "telemetry.rpe_label"),
+            inertia_fraction=_float(
+                item.get("inertia_fraction"),
+                "telemetry.inertia_fraction",
+                minimum=0.0,
+            ),  # type: ignore[arg-type]
+            arterial_entries=_int(
+                item.get("arterial_entries"),
+                "telemetry.arterial_entries",
+                minimum=0,
+            ),  # type: ignore[arg-type]
+            w_prime_start_j=_float(
+                item.get("w_prime_start_j"),
+                "telemetry.w_prime_start_j",
+                allow_none=True,
+                minimum=0.0,
+            ),
+            w_prime_end_j=_float(
+                item.get("w_prime_end_j"),
+                "telemetry.w_prime_end_j",
+                allow_none=True,
+                minimum=0.0,
+            ),
+            w_prime_is_provisional=_bool(
+                item.get("w_prime_is_provisional", True),
+                "telemetry.w_prime_is_provisional",
+            ),
+            heart_rate_zones=(
+                None
+                if raw_zones is None
+                else _unit_distribution(raw_zones, "telemetry.heart_rate_zones")
+            ),
+            heart_rate_zone_definition=(
+                None
+                if item.get("heart_rate_zone_definition") is None
+                else _str(
+                    item.get("heart_rate_zone_definition"),
+                    "telemetry.heart_rate_zone_definition",
+                )
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class Reason:
     """Motivo estruturado de seguranca (auditavel)."""
 
@@ -380,11 +759,21 @@ class Route:
     ml: RouteML
     safety: RouteSafety
     provenance: RouteProvenance
+    demand: "RouteDemand | None" = None
+    telemetry: "RouteTelemetry | None" = None
 
     def __post_init__(self) -> None:
         _str(self.id, "route.id")
         _str(self.profile, "route.profile")
         _bool(self.recommended, "route.recommended")
+        if self.demand is not None and not isinstance(self.demand, RouteDemand):
+            raise RouteContractError("route.demand deve ser um RouteDemand ou None")
+        if self.telemetry is not None and not isinstance(
+            self.telemetry, RouteTelemetry
+        ):
+            raise RouteContractError(
+                "route.telemetry deve ser um RouteTelemetry ou None"
+            )
         previous = -1.0
         for index, point in enumerate(self.geometry):
             if point.dist_m + 1e-9 < previous:
@@ -404,11 +793,17 @@ class Route:
             "ml": self.ml.to_dict(),
             "safety": self.safety.to_dict(),
             "provenance": self.provenance.to_dict(),
+            "demand": None if self.demand is None else self.demand.to_dict(),
+            "telemetry": (
+                None if self.telemetry is None else self.telemetry.to_dict()
+            ),
         }
 
     @classmethod
     def from_dict(cls, data: Any) -> "Route":
         item = _mapping(data, "route")
+        raw_demand = item.get("demand")
+        raw_telemetry = item.get("telemetry")
         return cls(
             id=_str(item.get("id"), "route.id"),
             profile=_str(item.get("profile"), "route.profile"),
@@ -421,6 +816,14 @@ class Route:
             ml=RouteML.from_dict(item.get("ml")),
             safety=RouteSafety.from_dict(item.get("safety")),
             provenance=RouteProvenance.from_dict(item.get("provenance")),
+            demand=(
+                None if raw_demand is None else RouteDemand.from_dict(raw_demand)
+            ),
+            telemetry=(
+                None
+                if raw_telemetry is None
+                else RouteTelemetry.from_dict(raw_telemetry)
+            ),
         )
 
 

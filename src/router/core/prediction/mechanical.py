@@ -41,6 +41,7 @@ class RouteSegment:
     ascent_m: float = 0.0
     descent_m: float = 0.0
     traffic_stress: float = 0.0
+    peak_grade_pct: float = 0.0
 
     def __post_init__(self) -> None:
         for name in (
@@ -51,6 +52,7 @@ class RouteSegment:
             "ascent_m",
             "descent_m",
             "traffic_stress",
+            "peak_grade_pct",
         ):
             non_negative(name, getattr(self, name))
 
@@ -311,6 +313,7 @@ class MechanicalIntensity:
     rms_power_w: float
     max_segment_mean_power_w: float
     variability_index: float | None
+    segment_peak_grade_pct: tuple[float, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.physics, RoutePhysics):
@@ -325,6 +328,8 @@ class MechanicalIntensity:
         ):
             if len(getattr(self, name)) != size:
                 raise ValueError(f"{name} deve ter o mesmo tamanho dos segmentos")
+        if self.segment_peak_grade_pct and len(self.segment_peak_grade_pct) != size:
+            raise ValueError("segment_peak_grade_pct deve ter o mesmo tamanho dos segmentos")
         for name in (
             "rms_power_w",
             "max_segment_mean_power_w",
@@ -380,6 +385,7 @@ class MechanicalIntensity:
             "segment_relative_intensity": [
                 round(value, 4) for value in self.segment_relative_intensity
             ],
+            "segment_peak_grade_pct": [round(value, 3) for value in self.segment_peak_grade_pct],
         }
 
 
@@ -403,6 +409,7 @@ def estimate_mechanical_intensity(
     segment_relative: list[float] = []
     segment_durations: list[float] = []
     segment_distances: list[float] = []
+    segment_peak_grades: list[float] = []
     rider_crank_total = 0.0
     rider_wheel_total = 0.0
     motor_total = 0.0
@@ -433,6 +440,7 @@ def estimate_mechanical_intensity(
         segment_relative.append(power / reference_power)
         segment_durations.append(segment.duration_s)
         segment_distances.append(segment.distance_m)
+        segment_peak_grades.append(max(0.0, float(segment.peak_grade_pct)))
 
         rider_crank_total += split.rider_crank_work_j
         rider_wheel_total += split.rider_wheel_work_j
@@ -478,6 +486,7 @@ def estimate_mechanical_intensity(
         rms_power_w=rms,
         max_segment_mean_power_w=max(segment_powers, default=0.0),
         variability_index=variability,
+        segment_peak_grade_pct=tuple(segment_peak_grades),
     )
 
 

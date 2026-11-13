@@ -6,6 +6,18 @@ e [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
 ## [Unreleased]
 
+**Normalização das faixas de intensidade (ADR-028).** As cinco faixas (`i1`..`i5`)
+passam a ter uma **única definição** no sistema: os cortes Borg `9, 12, 14 e 16`
+e os rótulos (`muito leve`/`leve`/`moderado`/`intenso`/`muito intenso`) vivem em
+`core.prediction.intensity` (`INTENSITY_BAND_EDGES`/`INTENSITY_BAND_LABELS`), e a
+escala de cores do app (`debug/effort_colors.py`) **deriva** daí — sem cortes
+duplicados. O primeiro corte muda de `10` para `9` (`i1` = 6–9), uma
+**divergência deliberada** do corte **auditado** do `toporide`
+(`docs/adr/028-auditoria-rpe-toporide.md`); os demais (`12/14/16`) coincidem. A
+definição versionada sobe para **`borg-intensity-bands@2`** e passa a ser
+espelhada no contrato (`contracts.version.INTENSITY_BAND_DEFINITION`/
+`INTENSITY_BAND_EDGES`), com um guarda de *drift* núcleo↔contrato.
+
 **ADR-032/033 — estrutura-alvo executada (E1–E8).** A árvore-alvo do ADR-032 foi
 aplicada: `core/physics/physical/*` → `core/physics/*`,
 `core/physics/physiology/` → `core/physiology/`,
@@ -207,7 +219,7 @@ ele — **nenhuma** rota inelegível pode ser recomendada.
   - `intensity.py` (**ADR-028**) — `estimate_intensity` / `IntensityEstimate`:
     estimativa **computacional e não calibrada** de intensidade de uma rota, com
     RPE (Borg) + cinco **faixas de intensidade** (`i1`..`i5`, definição
-    versionada `borg-intensity-bands@1`, **não** zonas cardíacas), distribuição
+    versionada `borg-intensity-bands@2`, **não** zonas cardíacas), distribuição
     por **distância** e por **duração**. Espelha o preditor `borgRpe` do
     `toporide` (auditado em `docs/adr/028-auditoria-rpe-toporide.md`), com
     **proveniência** de cada coeficiente (`IntensityCoefficients`). É

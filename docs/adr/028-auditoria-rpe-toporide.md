@@ -108,6 +108,13 @@ O corte das bandas é `10, 12, 14, 16` (Borg); `GREEN_MAX_RPE = 12` define
 intensidade derivada do Borg 6–20, medida em % de distância** — não há FC (bpm)
 envolvida.
 
+> **Nota de divergência deliberada.** A auditoria registra o corte **auditado**
+> do `toporide` (`10`). O motor adota `9` no primeiro corte (faixa `i1` = 6–9),
+> sob a definição versionada `borg-intensity-bands@2` — uma correção
+> **intencional** da API, não uma reimplementação fiel. Os demais cortes
+> (`12/14/16`) coincidem. Ver `docs/adr/028-intensidade-e-ordem-ml.md` (D4) e
+> `CHANGELOG.md`.
+
 ### 1.3 Treino da rede (`trainingData.ts`)
 
 Se não há modelo em cache, `buildTrainingSamplesFromSys` gera amostras **do

@@ -52,6 +52,10 @@ from router.contracts import (
 from router.offline import OfflineViolation, is_network_disabled, offline
 
 __all__ = [
+    "plan_routes_progressive",
+    "RouteProgress",
+    "altimetry_edges",
+    "prepare_dem_tiles",
     # Planejamento
     "plan_routes",
     "PROFILE_IDS",
@@ -109,6 +113,12 @@ def __getattr__(name: str) -> Any:
     apenas ``contracts``/``offline``. Cada ramo e um import estatico; nomes
     desconhecidos levantam ``AttributeError`` (inclusive os DTOs internos).
     """
+    if name in {"plan_routes_progressive", "RouteProgress"}:
+        from router.app.progressive import plan_routes_progressive, RouteProgress
+        return {"plan_routes_progressive": plan_routes_progressive, "RouteProgress": RouteProgress}[name]
+    if name in {"altimetry_edges", "prepare_dem_tiles"}:
+        from router.app.dem_integration import altimetry_edges, prepare_dem_tiles
+        return {"altimetry_edges": altimetry_edges, "prepare_dem_tiles": prepare_dem_tiles}[name]
     if name == "plan_routes":
         from router.app import plan_routes
 

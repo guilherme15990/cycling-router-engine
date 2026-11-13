@@ -268,29 +268,54 @@ class PhysicalTraversal:
             results.append(result)
             state = result.simulation_state
 
-        uncertainty = None
-        for result in results:
-            if result.elevation_uncertainty is None:
-                continue
-            uncertainty = (
-                result.elevation_uncertainty
-                if uncertainty is None
-                else uncertainty.combine(result.elevation_uncertainty)
-            )
-
-        return TraversalPath(
-            results=tuple(results),
-            metrics=PhysicsRouteMetrics.from_results(results),
+        return traversal_path_from_results(
+            results,
             initial_speed_mps=(
                 initial_state.speed_mps if initial_state is not None else 0.0
             ),
-            final_speed_mps=state.speed_mps,
-            elevation_uncertainty=uncertainty,
-            result_status=worst_status(*(r.result_status for r in results)),
-            used_min_speed_regularization=any(
-                r.used_min_speed_regularization for r in results
-            ),
         )
+
+
+def traversal_path_from_results(
+    results: Sequence[TraversalResult],
+    *,
+    initial_speed_mps: float = 0.0,
+) -> TraversalPath:
+    """Agrega resultados ja simulados em um ``TraversalPath``.
+
+    Usado por ``traverse_path`` e por quem escolhe a potencia **por arco**
+    (``pacing.run_paced_path``): a agregacao de metricas, incerteza e status e
+    a mesma, sem duplicar a logica.
+    """
+    if not results:
+        return TraversalPath(
+            results=(),
+            metrics=PhysicsRouteMetrics.from_results(()),
+            initial_speed_mps=max(0.0, float(initial_speed_mps)),
+            final_speed_mps=max(0.0, float(initial_speed_mps)),
+        )
+
+    uncertainty = None
+    for result in results:
+        if result.elevation_uncertainty is None:
+            continue
+        uncertainty = (
+            result.elevation_uncertainty
+            if uncertainty is None
+            else uncertainty.combine(result.elevation_uncertainty)
+        )
+
+    return TraversalPath(
+        results=tuple(results),
+        metrics=PhysicsRouteMetrics.from_results(results),
+        initial_speed_mps=max(0.0, float(initial_speed_mps)),
+        final_speed_mps=results[-1].final_speed_mps,
+        elevation_uncertainty=uncertainty,
+        result_status=worst_status(*(r.result_status for r in results)),
+        used_min_speed_regularization=any(
+            r.used_min_speed_regularization for r in results
+        ),
+    )
 
 
 def traverse_arc(

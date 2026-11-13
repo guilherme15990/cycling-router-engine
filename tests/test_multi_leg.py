@@ -14,7 +14,7 @@ from router.core.data.osm.build import BuildOptions, attach_elevation, build_gra
 from router.core.data.osm.parse import OsmData
 from router.core.physics import BicycleModel, CyclistModel
 from router.app.planning import plan_offline_routes
-from router.contracts import RoutePlan, dumps, loads
+from router.contracts import DEMAND_BANDS, RoutePlan, dumps, loads
 
 _NETWORK = {
     "elements": [
@@ -195,3 +195,30 @@ def test_two_stops_keep_all_waypoints():
         )
     distances = [point.dist_m for point in route.geometry]
     assert distances == sorted(distances)
+
+
+def test_merged_route_keeps_demand_and_telemetry_under_pacing():
+    from router.app.planning import reference_pacing_for
+
+    cyclist = _cyclist()
+    pacing = reference_pacing_for(cyclist, reference_speed_kmh=15.0)
+    plan = plan_routes(
+        _graph(),
+        ORIGIN,
+        DESTINATION,
+        stops=(STOP,),
+        cyclist=cyclist,
+        bicycle=BicycleModel(),
+        pacing=pacing,
+    )
+    route = plan.routes[0]
+
+    assert route.demand is not None
+    assert set(route.demand.distance_fraction_by_band) == set(DEMAND_BANDS)
+    assert route.demand.scenario.w_prime_source == "provisional_default"
+    assert route.telemetry is not None
+    assert route.telemetry.heart_rate_zones is None
+    # A fisica nao e encadeada entre pernas: o saldo fundido de W' fica
+    # desconhecido em vez de fingir continuidade.
+    assert route.telemetry.w_prime_start_j is None
+    assert route.telemetry.w_prime_end_j is None

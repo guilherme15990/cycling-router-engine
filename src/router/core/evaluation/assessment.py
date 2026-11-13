@@ -35,6 +35,7 @@ from router.core.data.graph.model import Arc, GraphError, RoutingGraph
 from router.core.prediction.ml import EffortPredictor, predict_effort
 from router.core.physics.bicycle import BicycleModel
 from router.core.physics.cyclist import CyclistModel
+from router.core.physics.demand import ArcDemandField, DemandScenario
 from router.core.physics.effort import EffortFeatures, extract_effort_features
 from router.core.physics.environment import Environment
 from router.core.physics.models import (
@@ -43,6 +44,7 @@ from router.core.physics.models import (
     SimulationStatus,
     TraversalPath,
 )
+from router.core.physics.pacing import PacedPath, ReferencePacing, run_paced_path
 from router.core.physics.traversal import PhysicalTraversal
 from router.core.physiology import (
     PhysiologicalPrediction,
@@ -103,6 +105,9 @@ class RouteAssessment:
     circulation: RouteValidation
     intensity: "IntensityEstimate"
     energy: EnergyConsistency | None = None
+    #: Ritmo aplicado por arco, quando a avaliacao usa a politica de ritmo.
+    #: ``None`` quando a travessia usa potencia constante (legado).
+    paced: PacedPath | None = None
 
     @property
     def metrics(self) -> PhysicsRouteMetrics:
@@ -196,6 +201,7 @@ class RouteAssessment:
             "intensity": self.intensity.to_dict(),
             "circulation": self.circulation.to_dict(),
             "energy": None if self.energy is None else self.energy.to_dict(),
+            "paced": None if self.paced is None else self.paced.to_dict(),
         }
 
 
@@ -247,6 +253,9 @@ def assess_route(
     predictor: EffortPredictor | None = None,
     condition_evaluator: ConditionEvaluator | None = None,
     circulation_policy: CirculationPolicy = DEFAULT_POLICY,
+    pacing: ReferencePacing | None = None,
+    demand_field: ArcDemandField | None = None,
+    demand_scenario: DemandScenario | None = None,
 ) -> RouteAssessment:
     """Avalia uma rota com o **simulador fisico completo** e a classifica.
 
@@ -254,6 +263,11 @@ def assess_route(
     por ``PhysicalTraversal.traverse_path`` (nao pelo estimador aproximado),
     convertida em ``EffortFeatures`` e enviada ao preditor fisiologico. Nenhum
     valor fisiologico e inventado quando o modelo nao esta calibrado.
+
+    Quando ``pacing`` e informado, a travessia usa a **politica de ritmo**
+    (``run_paced_path``): a potencia varia por arco e o orcamento anaerobio e
+    contabilizado ali. Nesse caso ``power_w`` e ignorado e a resposta
+    provisoria **nao** roda um segundo ledger de CP/W'.
 
     Args:
         graph: Grafo de roteamento de onde os arcos sao resolvidos.
@@ -263,13 +277,16 @@ def assess_route(
         traversal: Simulador fisico; padrao ``PhysicalTraversal()`` (modo busca).
         environment: Ambiente; padrao do simulador.
         initial_state: Estado dinamico na origem; padrao: repouso.
-        power_w: Potencia no pedivela; padrao do ciclista.
+        power_w: Potencia no pedivela; padrao do ciclista. Ignorado se ``pacing``.
         rider: Perfil fisiologico (opcional).
         propulsion: Modelo de propulsao (opcional; padrao sem assistencia).
         context: Contexto da predicao (opcional).
         predictor: Preditor fisiologico; ``None`` => ``UNAVAILABLE`` explicito.
         condition_evaluator: Avaliador de condicoes de restricao de circulacao.
         circulation_policy: Politica para vereditos ``UNKNOWN`` (conservadora).
+        pacing: Parametros da politica de ritmo; ``None`` usa potencia constante.
+        demand_field: Cache de demanda por arco; padrao deriva do simulador.
+        demand_scenario: Cenario da demanda; padrao derivado de ``pacing``.
 
     Returns:
         ``RouteAssessment`` com fisica, features, previsao, circulacao e
@@ -285,14 +302,33 @@ def assess_route(
     _check_continuity(arcs)
 
     simulator = traversal if traversal is not None else PhysicalTraversal()
-    path = simulator.traverse_path(
-        arcs,
-        cyclist,
-        bicycle,
-        initial_state=initial_state,
-        environment=environment,
-        power_w=power_w,
-    )
+    paced: PacedPath | None = None
+    if pacing is None:
+        path = simulator.traverse_path(
+            arcs,
+            cyclist,
+            bicycle,
+            initial_state=initial_state,
+            environment=environment,
+            power_w=power_w,
+        )
+    else:
+        field = (
+            demand_field
+            if demand_field is not None
+            else ArcDemandField(simulator)
+        )
+        paced = run_paced_path(
+            arcs,
+            cyclist,
+            bicycle,
+            pacing=pacing,
+            demand_field=field,
+            scenario=demand_scenario,
+            initial_state=initial_state,
+            environment=environment,
+        )
+        path = paced.path
 
     features = extract_effort_features(path)
     prediction = predict_effort(features, rider, context, predictor=predictor)
@@ -315,6 +351,7 @@ def assess_route(
         segments_from_traversal(path, arcs),
         rider=rider_model,
         propulsion=propulsion if propulsion is not None else DEFAULT_PROPULSION,
+        pacing_owns_fatigue=paced is not None,
     )
 
     # Diagnostico energetico (ADR-029 D7): agrega o balanco ja calculado pelo
@@ -329,6 +366,7 @@ def assess_route(
         circulation=circulation,
         intensity=intensity,
         energy=energy,
+        paced=paced,
     )
 
 

@@ -19,7 +19,7 @@ from __future__ import annotations
 
 import itertools
 import math
-from collections.abc import Hashable, Iterable, Sequence
+from collections.abc import Callable, Hashable, Iterable, Sequence
 from dataclasses import dataclass
 
 from router.core.data.graph.model import Arc, RoutingGraph
@@ -44,6 +44,10 @@ from .traversal_model import (
     TraversalModel,
     _UnknownSpeedSentinel,
 )
+
+
+class SearchCancelled(Exception):
+    """Cancelamento solicitado pelo consumidor da busca progressiva."""
 
 
 def is_feasible(result: TraversalResult) -> bool:
@@ -288,11 +292,27 @@ class MultiObjectiveAStar:
         self.frontier: FrontierManager | None = None
 
     # ---------------------------------------------------------------- busca
-    def search(self, origin: Hashable, destination: Hashable) -> SearchResult:
+    def search(
+        self, origin: Hashable, destination: Hashable, *,
+        on_candidate: Callable[[tuple[str | None, ...], int, int], None] | None = None,
+        on_candidate_state: Callable[[SearchState], None] | None = None,
+        should_cancel: Callable[[], bool] | None = None,
+        stop_when_candidate: Callable[[], bool] | None = None,
+    ) -> SearchResult:
         """Explora a fronteira completa de destino entre ``origin`` e ``destination``.
 
         Nao para ao encontrar N rotas: uma rota candidata pode ser dominada por
         outra ainda nao explorada. A parada segura e a fila ativa vazia.
+
+        ``on_candidate`` recebe os IDs dos arcos e os contadores de expansão e
+        geração quando uma label ativa chega ao destino. É uma candidata bruta:
+        ainda precisa de avaliação física completa e guardrails antes de ser
+        apresentada; pode ser dominada posteriormente. O callback é síncrono
+        e suas exceções são propagadas ao chamador.
+
+        ``on_candidate_state`` recebe a label interna completa para avaliação
+        síncrona. O consumidor não deve modificá-la nem reter a referência: a
+        busca pode invalidá-la ao descobrir uma alternativa dominante.
         """
         self.graph.get_node(origin)
         self.graph.get_node(destination)
@@ -304,6 +324,9 @@ class MultiObjectiveAStar:
             self.dominance,
             max_labels_per_key=self.config.max_labels_per_node,
         )
+        # A fronteira corrente também fica disponível ao callback síncrono de
+        # progresso; ela continua pertencendo à busca e não deve ser alterada.
+        self.frontier = manager
         queue = LexicographicQueue()
 
         counter = itertools.count(1)
@@ -321,6 +344,8 @@ class MultiObjectiveAStar:
         truncated = False
 
         while not queue.is_empty:
+            if should_cancel is not None and should_cancel():
+                raise SearchCancelled("Busca cancelada pelo usuário")
             label, _ = queue.pop()
 
             # Labels removidas da fronteira por dominancia sao invalidadas aqui.
@@ -329,6 +354,12 @@ class MultiObjectiveAStar:
 
             # O destino nao e expandido: ele e a fronteira de destino.
             if label.node_id == destination:
+                if on_candidate is not None:
+                    on_candidate(tuple(route_arcs(label)), expanded, generated)
+                if on_candidate_state is not None:
+                    on_candidate_state(label)
+                if stop_when_candidate is not None and stop_when_candidate():
+                    break
                 continue
 
             if (

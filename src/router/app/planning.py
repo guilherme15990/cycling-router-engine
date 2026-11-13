@@ -46,7 +46,8 @@ Ref.: ADR-025 §10, ADR-026 §3/§5, ADR-027 §0/§3/§6, ADR-028 §D7.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from collections.abc import Callable
 
 from router.core.data.envelope import adaptive_zone
 from router.core.evaluation.assessment import (
@@ -66,14 +67,34 @@ from router.core.evaluation.classification import (
     RouteClassification,
     classify_routes,
 )
-from router.core.prediction.intensity import IntensityEstimate
+from router.core.prediction.intensity import (
+    DEMAND_BAND_NAMES,
+    IntensityEstimate,
+    band_for_rpe,
+    demand_band_for_ratio,
+    rpe_label,
+)
 from router.core.prediction.ml import EffortPredictor
+from router.core.prediction.rider import rider_model_from_cyclist
+from router.core.prediction.traffic import arterial_entries
 from router.core.physics.bicycle import BicycleModel
 from router.core.physics.cyclist import CyclistModel
+from router.core.physics.demand import (
+    DEMAND_MODEL_VERSION,
+    ArcDemandField,
+    DemandScenario,
+)
 from router.core.physics.environment import Environment
 from router.core.physics.models import SimulationState
+from router.core.physics.pacing import (
+    PACING_POLICY,
+    DEFAULT_W_PRIME_J,
+    PacingParameterSource,
+    ReferencePacing,
+)
 from router.core.physics.traversal import PhysicalTraversal
 from router.core.physiology import (
+    ParameterSource,
     PhysiologicalPrediction,
     PredictionContext,
     PredictionStatus,
@@ -90,10 +111,17 @@ from router.core.search import (
     routes_from_result,
 )
 from router.contracts import (
+    DemandScenarioRef,
+    Route,
+    RouteDemand,
     RoutePlan,
     RoutePoint,
+    RouteTelemetry,
 )
 from router.core.data.snapping import QueryGraph, SnapError, SnapOptions, build_query_graph
+
+#: Ritmo planejado padrao (km/h) quando o chamador nao declara outro.
+DEFAULT_REFERENCE_SPEED_KMH = 15.0
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +147,11 @@ class PlannedRoute:
     #: Perfil de apresentacao/contrato (``RoutePoint``), preenchido pela
     #: orquestracao a partir da geometria do grafo de consulta.
     geometry: tuple[RoutePoint, ...] = ()
+    #: Custo do terreno (``d1``..``d5`` + declividade), quando ha politica de
+    #: ritmo. ``None`` no modo legado de potencia constante.
+    demand: RouteDemand | None = None
+    #: Observaveis do esforco e do tracado para o cartao de rota.
+    telemetry: RouteTelemetry | None = None
 
     @property
     def route_id(self) -> str:
@@ -267,6 +300,8 @@ def plan_offline_routes(
     initial_speed_mps: float = 0.0,
     initial_state: SimulationState | None = None,
     power_w: float | None = None,
+    pacing: ReferencePacing | None = None,
+    demand_field: ArcDemandField | None = None,
     rider: RiderProfile | None = None,
     context: PredictionContext | None = None,
     predictor: EffortPredictor | None = None,
@@ -274,8 +309,12 @@ def plan_offline_routes(
     deduplicator: RouteDeduplicator | None = None,
     max_routes: int | None = None,
     growth: float = 1.6,
-    max_iterations: int = 8,
+    max_iterations: int | None = 8,
     pad_m: float = 80.0,
+    on_progress: Callable[[str, RoutePlan | None, dict], None] | None = None,
+    explore_full_coverage: bool = False,
+    use_full_graph: bool = False,
+    should_cancel: Callable[[], bool] | None = None,
 ) -> RoutePlanResult:
     """Descobre rotas offline entre ``origin`` e ``destination`` e as classifica.
 
@@ -301,7 +340,13 @@ def plan_offline_routes(
         initial_speed_mps: Velocidade inicial na origem (m/s) da busca.
         initial_state: Estado dinamico inicial da avaliacao; se omitido, deriva
             de ``initial_speed_mps``.
-        power_w: Potencia no pedivela; padrao do ciclista.
+        power_w: Potencia no pedivela; padrao do ciclista. Ignorado quando
+            ``pacing`` e informado.
+        pacing: Parametros da politica de ritmo (``hold-reference-speed@2``).
+            Quando informado, a potencia varia por arco e o RPE pode exceder
+            17; quando ``None``, mantem a potencia constante (legado).
+        demand_field: Cache de demanda por arco, reutilizado entre rotas e
+            entre a busca parcial e a avaliacao final.
         rider: Perfil fisiologico (para a predicao), opcional.
         context: Contexto da predicao, opcional.
         predictor: Preditor fisiologico **local**; ``None`` => estado explicito
@@ -341,6 +386,11 @@ def plan_offline_routes(
     search_profile = route_profile.to_search_profile()
     options = snap_options if snap_options is not None else SnapOptions()
     simulator = traversal if traversal is not None else PhysicalTraversal()
+    resolved_demand_field = (
+        demand_field
+        if demand_field is not None
+        else (ArcDemandField(simulator) if pacing is not None else None)
+    )
     start_state = (
         initial_state
         if initial_state is not None
@@ -348,15 +398,28 @@ def plan_offline_routes(
     )
 
     search_model = PhysicalTraversalModel(
-        simulator,
-        cyclist,
-        bicycle,
-        environment=environment,
-        power_w=power_w,
+        simulator, cyclist, bicycle, environment=environment, power_w=power_w,
     )
 
     pins: tuple[Coord, ...] = (origin, destination)
     captured: dict[str, object] = {"calls": 0}
+    # Só guardamos os DTOs públicos compactos, não as simulações completas nem
+    # labels que manteriam cadeias inteiras da busca vivas entre expansões.
+    partials: list[tuple[tuple[float, ...], Route, bool]] = []
+    seen_paths: set[tuple[str | None, ...]] = set()
+    valid_candidate_found = False
+    current_box = query_bbox(pins)
+    assert current_box is not None
+
+    def zone_started(box: GeoBBox, zone: RoutingGraph, iteration: int) -> None:
+        nonlocal current_box
+        from router.core.search.astar import SearchCancelled
+        if should_cancel is not None and should_cancel():
+            raise SearchCancelled("Busca cancelada pelo usuário")
+        current_box = box
+        if on_progress is not None:
+            on_progress("searching", None, {"bbox": box, "iteration": iteration,
+                        "zone_nodes": zone.node_count, "zone_arcs": zone.arc_count})
 
     def probe(zone: RoutingGraph) -> tuple[tuple[Coord, ...], ...]:
         """Roda busca na zona e devolve o tracado real de cada rota."""
@@ -373,7 +436,68 @@ def plan_offline_routes(
             search_profile,
             initial_speed_mps=initial_speed_mps,
         )
-        result = astar.search(query.origin_id, query.destination_id)
+
+        def publish_candidate(label) -> None:
+            nonlocal valid_candidate_found
+            if on_progress is None:
+                return
+            from router.core.search.astar import SearchResult
+            from router.core.search.state import route_arcs
+            path = tuple(route_arcs(label))
+            if path in seen_paths:
+                return
+            seen_paths.add(path)
+            candidate_result = SearchResult(query.origin_id, query.destination_id,
+                                            search_profile, (label,))
+            pool = RouteCandidatePool.from_result(candidate_result, deduplicator=deduplicator)
+            if not pool.candidates:
+                return
+            candidate = replace(pool.candidates[0], route_id=f"partial-{len(seen_paths)}")
+            assessment = assess_candidates(
+                query.graph, (candidate,), cyclist=cyclist, bicycle=bicycle,
+                traversal=simulator, environment=environment, initial_state=start_state,
+                power_w=power_w, rider=rider, context=context, predictor=predictor,
+                pacing=pacing, demand_field=resolved_demand_field,
+            )[0]
+            classification = classify_routes((assessment,), preference)[0]
+            report = evaluate_candidates((candidate,), assessments={candidate.route_id: assessment})
+            if not report.routes:
+                return
+            valid_candidate_found = True
+            item = report.routes[0]
+            partial_demand, partial_telemetry = _route_demand_and_telemetry(
+                query, candidate, assessment
+            )
+            planned = PlannedRoute(candidate, assessment, classification, item.safety,
+                                   geometry=_route_points(query, candidate, assessment),
+                                   demand=partial_demand, telemetry=partial_telemetry)
+            from router.app.plan_view import _to_route_contract, partial_contract
+            partials.append((search_profile.values(label),
+                             _to_route_contract(planned, profile_id=route_profile.id),
+                             assessment.prediction.status.is_available))
+            partials.sort(key=lambda item: item[0])
+            chosen = partials if max_routes is None else partials[:max_routes]
+            routes = tuple(replace(route, recommended=index == 0)
+                           for index, (_, route, _) in enumerate(chosen))
+            lines = [[(point.lat, point.lon) for point in route.geometry] for route in routes]
+            box = query_bbox(pins, lines, pad_m=pad_m)
+            assert box is not None
+            interim = partial_contract(
+                origin=origin, destination=destination, profile_id=route_profile.id,
+                search_bbox=current_box, bbox=box,
+                zone_nodes=zone.node_count, zone_arcs=zone.arc_count,
+                graph_nodes=graph.node_count, graph_arcs=graph.arc_count,
+                iterations=int(captured["calls"]), routes=routes,
+                pareto_route_count=len(astar.frontier.labels_at(query.destination_id)) if astar.frontier else 0,
+                physiological_count=sum(available for _, _, available in chosen),
+            )
+            on_progress("route_found", interim,
+                        {"bbox": current_box, "iteration": int(captured["calls"])})
+
+        result = astar.search(query.origin_id, query.destination_id,
+                              on_candidate_state=publish_candidate if on_progress else None,
+                                  should_cancel=should_cancel,
+                                  stop_when_candidate=(lambda: valid_candidate_found) if use_full_graph else None)
         if not result.reached:
             return ()
         captured["zone"] = zone
@@ -390,6 +514,9 @@ def plan_offline_routes(
         growth=growth,
         max_iterations=max_iterations,
         pad_m=pad_m,
+        explore_full_coverage=explore_full_coverage,
+        use_full_graph=use_full_graph,
+        on_zone=zone_started if on_progress is not None or should_cancel is not None else None,
     )
 
     query = captured.get("query")
@@ -432,6 +559,8 @@ def plan_offline_routes(
         environment=environment,
         initial_state=start_state,
         power_w=power_w,
+        pacing=pacing,
+        demand_field=resolved_demand_field,
         rider=rider,
         context=context,
         predictor=predictor,
@@ -458,6 +587,12 @@ def plan_offline_routes(
         candidate.route_id: _route_points(query, candidate, assessment)
         for candidate, assessment in zip(candidates, assessments)
     }
+    demand_by_id: dict[str, RouteDemand | None] = {}
+    telemetry_by_id: dict[str, RouteTelemetry | None] = {}
+    for candidate, assessment in zip(candidates, assessments):
+        demand, telemetry = _route_demand_and_telemetry(query, candidate, assessment)
+        demand_by_id[candidate.route_id] = demand
+        telemetry_by_id[candidate.route_id] = telemetry
 
     def _planned(item) -> PlannedRoute:
         candidate, assessment, classification = prepared[item.route_id]
@@ -468,6 +603,8 @@ def plan_offline_routes(
             safety=item.safety,
             recommended=item.recommended,
             geometry=geometry_by_id[item.route_id],
+            demand=demand_by_id[item.route_id],
+            telemetry=telemetry_by_id[item.route_id],
         )
 
     routes = tuple(_planned(item) for item in report.routes)
@@ -482,7 +619,7 @@ def plan_offline_routes(
     )
     final_bbox = query_bbox(pins, emitted_geometries, pad_m=pad_m)
     assert final_bbox is not None  # pins sempre presentes -> base existe
-    if not bbox_contains(search_bbox, final_bbox):  # pragma: no cover - defensivo
+    if not use_full_graph and not bbox_contains(search_bbox, final_bbox):  # pragma: no cover - defensivo
         raise AssertionError(
             "box final saiu da zona de busca: rota devolvida fora da zona"
         )
@@ -563,6 +700,146 @@ def _elevation_at(profile, distance_m: float) -> float | None:
     return last_elevation
 
 
+def reference_pacing_for(
+    cyclist: CyclistModel,
+    rider: RiderProfile | None = None,
+    *,
+    reference_speed_kmh: float = DEFAULT_REFERENCE_SPEED_KMH,
+    calibrated_reference_power_w: float | None = None,
+) -> ReferencePacing:
+    """Monta a politica de ritmo a partir do ciclista e do perfil.
+
+    ``P_ref`` vem da mesma ponte usada pela intensidade
+    (``rider_model_from_cyclist``), de modo que ritmo e RPE compartilham a
+    referencia. Sem CP/W' declarados, usa ``DEFAULT_W_PRIME_J`` com
+    proveniencia ``PROVISIONAL_DEFAULT`` — nunca apresentado como medicao.
+
+    Raises:
+        ValueError: ``reference_speed_kmh`` nao positivo ou ``max_power_w`` do
+            ciclista indisponivel (sem teto de potencia a politica nao roda).
+    """
+    if not (reference_speed_kmh > 0.0):
+        raise ValueError("reference_speed_kmh deve ser positivo")
+    if not (cyclist.max_power_w > 0.0):
+        raise ValueError(
+            "cyclist.max_power_w deve ser positivo para a politica de ritmo"
+        )
+    rider_model = rider_model_from_cyclist(
+        cyclist, rider, calibrated_reference_power_w=calibrated_reference_power_w
+    )
+    reference_w = rider_model.reference_power_w
+    if rider_model.has_critical_power_model:
+        assert rider_model.critical_power_w is not None
+        assert rider_model.w_prime_j is not None
+        return ReferencePacing(
+            reference_speed_mps=reference_speed_kmh / 3.6,
+            reference_power_w=reference_w,
+            critical_power_w=rider_model.critical_power_w,
+            w_prime_j=rider_model.w_prime_j,
+            max_power_w=cyclist.max_power_w,
+            critical_power_source=PacingParameterSource.MEASURED,
+            w_prime_source=PacingParameterSource.MEASURED,
+        )
+    return ReferencePacing(
+        reference_speed_mps=reference_speed_kmh / 3.6,
+        reference_power_w=reference_w,
+        critical_power_w=reference_w,
+        w_prime_j=DEFAULT_W_PRIME_J,
+        max_power_w=cyclist.max_power_w,
+        critical_power_source=_provenance_source(rider_model.reference.source),
+        w_prime_source=PacingParameterSource.PROVISIONAL_DEFAULT,
+    )
+
+
+def _provenance_source(source: ParameterSource) -> PacingParameterSource:
+    """Reprojeta a proveniencia fisiologica no vocabulario da fisica."""
+    try:
+        return PacingParameterSource(source.value)
+    except ValueError:  # pragma: no cover - vocabularios espelhados
+        return PacingParameterSource.PROVISIONAL_DEFAULT
+
+
+def _route_demand_and_telemetry(
+    query: QueryGraph,
+    candidate: RouteCandidate,
+    assessment: RouteAssessment,
+) -> tuple[RouteDemand | None, RouteTelemetry | None]:
+    """Monta demanda (custo do terreno) e telemetria do cartao de rota.
+
+    A demanda so existe quando a politica de ritmo rodou (``assessment.paced``).
+    A telemetria deriva dos resultados ja calculados: RPE estimado, inercia,
+    entradas em via arterial e saldo de ``W'``. Zonas cardiacas ficam ``None``:
+    nao ha metodo fisiologico individual, e inventar zonas seria mentir.
+    """
+    paced = assessment.paced
+    intensity = assessment.intensity
+    results = assessment.path.results
+    total_distance = sum(float(result.distance_m) for result in results)
+
+    demand: RouteDemand | None = None
+    if paced is not None:
+        by_band_distance = {name: 0.0 for name in DEMAND_BAND_NAMES}
+        for arc_pacing, arc_demand in zip(paced.pacings, paced.demands):
+            band = demand_band_for_ratio(arc_pacing.demand_ratio)
+            by_band_distance[band] += arc_demand.distance_m
+        fractions = (
+            {
+                name: value / total_distance
+                for name, value in by_band_distance.items()
+            }
+            if total_distance > 0.0
+            else {}
+        )
+        reference = paced.pacing
+        demand = RouteDemand(
+            scenario=DemandScenarioRef(
+                reference_speed_kmh=3.6 * reference.reference_speed_mps,
+                reference_power_w=reference.reference_power_w,
+                critical_power_w=reference.critical_power_w,
+                w_prime_j=reference.w_prime_j,
+                policy=paced.policy,
+                demand_model=DEMAND_MODEL_VERSION,
+                critical_power_source=reference.critical_power_source.value,
+                w_prime_source=reference.w_prime_source.value,
+            ),
+            mean_demand_power_w=paced.mean_demand_power_w,
+            distance_fraction_by_band=fractions,
+            distance_by_band_m=by_band_distance,
+            distance_by_grade_bin_m=paced.distance_by_grade_bin_m,
+        )
+
+    preserved = sum(
+        float(result.distance_m)
+        for result in results
+        if result.final_speed_mps + 0.2 >= result.initial_speed_mps
+    )
+    inertia_fraction = (
+        preserved / total_distance if total_distance > 0.0 else 0.0
+    )
+    highways = tuple(
+        query.graph.get_arc(arc_id).highway
+        for arc_id in candidate.route.arc_ids
+        if arc_id is not None
+    )
+
+    telemetry = RouteTelemetry(
+        policy=paced.policy if paced is not None else "constant-power",
+        mean_rpe=intensity.mean_rpe,
+        peak_rpe=intensity.peak_rpe,
+        rpe_band=band_for_rpe(intensity.mean_rpe),
+        rpe_label=rpe_label(intensity.mean_rpe),
+        inertia_fraction=inertia_fraction,
+        arterial_entries=arterial_entries(highways),
+        w_prime_start_j=None if paced is None else paced.w_prime_start_j,
+        w_prime_end_j=None if paced is None else paced.w_prime_end_j,
+        w_prime_is_provisional=(
+            paced is None or paced.pacing.w_prime_is_provisional
+        ),
+        heart_rate_zones=None,
+    )
+    return demand, telemetry
+
+
 def _route_points(
     query: QueryGraph,
     candidate: RouteCandidate,
@@ -580,6 +857,9 @@ def _route_points(
     intensity = assessment.intensity
     rpes = intensity.segment_rpes
     bands = intensity.segment_bands
+    paced = assessment.paced
+    pacings = paced.pacings if paced is not None else ()
+    demands = paced.demands if paced is not None else ()
 
     for index, (arc_id, result) in enumerate(
         zip(candidate.route.arc_ids, assessment.path.results)
@@ -611,6 +891,8 @@ def _route_points(
         )
         rpe = rpes[index] if index < len(rpes) else None
         band = _band_index(bands[index] if index < len(bands) else None)
+        arc_pacing = pacings[index] if index < len(pacings) else None
+        arc_demand = demands[index] if index < len(demands) else None
 
         for position, (lat, lon) in enumerate(coords):
             if (
@@ -633,6 +915,17 @@ def _route_points(
                     band=band,
                     rpe=rpe,
                     watts=watts,
+                    arc_demand_w=(
+                        None if arc_demand is None else arc_demand.mean_power_w
+                    ),
+                    arc_demand_ratio=(
+                        None if arc_pacing is None else arc_pacing.demand_ratio
+                    ),
+                    demand_band=(
+                        None
+                        if arc_pacing is None
+                        else demand_band_for_ratio(arc_pacing.demand_ratio)
+                    ),
                 )
             )
         base_distance += arc_distance

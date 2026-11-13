@@ -7,7 +7,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from router.contracts.errors import RouteContractError
-from router.contracts.version import INTENSITY_BANDS
+from router.contracts.version import DEMAND_BANDS, INTENSITY_BANDS
 
 
 def _mapping(value: Any, name: str) -> Mapping[str, Any]:
@@ -101,5 +101,41 @@ def _fractions_from(values: Any, name: str) -> dict[str, float]:
     item = _mapping(values, name)
     _fractions(item, name)
     return {band: float(value) for band, value in item.items()}
+
+
+def _demand_fractions(values: Mapping[str, float], name: str) -> None:
+    """Valida um mapa de frações por faixa de demanda (``d1``..``d5``)."""
+    if not isinstance(values, Mapping):
+        raise RouteContractError(f"{name} deve ser um objeto")
+    for band, value in values.items():
+        if band not in DEMAND_BANDS:
+            raise RouteContractError(f"{name}: faixa desconhecida {band!r}")
+        _float(value, f"{name}.{band}", minimum=0.0)
+
+
+def _demand_fractions_from(values: Any, name: str) -> dict[str, float]:
+    item = _mapping(values, name)
+    _demand_fractions(item, name)
+    return {band: float(value) for band, value in item.items()}
+
+
+def _unit_distribution(values: Any, name: str) -> dict[str, float]:
+    """Valida uma distribuicao nomeada com valores em [0, 1].
+
+    Nao exige nomes de faixa especificos (as zonas de FC tambem usam este
+    validador), mas exige que a soma seja 1 quando o mapa nao e vazio.
+    """
+    item = _mapping(values, name)
+    total = 0.0
+    for key, value in item.items():
+        _str(key, f"{name}[]")
+        number = _float(value, f"{name}.{key}", minimum=0.0)
+        assert number is not None
+        if number > 1.0:
+            raise RouteContractError(f"{name}.{key} deve estar em [0, 1]")
+        total += number
+    if item and abs(total - 1.0) > 1e-6:
+        raise RouteContractError(f"{name} deve somar 1 (recebido {total!r})")
+    return {key: float(value) for key, value in item.items()}
 
 

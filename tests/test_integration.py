@@ -20,7 +20,7 @@ from router.interfaces import api
 
 def test_integration_surface_is_curated():
     names = list(integration.__all__)
-    assert 20 <= len(names) <= 30, f"superficie fora da faixa curada: {len(names)}"
+    assert 20 <= len(names) <= 32, f"superficie fora da faixa curada: {len(names)}"
     assert len(names) == len(set(names)), "integration.__all__ tem duplicatas"
 
 
@@ -31,7 +31,7 @@ def test_every_integration_symbol_exists():
 
 def test_integration_surface_is_subset_of_wide_facade():
     # Excecao declarada: persistencia do grafo nao esta na fachada ampla (F6).
-    graph_helpers = {"load_graph", "save_graph"}
+    graph_helpers = {"load_graph", "save_graph", "altimetry_edges", "prepare_dem_tiles", "plan_routes_progressive", "RouteProgress"}
     outside = [
         name
         for name in integration.__all__

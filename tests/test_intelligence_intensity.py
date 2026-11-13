@@ -33,6 +33,8 @@ from router.core.physiology import (
     tanaka_max_heart_rate,
 )
 from router.core.prediction.intensity import (
+    INTENSITY_BAND_EDGES,
+    INTENSITY_BAND_LABELS,
     INTENSITY_BAND_NAMES,
     IntensityEstimate,
     band_for_rpe,
@@ -534,12 +536,24 @@ def test_estimate_uses_cr10_scale_bounds():
 
 def test_bands_cover_borg_range():
     assert len(INTENSITY_BAND_NAMES) == 5
+    assert INTENSITY_BAND_EDGES == (9.0, 12.0, 14.0, 16.0)
     assert band_for_rpe(6.0) == "i1"
+    assert band_for_rpe(9.0) == "i1"
+    assert band_for_rpe(9.1) == "i2"
     assert band_for_rpe(10.1) == "i2"
     assert band_for_rpe(12.0) == "i2"
+    assert band_for_rpe(12.1) == "i3"
     assert band_for_rpe(14.0) == "i3"
+    assert band_for_rpe(14.1) == "i4"
     assert band_for_rpe(16.0) == "i4"
     assert band_for_rpe(16.1) == "i5"
+    assert band_for_rpe(20.0) == "i5"
+
+
+def test_band_labels_cover_every_band():
+    assert set(INTENSITY_BAND_LABELS) == set(INTENSITY_BAND_NAMES)
+    assert INTENSITY_BAND_LABELS["i1"] == "muito leve"
+    assert INTENSITY_BAND_LABELS["i5"] == "muito intenso"
 
 
 def test_hw_stress_mapping_and_default():

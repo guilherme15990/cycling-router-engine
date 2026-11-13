@@ -1,0 +1,22 @@
+[theme]
+base = "light"
+primaryColor = "#087A61"
+backgroundColor = "#F6F8F7"
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#182421"
+font = "sans serif"
+headingFont = "sans serif"
+codeFont = "monospace"
+baseRadius = "medium"
+showWidgetBorder = true
+showSidebarBorder = true
+paddingTop = "2rem"
+paddingBottom = "2rem"
+
+[theme.dark]
+primaryColor = "#42C5A5"
+backgroundColor = "#101816"
+secondaryBackgroundColor = "#19231F"
+textColor = "#E7F0EC"
+borderColor = "#30423B"
+codeBackgroundColor = "#19231F"

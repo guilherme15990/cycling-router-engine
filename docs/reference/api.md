@@ -1642,7 +1642,7 @@ Valores: `PHYSIOLOGICAL`, `PHYSICAL_ONLY`, `REJECTED`.
 ### `RouteAssessment`
 
 ```python
-class RouteAssessment(arc_ids: tuple[str, ...], path: router.core.physics.models.TraversalPath, features: router.core.physics.effort.EffortFeatures, prediction: router.core.PhysiologicalPrediction, circulation: router.core.RouteValidation, intensity: 'IntensityEstimate', energy: router.core.EnergyConsistency | None = None)
+class RouteAssessment(arc_ids: tuple[str, ...], path: router.core.physics.models.TraversalPath, features: router.core.physics.effort.EffortFeatures, prediction: router.core.PhysiologicalPrediction, circulation: router.core.RouteValidation, intensity: 'IntensityEstimate', energy: router.core.EnergyConsistency | None = None, paced: router.core.physics.pacing.PacedPath | None = None)
 ```
 
 Resultado da avaliacao fisica completa de uma rota.
@@ -1674,7 +1674,7 @@ Avalia um conjunto de candidatas, preservando a ordem de entrada.
 ### `assess_route`
 
 ```python
-assess_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str | None], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, propulsion: 'PropulsionModel | None' = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>)) -> router.core.RouteAssessment
+assess_route(graph: router.core.data.RoutingGraph, arc_ids: collections.abc.Sequence[str | None], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, propulsion: 'PropulsionModel | None' = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, condition_evaluator: collections.abc.Callable[[str], bool | None] | None = None, circulation_policy: router.core.CirculationPolicy = CirculationPolicy(unresolved_verdict=<Verdict.FORBID: 'forbid'>), pacing: router.core.physics.pacing.ReferencePacing | None = None, demand_field: router.core.physics.demand.ArcDemandField | None = None, demand_scenario: router.core.physics.demand.DemandScenario | None = None) -> router.core.RouteAssessment
 ```
 
 Avalia uma rota com o **simulador fisico completo** e a classifica.
@@ -1782,7 +1782,7 @@ Orquestracao de todo o fluxo offline numa chamada: **zona dinamica** (`envelope.
 ### `PlannedRoute`
 
 ```python
-class PlannedRoute(candidate: router.core.RouteCandidate, assessment: router.core.RouteAssessment, classification: router.core.RouteClassification, safety: router.core.RouteSafetyAssessment, recommended: bool = False, geometry: tuple[router.contracts.route.RoutePoint, ...] = ())
+class PlannedRoute(candidate: router.core.RouteCandidate, assessment: router.core.RouteAssessment, classification: router.core.RouteClassification, safety: router.core.RouteSafetyAssessment, recommended: bool = False, geometry: tuple[router.contracts.route.RoutePoint, ...] = (), demand: router.contracts.route.RouteDemand | None = None, telemetry: router.contracts.route.RouteTelemetry | None = None)
 ```
 
 Uma rota descoberta, com fisica completa, previsao e classificacao.
@@ -1798,7 +1798,7 @@ Plano de consulta offline: box, zona e rotas descobertas.
 ### `plan_offline_routes`
 
 ```python
-plan_offline_routes(graph: router.core.data.RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, profile: str | router.core.RouteProfile = 'fastest', snap_options: router.core.data.snapping.SnapOptions | None = None, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_speed_mps: float = 0.0, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, preference: router.core.EffortPreference | None = None, deduplicator: router.core.RouteDeduplicator | None = None, max_routes: int | None = None, growth: float = 1.6, max_iterations: int = 8, pad_m: float = 80.0) -> router.app.planning.RoutePlanResult
+plan_offline_routes(graph: router.core.data.RoutingGraph, origin: tuple[float, float], destination: tuple[float, float], *, cyclist: router.core.physics.cyclist.CyclistModel, bicycle: router.core.physics.bicycle.BicycleModel, profile: str | router.core.RouteProfile = 'fastest', snap_options: router.core.data.snapping.SnapOptions | None = None, traversal: router.core.physics.traversal.PhysicalTraversal | None = None, environment: router.core.physics.environment.Environment | None = None, initial_speed_mps: float = 0.0, initial_state: router.core.physics.models.SimulationState | None = None, power_w: float | None = None, pacing: router.core.physics.pacing.ReferencePacing | None = None, demand_field: router.core.physics.demand.ArcDemandField | None = None, rider: router.core.RiderProfile | None = None, context: router.core.PredictionContext | None = None, predictor: router.core.prediction.ml.EffortPredictor | None = None, preference: router.core.EffortPreference | None = None, deduplicator: router.core.RouteDeduplicator | None = None, max_routes: int | None = None, growth: float = 1.6, max_iterations: int | None = 8, pad_m: float = 80.0, on_progress: collections.abc.Callable[[str, router.contracts.route.RoutePlan | None, dict], None] | None = None, explore_full_coverage: bool = False, use_full_graph: bool = False, should_cancel: collections.abc.Callable[[], bool] | None = None) -> router.app.planning.RoutePlanResult
 ```
 
 Descobre rotas offline entre ``origin`` e ``destination`` e as classifica.
@@ -1872,7 +1872,7 @@ Intencao de roteamento ecoada no resultado.
 ### `RoutePoint`
 
 ```python
-class RoutePoint(lat: float, lon: float, ele: float | None, dist_m: float, speed_kmh: float, grade_pct: float, band: int | None = None, rpe: float | None = None, watts: float | None = None)
+class RoutePoint(lat: float, lon: float, ele: float | None, dist_m: float, speed_kmh: float, grade_pct: float, band: int | None = None, rpe: float | None = None, watts: float | None = None, arc_demand_w: float | None = None, arc_demand_ratio: float | None = None, demand_band: str | None = None)
 ```
 
 Ponto do perfil da rota.
@@ -1920,7 +1920,7 @@ Como a rota nasceu (gerador/perfil).
 ### `Route`
 
 ```python
-class Route(id: str, profile: str, recommended: bool, geometry: tuple[router.contracts.route.RoutePoint, ...], metrics: router.contracts.route.RouteMetrics, ml: router.contracts.route.RouteML, safety: router.contracts.route.RouteSafety, provenance: router.contracts.route.RouteProvenance)
+class Route(id: str, profile: str, recommended: bool, geometry: tuple[router.contracts.route.RoutePoint, ...], metrics: router.contracts.route.RouteMetrics, ml: router.contracts.route.RouteML, safety: router.contracts.route.RouteSafety, provenance: router.contracts.route.RouteProvenance, demand: 'RouteDemand | None' = None, telemetry: 'RouteTelemetry | None' = None)
 ```
 
 Rota no contrato publico.
@@ -2214,7 +2214,7 @@ Escala o box sobre o proprio centro por ``factor`` (``>1`` cresce).
 ### `adaptive_zone`
 
 ```python
-adaptive_zone(graph: router.core.data.RoutingGraph, waypoints: collections.abc.Sequence[tuple[float, float]], probe: collections.abc.Callable[[router.core.data.RoutingGraph], collections.abc.Sequence[collections.abc.Sequence[tuple[float, float]]]], *, growth: float = 1.6, max_iterations: int = 8, pad_m: float = 80.0) -> tuple[tuple[float, float, float, float], router.core.data.RoutingGraph, tuple[collections.abc.Sequence[tuple[float, float]], ...]]
+adaptive_zone(graph: router.core.data.RoutingGraph, waypoints: collections.abc.Sequence[tuple[float, float]], probe: collections.abc.Callable[[router.core.data.RoutingGraph], collections.abc.Sequence[collections.abc.Sequence[tuple[float, float]]]], *, growth: float = 1.6, max_iterations: int | None = 8, pad_m: float = 80.0, explore_full_coverage: bool = False, use_full_graph: bool = False, on_zone: collections.abc.Callable[[tuple[float, float, float, float], router.core.data.RoutingGraph, int], None] | None = None) -> tuple[tuple[float, float, float, float], router.core.data.RoutingGraph, tuple[collections.abc.Sequence[tuple[float, float]], ...]]
 ```
 
 Zona de busca **adaptativa**, dimensionada pelas rotas.
@@ -2815,7 +2815,7 @@ Nomes das cinco faixas de intensidade (`i1`..`i5`); **nao** sao zonas cardiacas.
 INTENSITY_BAND_EDGES
 ```
 
-Cortes superiores (Borg) das faixas: 10, 12, 14 e 16.
+Cortes superiores (Borg) das faixas: 9, 12, 14 e 16.
 
 ### `DEFAULT_INTENSITY_COEFFICIENTS`
 
@@ -2836,7 +2836,7 @@ Parâmetros explícitos da resposta provisória.
 ### `IntensitySegment`
 
 ```python
-class IntensitySegment(distance_m: float, duration_s: float, rider_energy_j: float, mechanical_energy_j: float, ascent_m: float = 0.0, descent_m: float = 0.0, traffic_stress: float = 0.0)
+class IntensitySegment(distance_m: float, duration_s: float, rider_energy_j: float, mechanical_energy_j: float, ascent_m: float = 0.0, descent_m: float = 0.0, traffic_stress: float = 0.0, peak_grade_pct: float = 0.0)
 ```
 
 Trecho de rota com grandezas físicas explícitas.
@@ -2844,7 +2844,7 @@ Trecho de rota com grandezas físicas explícitas.
 ### `IntensityEstimate`
 
 ```python
-class IntensityEstimate(borg_scale: router.core.BorgScale, mechanical: router.core.prediction.mechanical.MechanicalIntensity, rider_response: router.core.prediction.response.RiderResponseEstimate, band_distance_fraction: dict[str, float], band_duration_fraction: dict[str, float] | None, segment_bands: tuple[str, ...], method_id: str = 'mechanical-response', model_version: str = '2', band_definition: str = 'borg-intensity-bands@1', traffic_stress_mean: float | None = None)
+class IntensityEstimate(borg_scale: router.core.BorgScale, mechanical: router.core.prediction.mechanical.MechanicalIntensity, rider_response: router.core.prediction.response.RiderResponseEstimate, band_distance_fraction: dict[str, float], band_duration_fraction: dict[str, float] | None, segment_bands: tuple[str, ...], method_id: str = 'mechanical-response', model_version: str = '2', band_definition: str = 'borg-intensity-bands@2', traffic_stress_mean: float | None = None)
 ```
 
 Estimativa de intensidade de uma rota — computacional e não calibrada.
@@ -2868,7 +2868,7 @@ Nome da faixa de intensidade para um RPE (Borg).
 ### `segment_rpe`
 
 ```python
-segment_rpe(segment: router.core.prediction.mechanical.RouteSegment, *, rider: router.core.RiderModel, propulsion: router.core.prediction.mechanical.PropulsionModel = PropulsionModel(mode=<PropulsionMode.RIDER_ONLY: 'rider_only'>, assist_fraction=0.0, target_rider_power_w=None, max_motor_power_w=None), borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, config: router.core.prediction.response.ResponseConfig = ResponseConfig(rpe_anchors=((0.0, 6.0), (0.5, 11.0), (0.7, 13.0), (0.85, 15.0), (1.0, 17.0), (1.2, 19.0), (1.5, 20.0)), fatigue_rpe_gain=1.0, cp_w_recovery_factor=0.5, rpe_peak_window_s=60.0, hr_time_constant_s=45.0, hr_peak_window_s=60.0, hr_threshold_fraction_of_reserve=0.85, hr_above_gain=2.0, hr_rest_fraction_of_max=0.55, hr_threshold_fraction_of_max=0.95)) -> float
+segment_rpe(segment: router.core.prediction.mechanical.RouteSegment, *, rider: router.core.RiderModel, propulsion: router.core.prediction.mechanical.PropulsionModel = PropulsionModel(mode=<PropulsionMode.RIDER_ONLY: 'rider_only'>, assist_fraction=0.0, target_rider_power_w=None, max_motor_power_w=None), borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, config: router.core.prediction.response.ResponseConfig = ResponseConfig(rpe_anchors=((0.0, 6.0), (0.5, 11.0), (0.7, 13.0), (0.85, 15.0), (1.0, 17.0), (1.2, 19.0), (1.5, 20.0)), fatigue_rpe_gain=1.0, cp_w_recovery_factor=0.5, rpe_peak_window_s=60.0, hr_time_constant_s=45.0, hr_peak_window_s=60.0, hr_threshold_fraction_of_reserve=0.85, hr_above_gain=2.0, hr_rest_fraction_of_max=0.55, hr_threshold_fraction_of_max=0.95), pacing_owns_fatigue: bool = False) -> float
 ```
 
 RPE provisório de um único trecho, dado um ``RiderModel``.
@@ -2876,7 +2876,7 @@ RPE provisório de um único trecho, dado um ``RiderModel``.
 ### `estimate_intensity`
 
 ```python
-estimate_intensity(segments: collections.abc.Sequence[router.core.prediction.mechanical.RouteSegment], *, rider: router.core.RiderModel, propulsion: router.core.prediction.mechanical.PropulsionModel = PropulsionModel(mode=<PropulsionMode.RIDER_ONLY: 'rider_only'>, assist_fraction=0.0, target_rider_power_w=None, max_motor_power_w=None), borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, config: router.core.prediction.response.ResponseConfig = ResponseConfig(rpe_anchors=((0.0, 6.0), (0.5, 11.0), (0.7, 13.0), (0.85, 15.0), (1.0, 17.0), (1.2, 19.0), (1.5, 20.0)), fatigue_rpe_gain=1.0, cp_w_recovery_factor=0.5, rpe_peak_window_s=60.0, hr_time_constant_s=45.0, hr_peak_window_s=60.0, hr_threshold_fraction_of_reserve=0.85, hr_above_gain=2.0, hr_rest_fraction_of_max=0.55, hr_threshold_fraction_of_max=0.95)) -> router.core.prediction.intensity.IntensityEstimate
+estimate_intensity(segments: collections.abc.Sequence[router.core.prediction.mechanical.RouteSegment], *, rider: router.core.RiderModel, propulsion: router.core.prediction.mechanical.PropulsionModel = PropulsionModel(mode=<PropulsionMode.RIDER_ONLY: 'rider_only'>, assist_fraction=0.0, target_rider_power_w=None, max_motor_power_w=None), borg_scale: router.core.BorgScale = <BorgScale.RPE_6_20: '6-20'>, config: router.core.prediction.response.ResponseConfig = ResponseConfig(rpe_anchors=((0.0, 6.0), (0.5, 11.0), (0.7, 13.0), (0.85, 15.0), (1.0, 17.0), (1.2, 19.0), (1.5, 20.0)), fatigue_rpe_gain=1.0, cp_w_recovery_factor=0.5, rpe_peak_window_s=60.0, hr_time_constant_s=45.0, hr_peak_window_s=60.0, hr_threshold_fraction_of_reserve=0.85, hr_above_gain=2.0, hr_rest_fraction_of_max=0.55, hr_threshold_fraction_of_max=0.95), pacing_owns_fatigue: bool = False) -> router.core.prediction.intensity.IntensityEstimate
 ```
 
 Estima intensidade mecânica, RPE e resposta provisória de uma rota.

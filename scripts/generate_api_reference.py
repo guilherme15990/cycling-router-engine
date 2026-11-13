@@ -664,7 +664,7 @@ CONSTANT_NOTES: dict[str, str] = {
     "INTENSITY_MODEL_VERSION": "Versao do metodo de estimativa de intensidade.",
     "INTENSITY_BAND_DEFINITION": "Definicao versionada das cinco faixas de intensidade (derivadas do Borg 6-20).",
     "INTENSITY_BAND_NAMES": "Nomes das cinco faixas de intensidade (`i1`..`i5`); **nao** sao zonas cardiacas.",
-    "INTENSITY_BAND_EDGES": "Cortes superiores (Borg) das faixas: 10, 12, 14 e 16.",
+    "INTENSITY_BAND_EDGES": "Cortes superiores (Borg) das faixas: 9, 12, 14 e 16.",
     "DEFAULT_INTENSITY_COEFFICIENTS": "Coeficientes padrao da estimativa (origem: `toporide`; ver tabela de proveniencia).",
 }
 
