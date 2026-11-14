@@ -28,3 +28,6 @@ A maioria dos roteadores convencionais trata o relevo e o esforço como penalida
 | **Mais Plano** (`flattest`) | Ganho Altimétrico + Distância | Lexicográfico com tolerância |
 | **Equilibrado** (`balanced`) | Tempo + Distância + Ganho Altimétrico | Score ponderado normalizado |
 | **Elétrico** (`electric`) | Energia Mecânica + Tempo | Lexicográfico com tolerância + Viabilidade de bateria (Wh) |
+
+O planejamento usa o mesmo motor físico em todos os perfis e considera o grafo
+carregado completo. Veja [busca física, precisão e benchmarks](docs/physical-search.md).

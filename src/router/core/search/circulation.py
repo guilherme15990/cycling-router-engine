@@ -354,6 +354,7 @@ def transition_decision(
     node_id: Hashable | None = None,
     *,
     history_way_ids: Sequence[int | None] = (),
+    restrictions: Sequence[TurnRestriction] | None = None,
     evaluator: ConditionEvaluator | None = None,
     policy: CirculationPolicy = DEFAULT_POLICY,
 ) -> Decision:
@@ -368,7 +369,7 @@ def transition_decision(
     tail = _way_tail(from_arc, history_way_ids)
 
     decisions: list[Decision] = []
-    for restriction in graph.turn_restrictions.values():
+    for restriction in (graph.turn_restrictions.values() if restrictions is None else restrictions):
         matches = _restriction_matches(restriction, from_arc, node, tail)
         if matches is None:
             decisions.append(

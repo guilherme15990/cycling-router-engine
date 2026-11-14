@@ -45,6 +45,7 @@ def search_candidates(
     *,
     initial_speed_mps: float = 0.0,
     heuristic: Heuristic | None = None,
+    goal_pruning: bool | None = None,
     search_config: SearchConfig | None = None,
     deduplicator: RouteDeduplicator | None = None,
     on_candidate: Callable[[tuple[str | None, ...], int, int], None] | None = None,
@@ -58,6 +59,10 @@ def search_candidates(
         traversal,
         profile,
         heuristic=heuristic,
+        goal_pruning=(
+            callable(getattr(traversal, "arc_lower_bounds", None))
+            if goal_pruning is None else goal_pruning
+        ),
         config=search_config,
         initial_speed_mps=initial_speed_mps,
     )

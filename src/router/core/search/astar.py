@@ -23,7 +23,7 @@ from collections.abc import Callable, Hashable, Iterable, Sequence
 from dataclasses import dataclass
 
 from router.core.data.graph.model import Arc, RoutingGraph
-from router.core.physics.models import TraversalResult
+from router.core.physics.models import TraversalResult, SimulationStatus
 from .circulation import (
     CirculationPolicy,
     ConditionEvaluator,
@@ -33,7 +33,7 @@ from .circulation import (
     transition_decision,
 )
 from .config import SearchConfig
-from .dominance import Dominance, SpeedBucketDominance
+from .dominance import Dominance, SpeedBucketDominance, ExactSpeedDominance
 from .frontier import FrontierManager
 from .heuristic import Heuristic
 from .objectives import SearchProfile, profile_for
@@ -165,6 +165,8 @@ class SearchResult:
     dropped_labels: int = 0
     stopped_early: bool = False
     stop_reason: str | None = None
+    goal_pruned: int = 0
+    state_approximated: bool = False
 
     @property
     def reached(self) -> bool:
@@ -194,6 +196,8 @@ class SearchResult:
             "dropped_labels": self.dropped_labels,
             "stopped_early": self.stopped_early,
             "stop_reason": self.stop_reason,
+            "goal_pruned": self.goal_pruned,
+            "state_approximated": self.state_approximated,
             "labels": [label.to_dict() for label in self.labels],
         }
 
@@ -248,6 +252,7 @@ class MultiObjectiveAStar:
         initial_speed_mps: float = 0.0,
         condition_evaluator: ConditionEvaluator | None = None,
         circulation_policy: CirculationPolicy = DEFAULT_POLICY,
+        goal_pruning: bool = False,
     ) -> None:
         if not math.isfinite(initial_speed_mps) or initial_speed_mps < 0.0:
             raise ValueError(
@@ -262,6 +267,7 @@ class MultiObjectiveAStar:
         )
         self.config = config or SearchConfig()
         self.initial_speed_mps = float(initial_speed_mps)
+        self.goal_pruning = bool(goal_pruning)
         self.condition_evaluator = condition_evaluator
         self.circulation_policy = circulation_policy
 
@@ -271,23 +277,36 @@ class MultiObjectiveAStar:
             bool(arc.restrictions) for arc in graph.arcs.values()
         )
         self._has_turn_restrictions = bool(graph.turn_restrictions)
+        self._turn_by_way = {}
+        self._turn_context_size = 0
+        for restriction in graph.turn_restrictions.values():
+            required = (restriction.from_way_id, *restriction.via_way_ids)
+            self._turn_by_way.setdefault(required[-1], []).append(restriction)
+            if restriction.via_way_ids:
+                self._turn_context_size = max(self._turn_context_size, len(required))
+
         self._guardrails_active = (
             self._has_access_rules or self._has_turn_restrictions
         )
 
-        self.heuristic = (
-            heuristic
-            if heuristic is not None
-            else Heuristic(
+        if heuristic is not None:
+            self.heuristic = heuristic
+        elif callable(getattr(traversal, "arc_lower_bounds", None)):
+            from .potentials import ReverseCostHeuristic
+            self.heuristic = ReverseCostHeuristic(
+                graph, traversal.arc_lower_bounds,
+                max_speed_mps=_default_heuristic_speed(traversal),
+            )
+        else:
+            self.heuristic = Heuristic(
                 graph, max_speed_mps=_default_heuristic_speed(traversal)
             )
-        )
         if heuristic is not None:
             _check_heuristic_admissible(heuristic, traversal)
         self.dominance = (
             dominance
             if dominance is not None
-            else SpeedBucketDominance(
+            else (ExactSpeedDominance if self.config.exact_speed else SpeedBucketDominance)(
                 self.profile.objective_set,
                 speed_step_mps=self.config.speed_step_mps,
                 arrival_class_nodes=constrained_nodes(graph),
@@ -296,6 +315,8 @@ class MultiObjectiveAStar:
 
         # Ultima fronteira explorada (introspeccao/depuracao).
         self.frontier: FrontierManager | None = None
+        self._lower_bound_cache = {}
+        self._objective_names = self.profile.names
 
     # ---------------------------------------------------------------- busca
     def search(
@@ -320,8 +341,15 @@ class MultiObjectiveAStar:
         síncrona. O consumidor não deve modificá-la nem reter a referência: a
         busca pode invalidá-la ao descobrir uma alternativa dominante.
         """
+        self._lower_bound_cache.clear()
         self.graph.get_node(origin)
         self.graph.get_node(destination)
+        invalidate = getattr(self.heuristic, "invalidate", None)
+        if invalidate is not None:
+            invalidate()
+        prepare = getattr(self.heuristic, "prepare", None)
+        if prepare is not None:
+            prepare(destination, should_cancel)
 
         # A chave do FrontierManager e (no, bucket); o config fala em
         # "labels por no", mas o limite e aplicado por chave para conter a
@@ -349,15 +377,26 @@ class MultiObjectiveAStar:
         generated = 0
         truncated = False
         stopped_early = False
+        goal_pruned = 0
+        goal_vectors: list[tuple[float, ...]] = []
 
         while not queue.is_empty:
             if should_cancel is not None and should_cancel():
                 raise SearchCancelled("Busca cancelada pelo usuário")
-            label, _ = queue.pop()
+            label, priority = queue.pop()
 
             # Labels removidas da fronteira por dominancia sao invalidadas aqui.
             if not label.active:
                 continue
+
+            can_reach = getattr(self.heuristic, "can_reach", None)
+            if can_reach is not None and not can_reach(label.node_id, destination):
+                continue
+            if self.goal_pruning and label.node_id != destination:
+                lower = priority[:-1]
+                if any(_strictly_dominates(goal, lower) for goal in goal_vectors):
+                    goal_pruned += 1
+                    continue
 
             # O destino nao e expandido: ele e a fronteira de destino.
             if label.node_id == destination:
@@ -402,12 +441,36 @@ class MultiObjectiveAStar:
                     mass_kg=self.traversal.mass_kg,
                     label_id=next(counter),
                 )
+                if self._turn_context_size:
+                    next_label.turn_context = (
+                        *label.turn_context, arc.osm_way_id
+                    )[-self._turn_context_size:]
                 generated += 1
                 if manager.insert(next_label):
+                    if (
+                        next_label.node_id == destination
+                        and next_label.result_status is not SimulationStatus.UNAVAILABLE
+                    ):
+                        values = self.profile.values(next_label)
+                        if not any(all(a <= b for a, b in zip(g, values)) for g in goal_vectors):
+                            goal_vectors = [g for g in goal_vectors if not _strictly_dominates(values, g)]
+                            goal_vectors.append(values)
                     queue.push(next_label, self._priority(next_label, destination))
 
         self.frontier = manager
         labels = order_labels(self.profile, manager.labels_at(destination))
+        if self.goal_pruning:
+            # At the terminal node there is no continuation: speed is no
+            # longer a reason to retain an objective-dominated arrival.
+            values = [self.profile.values(label) for label in labels]
+            incumbents = [
+                self.profile.values(label) for label in labels
+                if label.result_status is not SimulationStatus.UNAVAILABLE
+            ]
+            labels = tuple(
+                label for index, label in enumerate(labels)
+                if not any(_strictly_dominates(other, values[index]) for other in incumbents)
+            )
 
         return SearchResult(
             origin=origin,
@@ -421,6 +484,8 @@ class MultiObjectiveAStar:
             dropped_labels=manager.dropped_labels,
             stopped_early=stopped_early,
             stop_reason="candidate_policy" if stopped_early else None,
+            goal_pruned=goal_pruned,
+            state_approximated=isinstance(self.dominance, SpeedBucketDominance) and not isinstance(self.dominance, ExactSpeedDominance),
         )
 
     # -------------------------------------------------------------- interno
@@ -446,12 +511,16 @@ class MultiObjectiveAStar:
                 return False
         if self._has_turn_restrictions and label.incoming_arc_id is not None:
             from_arc = self.graph.get_arc(label.incoming_arc_id)
+            relevant = self._turn_by_way.get(from_arc.osm_way_id, ())
+            if not relevant:
+                return True
             transition = transition_decision(
                 self.graph,
                 from_arc,
                 arc,
                 label.node_id,
                 history_way_ids=history_way_ids,
+                restrictions=relevant,
                 evaluator=self.condition_evaluator,
                 policy=self.circulation_policy,
             )
@@ -462,19 +531,9 @@ class MultiObjectiveAStar:
     def _history_way_ids(
         self, label: SearchState
     ) -> tuple[int | None, ...]:
-        """``way_id`` dos arcos da origem ate ``label`` (mais recente por ultimo).
+        """Suffix sufficient for the longest registered via-way restriction."""
+        return label.turn_context
 
-        Segue a cadeia ``parent`` (ADR-026 §4.2, opcao a): nenhum estado novo, no
-        maximo ``O(profundidade)`` por expansao e apenas quando ha restricao de
-        conversao.
-        """
-        ways: list[int | None] = []
-        node: SearchState | None = label
-        while node is not None and node.incoming_arc_id is not None:
-            ways.append(self.graph.get_arc(node.incoming_arc_id).osm_way_id)
-            node = node.parent
-        ways.reverse()
-        return tuple(ways)
 
     def _priority(
         self, label: SearchState, destination: Hashable
@@ -486,9 +545,11 @@ class MultiObjectiveAStar:
         continua preservando as alternativas nao dominadas.
         """
         g = self.profile.values(label)
-        h = self.heuristic.lower_bounds(
-            label.node_id, destination, self.profile.names
-        )
+        key = (label.node_id, destination)
+        h = self._lower_bound_cache.get(key)
+        if h is None:
+            h = self.heuristic.lower_bounds(label.node_id, destination, self._objective_names)
+            self._lower_bound_cache[key] = h
         return tuple(gv + hv for gv, hv in zip(g, h)) + (float(label.label_id),)
 
 
@@ -507,3 +568,10 @@ def order_labels(
 def arc_ids_of(state: SearchState) -> Sequence[str | None]:
     """Atalho para a sequencia de arcos de uma unica label."""
     return tuple(route_arcs(state))
+
+
+def _strictly_dominates(a: Sequence[float], b: Sequence[float]) -> bool:
+    """Conservative strict Pareto comparison (equal-cost paths survive)."""
+    return all(x <= y for x, y in zip(a, b)) and any(
+        y - x > 1e-9 * max(1.0, abs(x), abs(y)) for x, y in zip(a, b)
+    )

@@ -110,6 +110,7 @@ from .heuristic import (
     Heuristic,
     HeuristicBounds,
 )
+from .landmarks import LandmarkHeuristic
 from .objectives import (
     PROFILE_NAMES,
     PROFILE_OBJECTIVES,
@@ -221,6 +222,7 @@ __all__ = [
     "Heuristic",
     "HeuristicBounds",
     "LexicographicQueue",
+    "LandmarkHeuristic",
     "MetricSource",
     "MultiObjectiveAStar",
     "NO_TURN_TYPES",

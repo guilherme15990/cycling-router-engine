@@ -68,6 +68,7 @@ class SearchState:
     incoming_arc_id: str | None = None
     label_id: int = 0
     active: bool = True
+    turn_context: tuple[int | None, ...] = ()
 
     # Qualidade e limitacao agregadas do percurso (ADR-026 §6). Agregacao
     # monotona: uma rota nunca "melhora" o status de um arco.

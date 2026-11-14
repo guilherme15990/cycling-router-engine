@@ -1,50 +1,9 @@
-"""Consulta offline completa: zona -> busca -> fisica -> ML -> box.
+"""Offline physical routing over the complete supplied graph.
 
-Este modulo e a **orquestracao** do fluxo offline declarado nos ADRs 024-028. Ele
-nao reimplementa nada: junta componentes ja existentes numa unica chamada,
-**espelhando a ordem de eventos do `toporide`** (ADR-028 D7): a ML roda em
-**toda** rota, e o **box e calculado por ultimo**, a partir das rotas
-**devolvidas** (recomendada + alternativas).
-
-Ordem de eventos (espelhada de `toporide/.../routePipeline.ts` +
-`routeWorker.ts`):
-
-0. **MODELO (roteamento)** — opcional; carregaria o modelo de **roteamento** do
-   cache local e, na ausencia, o treinaria de dados **computacionalmente
-   gerados**. Hoje a busca usa apenas o A\\* Pareto (nenhum roteador neural
-   implementado), entao este passo e um ponto de extensao documentado;
-1. **CANDIDATAS** — ``_search_zone`` define **uma vez** o box do corredor
-   (pins + margens automaticas) e recorta a zona; a busca
-   ``search.MultiObjectiveAStar`` (perfil) roda **uma unica vez** nessa zona,
-   devolvendo o tracado real de **todas** as rotas da fronteira. Nao ha
-   crescimento iterativo nem segunda busca (como no ``toporide``); um corredor
-   que nao conecte origem e destino resulta em ``reached=False``;
-2. **GUARDRAILS** — validacao de circulacao (``search.circulation``);
-3. **FISICA COMPLETA** — ``evaluation.assess_candidates`` reavalia cada
-   candidata no **simulador completo** e extrai ``EffortFeatures``;
-4. **ML (sempre)** — ``intelligence.intensity`` estima RPE + faixas de
-   intensidade (por distancia e por duracao) para **cada** rota. A estimativa e
-   **computacional e nao calibrada** (ADR-028): ela **nao** preenche o contrato
-   fisiologico (``PhysiologicalPrediction``), que permanece para evolucao futura
-   com modelo calibrado;
-5. **CLASSIFICACAO** — ``intelligence.classify_routes`` (fisica + intensidade +
-   preferencia declarada);
-6. **BOX** — ``geo.query_bbox(pins, tracado das rotas DEVOLVIDAS)``. O box
-   final limita a altimetria/exibicao e cobre a rota **recomendada** ("pick" da
-   ML = primeira na ordem do perfil) **e** as alternativas do A\\*.
-
-Honestidade (ADR-027/ADR-028):
-
-* a **inferencia e local**: o preditor carrega um artefato **do disco** e nunca
-  acessa a rede; ``plan_offline_routes`` **nao** baixa nada;
-* as **zonas cardiacas nao** sao previstas — ``LocalModelPredictor`` so produz
-  RPE; a distribuicao de zonas permanece ``None`` e a ausencia e declarada;
-* a **estimativa de intensidade** e separada, deterministica, **nao calibrada** e
-  **nao** e apresentada como medicao nem como zona cardiaca real;
-* as metricas da busca (modo busca) e as metricas da avaliacao (simulador
-  completo) sao mantidas **separadas** e ambas expostas.
-
-Ref.: ADR-025 §10, ADR-026 §3/§5, ADR-027 §0/§3/§6, ADR-028 §D7.
+All profiles use the same multiobjective A* and physical transitions. Profiles
+select objectives; reverse cost bounds and exact traversal caches guide the
+search. Candidate diversity, full assessment, intensity and safety remain
+subsequent steps. The final map bbox covers pins and emitted route geometries.
 """
 
 from __future__ import annotations
@@ -53,7 +12,6 @@ from bisect import bisect_left
 from dataclasses import dataclass, replace
 from collections.abc import Callable
 
-from router.core.data.envelope import graph_for_bbox
 from router.core.evaluation.assessment import (
     AssessmentOutcome,
     RouteAssessment,
@@ -112,6 +70,7 @@ from router.core.physiology import (
 )
 from router.core.search import (
     PhysicalTraversalModel,
+    SearchConfig,
     RouteCandidate,
     RouteCandidatePool,
     RouteProfile,
@@ -315,29 +274,21 @@ def _search_zone(
     use_full_graph: bool,
     pad_m: float,
 ) -> tuple[GeoBBox, RoutingGraph]:
-    """Box de busca **definido uma vez** e a zona que ele recorta.
+    """Full supplied coverage. The legacy use_full_graph flag is inert.
 
-    Semana de corredor: com ``use_full_graph=False`` (padrao), o box e o
-    envelope dos pinos com as margens automaticas por eixo (``query_bbox``) e a
-    busca roda apenas na zona correspondente. Com ``use_full_graph=True``, o box
-    e o extent do grafo carregado (mais ``pad_m``) e a busca roda no grafo
-    inteiro. Em nenhum caso ha crescimento nem segunda busca.
+    Bounding boxes describe coverage/display; they never crop routing paths.
     """
-    if use_full_graph:
-        nodes = tuple(graph.nodes.values())
-        if not nodes:
-            box = query_bbox(pins)
-            assert box is not None
-            return box, graph
-        south = min(node.lat for node in nodes)
-        north = max(node.lat for node in nodes)
-        west = min(node.lon for node in nodes)
-        east = max(node.lon for node in nodes)
-        box = expand_bbox((south, west, north, east), pad_m, (south + north) / 2.0)
+    nodes = tuple(graph.nodes.values())
+    if not nodes:
+        box = query_bbox(pins)
+        assert box is not None
         return box, graph
-    box = query_bbox(pins)
-    assert box is not None
-    return box, graph_for_bbox(graph, box)
+    box = expand_bbox((
+        min(node.lat for node in nodes), min(node.lon for node in nodes),
+        max(node.lat for node in nodes), max(node.lon for node in nodes),
+    ), pad_m, (pins[0][0] + pins[-1][0]) / 2.0)
+    return box, graph
+
 
 
 def plan_offline_routes(
@@ -361,6 +312,7 @@ def plan_offline_routes(
     predictor: EffortPredictor | None = None,
     preference: EffortPreference | None = None,
     deduplicator: RouteDeduplicator | None = None,
+    search_config: SearchConfig | None = None,
     max_routes: int | None = None,
     collapse_similar: bool = True,
     search_mode: str = "exact",
@@ -380,8 +332,7 @@ def plan_offline_routes(
     guardrails de circulacao -> fisica completa -> **ML em toda rota** (estimativa
     de intensidade) -> classificacao -> **avaliacao final de seguranca** (ADR-029
     D4, sem recalculo) -> **box por ultimo**, a partir das rotas **devolvidas**. A
-    busca roda **uma unica vez** na zona do corredor (pins + margens automaticas,
-    nao o grafo inteiro); a avaliacao fisica usa o **simulador completo**. O
+    busca roda **uma unica vez** no grafo carregado; a avaliacao fisica usa o **simulador completo**. O
     preditor, quando informado, e sempre **local** (artefato em disco); a funcao
     nunca toca a rede.
 
@@ -412,6 +363,8 @@ def plan_offline_routes(
             ``UNAVAILABLE`` (nenhum RPE inventado).
         preference: Preferencia de esforco declarada, para a classificacao.
         deduplicator: Estrategia de deduplicacao das candidatas.
+        search_config: Precisao e limites comuns do motor; exact_speed=True
+            desliga a comparacao aproximada por buckets de velocidade.
         max_routes: ``None`` devolve o conjunto **estruturalmente distinto** —
             uma rota por grupo de quase-duplicatas da fronteira (corte no maior
             salto, ``route_set``); um inteiro positivo ``N`` devolve as ``N``
@@ -433,8 +386,8 @@ def plan_offline_routes(
         growth: **Inerte** (compatibilidade de assinatura). A busca atual e unica:
             nao ha crescimento da zona (ver ``_search_zone``).
         max_iterations: **Inerte** (compatibilidade de assinatura).
-        explore_full_coverage: **Inerte** (compatibilidade de assinatura); use
-            ``use_full_graph`` para buscar no grafo inteiro.
+        explore_full_coverage: **Inerte** (compatibilidade de assinatura).
+        use_full_graph: **Inerte**; a busca sempre considera o grafo fornecido.
         pad_m: Margem (m) somada ao envelope das rotas no box final.
         progress_event_every: publica/avalia o preview a cada N candidatas no
             modo exato com ``on_progress``. A primeira candidata sempre pode
@@ -520,7 +473,6 @@ def plan_offline_routes(
     preview_elevation_cache: dict[str, _PreparedElevationProfile] = {}
     preview_similarity_cache = IncrementalSimilarityMatrix()
     seen_paths: set[tuple[str | None, ...]] = set()
-    valid_candidate_found = False
     progressive_stop_ready = False
     current_box = query_bbox(pins)
     assert current_box is not None
@@ -578,7 +530,7 @@ def plan_offline_routes(
                     assessment.prediction.status.is_available)
 
         def publish_candidate(label, search_engine) -> None:
-            nonlocal valid_candidate_found, progressive_stop_ready
+            nonlocal progressive_stop_ready
             if on_progress is None and search_mode != "progressive":
                 return
             from router.core.search.astar import SearchResult
@@ -626,7 +578,6 @@ def plan_offline_routes(
                 available_flags.append(cached[1])
             if not contracts:
                 return
-            valid_candidate_found = True
             if search_mode == "progressive" and max_routes is not None:
                 selected_routes = [item[1].route for item in chosen]
                 progressive_stop_ready = (
@@ -665,13 +616,9 @@ def plan_offline_routes(
                 on_progress("route_found", interim,
                             {"bbox": current_box, "iteration": int(captured["calls"])})
 
-        if search_mode == "progressive":
-            stop_when_candidate = lambda: progressive_stop_ready
-        elif use_full_graph:
-            stop_when_candidate = lambda: valid_candidate_found
-        else:
-            stop_when_candidate = None
-
+        stop_when_candidate = (
+            (lambda: progressive_stop_ready) if search_mode == "progressive" else None
+        )
         search = search_candidates(
             query.graph,
             search_model,
@@ -679,6 +626,7 @@ def plan_offline_routes(
             query.origin_id,
             query.destination_id,
             initial_speed_mps=initial_speed_mps,
+            search_config=search_config,
             on_candidate_state=(
                 publish_candidate
                 if on_progress is not None or search_mode == "progressive"
@@ -687,22 +635,16 @@ def plan_offline_routes(
             should_cancel=should_cancel,
             stop_when_candidate=stop_when_candidate,
         )
-        result = search.result
+        result, pool = search.result, search.pool
         if not result.reached:
             return ()
         captured["zone"] = zone
         captured["query"] = query
         captured["result"] = result
-        captured["pool"] = search.pool
+        captured["pool"] = pool
         return _route_geometries(query, result)
 
-    # 1) CANDIDATAS: **uma** busca. O box do corredor (pins + margens
-    #    automaticas) e definido **uma vez** e limita a busca — como no
-    #    ``toporide`` (``solveAll``): uma geracao de candidatas, nao um ciclo de
-    #    crescimento. Nao ha segunda busca: se o corredor nao conectar origem e
-    #    destino, o resultado e ``reached=False`` (honesto), sem crescer a zona.
-    #    (Os parametros legados ``growth``/``max_iterations``/
-    #    ``explore_full_coverage`` ficam inertes — ver a docstring.)
+    # One physical search over all supplied data, independent of profile.
     search_bbox, zone = _search_zone(
         graph, pins, use_full_graph=use_full_graph, pad_m=pad_m
     )
@@ -850,7 +792,7 @@ def plan_offline_routes(
     rejected = tuple(_planned(item) for item in report.excluded)
 
     # 6) BOX por ultimo, a partir do tracado das rotas DEVOLVIDAS (a recomendada
-    #    — primeira ELEGIVEL, nunca REJECTED — mais as alternativas do A*). A
+    #    — primeira ELEGIVEL, nunca REJECTED — mais as alternativas da busca). A
     #    busca rodou no corredor (``search_bbox``); o box de exibicao/altimetria
     #    e a uniao do corredor com o envelope das rotas, e **pode** exceder o
     #    corredor quando um trecho desvia para fora dele — como no toporide, o
@@ -875,6 +817,7 @@ def plan_offline_routes(
             and not result.stopped_early
             and not result.truncated
             and not result.frontier_truncated
+            and not result.state_approximated
         ),
         **base,
     )

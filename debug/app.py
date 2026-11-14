@@ -387,7 +387,7 @@ def _default_state() -> dict[str, Any]:
         "stops_text": "",
         "profile_select": "fastest" if "fastest" in PROFILE_IDS else PROFILE_IDS[0],
         "max_routes": 0,
-        "collapse_similar": True,
+        "collapse_similar": False,
         "sustained_power": 200.0,
         "cyclist_mass": 75.0,
         "max_power": 600.0,
@@ -578,11 +578,20 @@ def _with_elevation(text: str, elevation: float | None) -> str:
 
 
 def _altimetry_overlay() -> altimetry.AltimetryOverlay | None:
-    """Imagem hipsometrica da camada (montada uma vez por sessao)."""
+    """Imagem hipsometrica da camada, invalidada quando os tiles mudam."""
     if not st.session_state.get("map_altimetry", True):
         return None
-    if "_altimetry_overlay" in st.session_state:
+    discovered = altimetry.discover_tiles(DEM_DIR)
+    tile_signature = discovered
+    if (
+        "_altimetry_overlay" in st.session_state
+        and st.session_state.get("_altimetry_overlay_tiles") == tile_signature
+    ):
         return st.session_state["_altimetry_overlay"]
+    # O download pode ocorrer fora do processo do Streamlit (por exemplo,
+    # durante a preparação do projeto). Não mantenha uma imagem antiga só
+    # porque a sessão continua viva.
+    st.session_state.pop("_altimetry_overlay", None)
     overlay: altimetry.AltimetryOverlay | None = None
     try:
         overlay = altimetry.build_overlay(DEM_DIR, cache_dir=ALTIMETRY_CACHE)
@@ -598,6 +607,7 @@ def _altimetry_overlay() -> altimetry.AltimetryOverlay | None:
             f"{overlay.min_m:.0f}-{overlay.max_m:.0f} m",
         )
     st.session_state["_altimetry_overlay"] = overlay
+    st.session_state["_altimetry_overlay_tiles"] = tile_signature
     return overlay
 
 

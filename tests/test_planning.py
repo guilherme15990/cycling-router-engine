@@ -153,24 +153,23 @@ def test_plan_discovers_connected_route_with_physics():
         assert route.classification.outcome is route.assessment.outcome
 
 
-def test_plan_zone_is_smaller_than_whole_graph():
+def test_plan_searches_whole_graph_without_bbox_crop():
     plan = _plan()
-
-    # O grafo carregado tem o no distante (99); a zona de busca nao o inclui.
-    assert plan.graph_nodes > plan.zone_nodes
-    assert plan.graph_arcs > plan.zone_arcs
+    assert plan.graph_nodes == plan.zone_nodes
+    assert plan.graph_arcs == plan.zone_arcs
     assert plan.zone_nodes >= 2
     assert plan.zone_arcs >= 1
 
 
-def test_plan_bbox_contains_pins_and_covers_search_box():
+def test_plan_map_covers_pins_without_showing_unused_city_extent():
     plan = _plan()
 
     pins_box = bbox_of([ORIGIN, DESTINATION])
     assert bbox_contains(plan.bbox, pins_box)
     # O box final (altimetria/exibicao) e a uniao do corredor com o tracado das
     # rotas devolvidas: sempre cobre o corredor em que a busca ocorreu.
-    assert bbox_contains(plan.bbox, plan.search_bbox)
+    assert bbox_contains(plan.search_bbox, bbox_of([ORIGIN, DESTINATION]))
+    assert not bbox_contains(plan.bbox, plan.search_bbox)
 
 
 def test_plan_normalizes_profile_name():
@@ -286,10 +285,11 @@ def test_plan_intensity_present_without_predictor():
     assert all(route.mean_rpe > 0.0 for route in plan.routes)
 
 
-def test_plan_final_box_covers_search_zone_after_ml():
+def test_plan_final_box_covers_pins_after_ml():
     """O box final (pos-ML) cobre a zona buscada e os pinos."""
     plan = _plan()
-    assert bbox_contains(plan.bbox, plan.search_bbox)
+    assert bbox_contains(plan.search_bbox, bbox_of([ORIGIN, DESTINATION]))
+    assert not bbox_contains(plan.bbox, plan.search_bbox)
     assert bbox_contains(plan.bbox, bbox_of([ORIGIN, DESTINATION]))
 
 
@@ -454,7 +454,7 @@ def test_cli_plan_json(tmp_path, capsys):
     assert payload["version"] == 1
     assert payload["reached"] is True
     assert payload["route_count"] >= 1
-    assert payload["zone"]["arcs"] < payload["zone"]["graph_arcs"]
+    assert payload["zone"]["arcs"] == payload["zone"]["graph_arcs"]
 
 
 def test_cli_plan_text_output(tmp_path, capsys):

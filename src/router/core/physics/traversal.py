@@ -93,7 +93,7 @@ class PhysicalTraversal:
         #: ``DEGRADED`` (ADR-025, decisao 2).
         self.require_elevation = bool(require_elevation)
         self._profiles: dict[str, tuple[Arc, ArcProfile]] = {}
-        self._steps: dict[str, tuple[Arc, tuple[ProfileStep, ...]]] = {}
+        self._steps: dict[str, tuple[Arc, float, tuple[ProfileStep, ...]]] = {}
         self._equilibrium: dict[
             tuple[object, ...], tuple[tuple[float, float], ...]
         ] = {}
@@ -109,10 +109,10 @@ class PhysicalTraversal:
 
     def steps(self, arc: Arc) -> tuple[ProfileStep, ...]:
         cached = self._steps.get(arc.id)
-        if cached is not None and cached[0] is arc:
-            return cached[1]
+        if cached is not None and cached[0] is arc and cached[1] == self.step_m:
+            return cached[2]
         steps = self.profile(arc).steps(self.step_m)
-        self._steps[arc.id] = (arc, steps)
+        self._steps[arc.id] = (arc, self.step_m, steps)
         return steps
 
     def equilibrium_speeds(

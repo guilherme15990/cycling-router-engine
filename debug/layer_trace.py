@@ -159,8 +159,15 @@ class LayerTrace:
                     if inspect.isclass(value) and getattr(value, '__module__', None) == name:
                         for method in tuple(vars(value).values()):
                             add_function(method, name)
+            # ``PY_UNWIND`` is a global monitoring event in Python 3.12 and
+            # cannot be requested as a local event for an individual code
+            # object.  Including it here raises ``ValueError: invalid local
+            # event set`` before the debug request even starts.  Exceptions
+            # still flow through the global callback; local instrumentation
+            # only needs function start/return to collect the normal samples.
+            local_events = events.PY_START | events.PY_RETURN
             for code in codes:
-                monitor.set_local_events(tool, code, events.PY_START | events.PY_RETURN | events.PY_UNWIND)
+                monitor.set_local_events(tool, code, local_events)
                 self._monitor_codes.append(code)
         return self
 

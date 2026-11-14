@@ -26,7 +26,7 @@ def init_state():
                     speed_cap_kmh=env.safe_max_speed_mps * 3.6, initial_kmh=0.0,
                     physics_step=traversal.step_m, require_elevation=False,
                     snap_radius=snap.max_distance_m,
-                    bbox_padding=80.0, use_full_graph=False,
+                    bbox_padding=80.0, use_full_graph=True,
                     progress_event_every=4, max_workers=4,
                     predictor_enabled=False, predictor_store="debug/.cache/models", predictor_version="",
                     rider_enabled=False, rider_ftp=0.0, rider_hr_max=0.0, rider_hr_rest=0.0,
@@ -55,13 +55,8 @@ def render_controls():
         st.checkbox("Exigir altimetria na simulação", key="require_elevation")
         st.number_input("Distância máxima de snapping (m)", min_value=1.0, max_value=5000.0, key="snap_radius")
     with st.expander("Envelope de busca e bbox"):
-        st.number_input("Margem do bbox (m)", min_value=0.0, max_value=10000.0, key="bbox_padding")
-        st.checkbox(
-            "Buscar no grafo inteiro (expansão explícita)",
-            key="use_full_graph",
-            help="Desligado: usa apenas o corredor dos pontos e a margem informada. Ligado: o usuário autoriza a cobertura do grafo carregado.",
-        )
-        st.caption("A busca ocorre uma única vez. Por padrão, o corredor é definido pelos pontos e pela margem; o índice espacial persistente evita varrer o grafo inteiro ao recortar a BBox. O box final de exibição/altimetria cobre o traçado devolvido.")
+        st.number_input("Margem do mapa final (m)", min_value=0.0, max_value=10000.0, key="bbox_padding")
+        st.caption("A busca considera toda a malha carregada e pode encontrar desvios fora do corredor dos pontos. O mapa final acompanha as rotas devolvidas.")
     with st.expander("Busca e publicação progressiva"):
         st.number_input(
             "Publicar preview a cada N candidatas",
@@ -119,7 +114,7 @@ def _execute_with_state(s, api, **request):
                            snap_options=SnapOptions(max_distance_m=s.snap_radius),
                            initial_speed_mps=s.initial_kmh / 3.6,
                            pad_m=float(getattr(s, "bbox_padding", 80.0)),
-                           use_full_graph=bool(getattr(s, "use_full_graph", False)),
+                           use_full_graph=True,
                            progress_event_every=int(getattr(s, "progress_event_every", 4)),
                            max_workers=int(getattr(s, "max_workers", 4)))
             if s.predictor_enabled:
@@ -162,7 +157,7 @@ def _execute_with_state(s, api, **request):
                 }
             report["performance"] = {
                 "search_orchestration": "router.core.search.candidate_search.search_candidates",
-                "search_scope": "provided_graph" if bool(getattr(s, "use_full_graph", False)) else "corridor_bbox",
+                "search_scope": "provided_graph",
                 "spatial_index": spatial_index,
                 "physics_cache": {
                     "profiles": len(getattr(traversal, "_profiles", {})),

@@ -20,6 +20,7 @@ import math
 from collections.abc import Hashable, Iterable
 from typing import Any, Protocol, runtime_checkable
 
+from router.core.physics.models import SimulationStatus
 from .objectives import ObjectiveSet
 from .objectives import dominates as pareto_dominates
 
@@ -90,9 +91,14 @@ class SpeedBucketDominance:
         node_id = state.node_id
         bucket = self.bucket(state.physical_state.speed_mps)
         arrival = self.arrival_class(state)
-        if arrival is None:
-            return (node_id, bucket)
-        return (node_id, bucket, arrival)
+        key = (node_id, bucket) if arrival is None else (node_id, bucket, arrival)
+        context = getattr(state, "turn_context", ())
+        if context:
+            key = (*key, context)
+        status = getattr(state, "result_status", None)
+        if status is SimulationStatus.UNAVAILABLE:
+            key = (*key, status)
+        return key
 
     def dominates(self, a: Any, b: Any) -> bool:
         if self.key(a) != self.key(b):
@@ -106,3 +112,20 @@ class SpeedBucketDominance:
     ) -> bool:
         """Dominancia para valores ja extraidos da label."""
         return pareto_dominates(values_a, values_b)
+
+
+class ExactSpeedDominance(SpeedBucketDominance):
+    """Compare only identical entry speeds, without speed discretization."""
+
+    def key(self, state: Any) -> Hashable:
+        key = (state.node_id, state.physical_state.speed_mps)
+        arrival = self.arrival_class(state)
+        if arrival is not None:
+            key = (*key, arrival)
+        context = getattr(state, "turn_context", ())
+        if context:
+            key = (*key, context)
+        status = getattr(state, "result_status", None)
+        if status is SimulationStatus.UNAVAILABLE:
+            key = (*key, status)
+        return key

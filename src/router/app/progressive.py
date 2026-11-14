@@ -38,29 +38,17 @@ def plan_routes_progressive(
     should_cancel: Callable[[], bool] | None = None,
     **options: Any,
 ) -> RouteProgress:
-    """Busca **unica** no corredor da consulta; publica rotas validadas.
+    """Busca fisica unica no grafo fornecido, com resultados validados.
 
-    A busca ocorre **uma vez** (o box do corredor e definido e limita a busca,
-    como no ``toporide``): nao ha ampliacao de zona nem nova busca. Cada
-    candidata publicada passa pela avaliacao completa, predicao de intensidade e
-    seguranca. Sem ``on_event``, nenhum preview e executado; com assinante,
-    ``progress_event_every`` controla a frequencia (padrao: 4 candidatas).
-    Em multiplas pernas, cada perna busca independentemente e so um
-    trajeto completo e publicado. O modelo v1 nao encadeia fadiga entre pernas.
-
-    A busca nao impoe limite silencioso de tempo, regioes ou labels. A API
-    permite cancelamento cooperativo; sem cancelamento, a conclusao depende
-    tambem de a busca multiobjetivo terminar no modelo de estados adotado.
+    A bbox final e definida pelas rotas e nunca limita a exploracao. Todos os
+    perfis usam o mesmo motor. Apenas search_mode='progressive', explicitamente
+    solicitado, permite parada por quantidade/diversidade de candidatas.
     """
     profile = route_profile_for(profile).id
     points = (origin, *tuple((float(a), float(b)) for a, b in stops), destination)
     for a, b in zip(points, points[1:]):
         if _same_coord(a, b):
             raise ValueError("pontos consecutivos iguais")
-    # O grafo offline pode representar a cidade inteira, mas a busca de uma
-    # consulta roda apenas no corredor da BBox (definido uma unica vez); explorar
-    # a cidade inteira por padrao desperdica custo — ``use_full_graph`` so quando
-    # explicitamente pedido.
     use_full_graph = bool(options.pop("use_full_graph", False))
     max_workers = options.pop("max_workers", min(len(points) - 1, 4))
     if (

@@ -20,6 +20,7 @@ class SearchConfig:
     speed_step_mps: float = 0.5
     epsilon_dominance: float = 0.0
     max_expansions: int | None = None
+    exact_speed: bool = False
 
     def __post_init__(self) -> None:
         if self.max_labels_per_node is not None:
@@ -49,6 +50,7 @@ class SearchConfig:
             "speed_step_mps": self.speed_step_mps,
             "epsilon_dominance": self.epsilon_dominance,
             "max_expansions": self.max_expansions,
+            "exact_speed": self.exact_speed,
         }
 
 

@@ -1,3 +1,4 @@
+import pytest
 from router.app.progressive import plan_routes_progressive
 from router.core.physics import BicycleModel
 from test_planning import _graph, _cyclist, ORIGIN, DESTINATION
@@ -157,13 +158,9 @@ def test_route_envelope_cannot_falsely_prove_that_new_area_was_searched():
     assert len(searched) >= 2 and searched[-1] == 2
 
 
-def test_corridor_search_does_not_expand_beyond_initial_box():
-    """Uma **unica** busca no corredor: sem crescimento para achar um desvio.
-
-    Origem e destino so se ligam por um no **fora** do corredor (pins + margens
-    automaticas). Como a busca ocorre uma so vez dentro do box, o resultado
-    honesto e ``no_route`` — nao havia segunda busca nem ampliacao de zona.
-    """
+@pytest.mark.parametrize("profile", ["fastest", "shortest", "flattest", "balanced", "electric"])
+def test_global_physical_search_finds_detour_outside_initial_box(profile):
+    """Every profile can discover a detour beyond the endpoint corridor."""
     from router.core.data.osm.build import BuildOptions, attach_elevation, build_graph
     from router.core.data.osm.parse import OsmData
     from router.core.data.elevation import CallableElevation
@@ -180,12 +177,14 @@ def test_corridor_search_does_not_expand_beyond_initial_box():
     attach_elevation(graph, CallableElevation(lambda lat, lon: 700.0), spacing_m=25)
     events = []
     result = plan_routes_progressive(graph, (0, 0), (0, .002),
-        cyclist=_cyclist(), bicycle=BicycleModel(), use_full_graph=False, on_event=events.append)
+        cyclist=_cyclist(), bicycle=BicycleModel(), profile=profile, use_full_graph=False, on_event=events.append)
     # Nenhuma expansao: exatamente uma busca, na iteracao 1.
     searches = [e for e in events if e.status == 'searching']
     assert [e.details['iteration'] for e in searches] == [1]
-    assert not any(e.status == 'route_found' for e in events)
-    assert result.status == 'no_route' and not result.plan.routes
+    assert any(e.status == 'route_found' for e in events)
+    assert result.status == 'completed'
+    assert result.plan.routes
+    assert any(point.lat >= .009 for route in result.plan.routes for point in route.geometry)
 
 
 def test_progressive_rejects_old_fixed_iteration_limit():

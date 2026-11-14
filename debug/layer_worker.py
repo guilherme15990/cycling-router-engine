@@ -26,6 +26,17 @@ def main():
     state = SimpleNamespace(**payload['settings'], layer_report=None)
     result = {}
     try:
+        # Honor an abandoned/cancelled session before importing the UI stack
+        # or loading the graph. A cold import must not delay cancellation.
+        heartbeat = input_path.with_name('heartbeat')
+        reason = (
+            'Cancelada pelo usuário' if input_path.with_name('cancel').exists() else
+            'Sessão inativa por mais de 30 segundos'
+            if heartbeat.exists() and time.time() - heartbeat.stat().st_mtime > 30 else None
+        )
+        if reason is not None:
+            result.update(status='interrupted', details={'reason': reason})
+            return
         from router.integration import plan_routes_progressive, load_graph, CyclistModel, BicycleModel, dumps
         from layer_lab import _execute_with_state
         request = payload['request']
