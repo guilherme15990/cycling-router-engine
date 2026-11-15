@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from router.interfaces.cli.parser import build_parser
 from router.interfaces.cli.render import configure_stdout
+from router.interfaces.cli.coordinates import normalize_coordinate_args
 
 __all__ = ["main"]
 
@@ -28,7 +29,7 @@ __all__ = ["main"]
 def main(argv: list[str] | None = None) -> int:
     configure_stdout()
     parser = build_parser()
-    args = parser.parse_args(argv)
+    args = parser.parse_args(normalize_coordinate_args(argv))
 
     if not hasattr(args, "handler"):
         parser.print_help()

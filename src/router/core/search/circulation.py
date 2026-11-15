@@ -190,7 +190,7 @@ def _rule_decision(
     mais gerais. Valor nao interpretavel e sempre conservador (``UNKNOWN``).
     """
     forbidden = rule.value in FORBIDDEN_ACCESS_VALUES
-    allowed = rule.value in ALLOWED_ACCESS_VALUES
+    allowed = rule.value in ALLOWED_ACCESS_VALUES or (rule.scope == "bicycle" and rule.value == "dismount")
     if not forbidden and not allowed:
         return _decision(Verdict.UNKNOWN, DecisionReason.UNSUPPORTED, policy)
 
@@ -226,24 +226,38 @@ def _rule_decision(
 
 
 def arc_decision(
-    arc: Arc,
-    *,
-    evaluator: ConditionEvaluator | None = None,
+    arc: Arc, *, evaluator: ConditionEvaluator | None = None,
     policy: CirculationPolicy = DEFAULT_POLICY,
+    access_scopes: Sequence[str] = ACCESS_SCOPES,
+    access_from_tags: bool = False,
 ) -> Decision:
-    """Decide o acesso de ``arc``.
+    """Resolve specificity within EACH segment, then combine the traversed road.
 
-    Ordem: regras de acesso (escopo mais especifico primeiro) -> ausencia de
-    regra. Nao consulta a fisica nem cria custo.
+    A permitted segment must never override a prohibited segment elsewhere in
+    a contracted arc. Observed direct access tags can be enabled for legacy
+    graphs that retained tags but only serialized conditional AccessRules.
     """
-    for scope in ACCESS_SCOPES:
-        for rule in arc.restrictions:
-            if rule.scope != scope:
-                continue
-            decision = _rule_decision(rule, evaluator, policy)
+    from router.core.data.graph.restrictions import access_rules
+    decisions = []
+    for segment in arc.segments:
+        rules = segment.restrictions
+        if access_from_tags:
+            rules = tuple(dict.fromkeys((*access_rules(dict(segment.tags)), *rules)))
+        decision = None
+        for scope in access_scopes:
+            for rule in rules:
+                if rule.scope == scope:
+                    decision = _rule_decision(rule, evaluator, policy)
+                    if decision is not None:
+                        break
             if decision is not None:
+                break
+        decisions.append(decision or _decision(Verdict.ALLOW, DecisionReason.NO_RULE, policy))
+    for predicate in (lambda d: d.raw_verdict is Verdict.FORBID, lambda d: d.forbids, lambda d: d.unresolved,
+                      lambda d: not d.legality_asserted, lambda d: True):
+        for decision in decisions:
+            if predicate(decision):
                 return decision
-
     return _decision(Verdict.ALLOW, DecisionReason.NO_RULE, policy)
 
 
@@ -431,6 +445,8 @@ def validate_route(
     *,
     evaluator: ConditionEvaluator | None = None,
     policy: CirculationPolicy = DEFAULT_POLICY,
+    access_scopes: Sequence[str] = ACCESS_SCOPES,
+    access_from_tags: bool = False,
 ) -> RouteValidation:
     """Valida uma sequencia de arcos direcionados contra o contrato.
 
@@ -444,7 +460,7 @@ def validate_route(
     steps: list[Decision] = []
     ways: list[int | None] = []
     for index, arc in enumerate(arcs):
-        access = arc_decision(arc, evaluator=evaluator, policy=policy)
+        access = arc_decision(arc, evaluator=evaluator, policy=policy, access_scopes=access_scopes, access_from_tags=access_from_tags)
         steps.append(access)
 
         if index > 0:

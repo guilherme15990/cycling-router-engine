@@ -228,7 +228,9 @@ class SpatialSnapper:
         self,
         graph: RoutingGraph,
         options: SnapOptions | None = None,
+        *, arc_filter=None,
     ) -> None:
+        self._arc_filter = arc_filter
         self.graph = graph
         self.options = options or SnapOptions()
 
@@ -399,6 +401,8 @@ class SpatialSnapper:
 
     # ------------------------------------------------------------- internos
     def _is_usable(self, arc: Arc) -> bool:
+        if self._arc_filter is not None and not self._arc_filter(arc):
+            return False
         if arc.distance_m <= 0.0:
             return False
         if (
@@ -527,6 +531,7 @@ def build_query_graph(
     origin: Coord,
     destination: Coord,
     options: SnapOptions | None = None,
+    *, arc_filter=None,
 ) -> QueryGraph:
     """Conecta origem e destino e devolve o grafo temporario de consulta.
 
@@ -553,12 +558,12 @@ def build_query_graph(
     """
     options = options or SnapOptions()
 
-    origin_result = SpatialSnapper(graph, options).snap(
+    origin_result = SpatialSnapper(graph, options, arc_filter=arc_filter).snap(
         origin, label="origin", role="origin"
     )
     origin_graph = origin_result.apply(graph)
 
-    destination_result = SpatialSnapper(origin_graph, options).snap(
+    destination_result = SpatialSnapper(origin_graph, options, arc_filter=arc_filter).snap(
         destination, label="destination", role="destination"
     )
     query_graph = destination_result.apply(origin_graph)

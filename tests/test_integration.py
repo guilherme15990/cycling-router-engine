@@ -20,7 +20,7 @@ from router.interfaces import api
 
 def test_integration_surface_is_curated():
     names = list(integration.__all__)
-    assert 20 <= len(names) <= 32, f"superficie fora da faixa curada: {len(names)}"
+    assert 20 <= len(names) <= 59, f"superficie fora da faixa curada: {len(names)}"
     assert len(names) == len(set(names)), "integration.__all__ tem duplicatas"
 
 
@@ -32,10 +32,17 @@ def test_every_integration_symbol_exists():
 def test_integration_surface_is_subset_of_wide_facade():
     # Excecao declarada: persistencia do grafo nao esta na fachada ampla (F6).
     graph_helpers = {"load_graph", "save_graph", "altimetry_edges", "prepare_dem_tiles", "plan_routes_progressive", "RouteProgress"}
+    toolkit_exports = {
+        "RiderPresets", "SearchCancelled", "MobilityEngine", "MobilityProfile", "VehicleCategory", "PropulsionType", "MotionEngine",
+        "PropulsionModel", "ConstantPower", "ConstantForce", "RoadLoadModel", "StandardRoadLoad",
+        "MobilityPlan", "MobilityRoute", "MobilityMetrics", "power_in_watts",
+        "Environment", "SnapOptions", "SearchConfig", "PropulsionOutput", "ForceBreakdown", "RoadProfile", "RoadStep", "MotionState",
+        "ElevationProvider", "CallableElevation", "TerrariumElevation",
+    }
     outside = [
         name
         for name in integration.__all__
-        if name not in graph_helpers and name not in api.__all__
+        if name not in graph_helpers and name not in toolkit_exports and name not in api.__all__
     ]
     assert outside == [], f"nomes fora da fachada e sem justificativa: {outside}"
 

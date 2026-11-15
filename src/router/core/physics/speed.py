@@ -77,6 +77,36 @@ def advance_speed(
     equilibrium_speed_mps_value: float | None = None,
     terminal_speed_mps_value: float | None = None,
 ) -> SpeedStep:
+    """Compatibility adapter; integration is shared with every mobility type."""
+    return advance_motion(
+        distance_m, slope_rad, initial_speed_mps, available_power_w,
+        mass_kg, frontal_area_m2, bicycle, environment,
+        max_speed_mps=max_speed_mps, acceleration_limit_mps2=acceleration_limit_mps2,
+        drivetrain_efficiency=drivetrain_efficiency,
+        equilibrium_speed_mps_value=equilibrium_speed_mps_value,
+        terminal_speed_mps_value=terminal_speed_mps_value,
+    )
+
+
+def advance_motion(
+    distance_m: float,
+    slope_rad: float,
+    initial_speed_mps: float,
+    available_power_w: float,
+    mass_kg: float,
+    frontal_area_m2: float,
+    parameters: object,
+    environment: Environment,
+    *,
+    max_speed_mps: float | None = None,
+    acceleration_limit_mps2: float = 2.0,
+    drivetrain_efficiency: float | None = None,
+    equilibrium_speed_mps_value: float | None = None,
+    terminal_speed_mps_value: float | None = None,
+    road_forces=None,
+    propulsion_output=None,
+    enforce_equilibrium: bool = True,
+) -> SpeedStep:
     """Avanca a velocidade por ``distance_m`` metros.
 
     ``available_power_w`` e a potencia no pedivela. ``drivetrain_efficiency``
@@ -102,7 +132,7 @@ def advance_speed(
         )
 
     efficiency = (
-        bicycle.drivetrain_efficiency
+        parameters.drivetrain_efficiency
         if drivetrain_efficiency is None
         else drivetrain_efficiency
     )
@@ -130,24 +160,30 @@ def advance_speed(
     rolling = rolling_force_n(
         mass_kg,
         slope_rad,
-        bicycle.rolling_resistance,
+        parameters.rolling_resistance,
         gravity_m_s2=environment.gravity_m_s2,
     )
+    if road_forces is not None:
+        gravity, rolling = road_forces.gravity_n, road_forces.rolling_n
     base_force = gravity + rolling
 
     v_effective = max(v0, MIN_SPEED_MPS)
     regularized_low_speed = v0 < MIN_SPEED_MPS
     aero = aerodynamic_force_n(
         v_effective,
-        bicycle.drag_coefficient,
+        parameters.drag_coefficient,
         frontal_area_m2,
         environment.air_density_kg_m3,
         headwind_mps=environment.headwind_mps,
     )
+    if road_forces is not None:
+        aero = road_forces.aerodynamic_n
+    if propulsion_output is not None:
+        pedaling = propulsion_output.wheel_force_n > 0 and (limit is None or v0 < limit - 1e-9)
     resistance = base_force + aero
 
     if pedaling:
-        drive_force = power * efficiency / v_effective
+        drive_force = power * efficiency / v_effective if propulsion_output is None else propulsion_output.wheel_force_n
         delta_energy = (drive_force - resistance) * distance_m
     else:
         delta_energy = -resistance * distance_m
@@ -164,7 +200,7 @@ def advance_speed(
         limited_by_max_speed = True
 
     # Nao permite ultrapassar a velocidade de equilibrio do modelo.
-    if pedaling:
+    if pedaling and enforce_equilibrium:
         equilibrium = (
             equilibrium_speed_mps_value
             if equilibrium_speed_mps_value is not None
@@ -172,7 +208,7 @@ def advance_speed(
                 slope_rad,
                 mass_kg,
                 frontal_area_m2,
-                bicycle,
+                parameters,
                 environment,
                 power,
                 drivetrain_efficiency=efficiency,
@@ -180,7 +216,7 @@ def advance_speed(
             )
         )
         v1 = min(v1, max(v0, equilibrium))
-    else:
+    elif not pedaling and enforce_equilibrium:
         terminal = (
             terminal_speed_mps_value
             if terminal_speed_mps_value is not None
@@ -188,7 +224,7 @@ def advance_speed(
                 slope_rad,
                 mass_kg,
                 frontal_area_m2,
-                bicycle,
+                parameters,
                 environment,
                 0.0,
                 drivetrain_efficiency=efficiency,
@@ -219,6 +255,12 @@ def advance_speed(
     if pedaling:
         rider_energy = power * time_s
         wheel_energy = wheel_energy_from_rider_j(rider_energy, efficiency)
+        if propulsion_output is not None:
+            rider_energy = propulsion_output.input_power_w * time_s
+            wheel_energy = propulsion_output.wheel_power_w * time_s
+            if propulsion_output.work_mode == "force":
+                wheel_energy = propulsion_output.wheel_force_n * distance_m
+                rider_energy = wheel_energy / efficiency
     else:
         rider_energy = 0.0
         wheel_energy = 0.0

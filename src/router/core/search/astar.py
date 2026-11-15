@@ -28,6 +28,7 @@ from .circulation import (
     CirculationPolicy,
     ConditionEvaluator,
     DEFAULT_POLICY,
+    ACCESS_SCOPES,
     arc_decision,
     constrained_nodes,
     transition_decision,
@@ -46,8 +47,7 @@ from .traversal_model import (
 )
 
 
-class SearchCancelled(Exception):
-    """Cancelamento solicitado pelo consumidor da busca progressiva."""
+from .exceptions import SearchCancelled
 
 
 def is_feasible(result: TraversalResult) -> bool:
@@ -270,10 +270,13 @@ class MultiObjectiveAStar:
         self.goal_pruning = bool(goal_pruning)
         self.condition_evaluator = condition_evaluator
         self.circulation_policy = circulation_policy
+        self.access_scopes = getattr(traversal, "access_scopes", ACCESS_SCOPES)
+        self.access_from_tags = getattr(traversal, "access_from_tags", False)
+        self._custom_access = getattr(traversal, "allows_arc", None)
 
         # Guardrails de circulacao: ativados pelos **dados**, nao por config.
         # Sem regras de acesso nem restricoes de conversao, sao inertes.
-        self._has_access_rules = any(
+        self._has_access_rules = self.access_from_tags or any(
             bool(arc.restrictions) for arc in graph.arcs.values()
         )
         self._has_turn_restrictions = bool(graph.turn_restrictions)
@@ -286,7 +289,7 @@ class MultiObjectiveAStar:
                 self._turn_context_size = max(self._turn_context_size, len(required))
 
         self._guardrails_active = (
-            self._has_access_rules or self._has_turn_restrictions
+            self._has_access_rules or self._has_turn_restrictions or self._custom_access is not None
         )
 
         if heuristic is not None:
@@ -501,9 +504,13 @@ class MultiObjectiveAStar:
         nao recalcula fisica nem cria custo. A política padrão permite
         ``UNKNOWN`` sem ocultar o estado não resolvido.
         """
+        if self._custom_access is not None and not self._custom_access(arc):
+            return False
         if self._has_access_rules:
             access = arc_decision(
                 arc,
+                access_scopes=self.access_scopes,
+                access_from_tags=self.access_from_tags,
                 evaluator=self.condition_evaluator,
                 policy=self.circulation_policy,
             )

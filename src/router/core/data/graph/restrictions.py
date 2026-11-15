@@ -79,6 +79,7 @@ class TurnRestriction:
 def turn_restriction_from_relation(
     relation: Mapping[str, object],
     version: str | None = None,
+    *, travel_mode: str | None = None,
 ) -> TurnRestriction | None:
     """Normaliza uma relacao ``type=restriction`` do OSM em ``TurnRestriction``.
 
@@ -97,7 +98,16 @@ def turn_restriction_from_relation(
     if tags.get("type") != "restriction":
         return None
 
-    restriction = tags.get("restriction") or tags.get("restriction:bicycle")
+    if travel_mode is not None:
+        from router.core.data.access import access_scopes
+        scopes = access_scopes(travel_mode)
+        exceptions = {value.strip() for value in tags.get("except", "").split(";")}
+        if exceptions.intersection(scopes):
+            return None
+        restriction = next((tags[f"restriction:{scope}"] for scope in scopes
+                            if f"restriction:{scope}" in tags), tags.get("restriction"))
+    else:
+        restriction = tags.get("restriction") or tags.get("restriction:bicycle")
     if not restriction:
         return None
 
@@ -180,3 +190,12 @@ def _split_value_condition(raw: str) -> tuple[str, str | None]:
     value, _, condition = raw.partition("@")
     condition = condition.strip()
     return value.strip().lower(), condition or None
+
+
+def access_rules(tags: dict[str, str]) -> tuple[AccessRule, ...]:
+    """Retain conditional exceptions before unconditional access values."""
+    from router.core.data.access import supported_access_keys
+    keys = supported_access_keys()
+    direct = tuple(AccessRule(key, str(tags[key]).strip().lower(), None, str(tags[key]))
+                   for key in sorted(keys) if key in tags)
+    return (*parse_conditional_restrictions(tags), *direct)

@@ -531,12 +531,14 @@ class RoutingGraph:
             str, tuple[tuple[Segment, ...], tuple[Coord, ...]]
         ] = {}
         self.metadata: dict[str, Any] = {}
+        self._spatial_index = None
 
     # ------------------------------------------------------------------ nos
     def add_node(self, node: Node) -> None:
         if node.id in self._nodes:
             raise GraphError(f"no duplicado: {node.id}")
         self._nodes[node.id] = node
+        self._spatial_index = None
         self._outgoing.setdefault(node.id, [])
 
     def get_node(self, node_id: Hashable) -> Node:
@@ -662,8 +664,24 @@ class RoutingGraph:
         return geometry
 
     def _invalidate_geometry(self) -> None:
+        self._spatial_index = None
         if self._geometry_cache:
             self._geometry_cache.clear()
+
+    def has_spatial_index(self) -> bool:
+        return self._spatial_index is not None
+
+    def _ensure_spatial_index(self):
+        if self._spatial_index is None:
+            from .spatial import GraphSpatialIndex
+            self._spatial_index = GraphSpatialIndex(self._nodes, self._arcs)
+        return self._spatial_index
+
+    def query_node_ids(self, bbox):
+        return self._ensure_spatial_index().node_ids(bbox)
+
+    def query_arc_ids(self, bbox):
+        return self._ensure_spatial_index().arc_ids(bbox)
 
     # --------------------------------------------------------------- arcos
     def add_arc(self, arc: Arc, *, link: bool = True) -> None:

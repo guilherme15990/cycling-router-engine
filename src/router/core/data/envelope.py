@@ -1,13 +1,7 @@
-"""Zona de busca: recorta o grafo carregado ao box dinamico de uma consulta.
+"""Spatial helpers for explicit extracts and map envelopes.
 
-O grafo e a **cidade inteira** (carregado uma vez). A busca offline **nao** roda
-sobre o grafo inteiro: ela roda na **zona** definida pelo box da consulta
-(``geo.query_bbox``), que tambem limita a altimetria. Nao ha segundo modo — o
-aplicativo e integralmente offline, entao o box **sempre** limita a busca.
-
-O recorte e deterministico: um no entra na zona se estiver dentro do box; um
-arco entra se **ambas** as pontas estiverem na zona. As margens automaticas do
-box (``geo.auto_box_pads``) ja dao folga para desvios junto aos pinos.
+Primary route planning uses the full supplied graph. These optional helpers
+serve callers requesting a particular extract; they do not limit that planner.
 """
 
 from __future__ import annotations
@@ -32,13 +26,17 @@ def graph_for_bbox(graph: RoutingGraph, bbox: GeoBBox) -> RoutingGraph:
     south, west, north, east = bbox
     zone = RoutingGraph()
     kept: set[object] = set()
-    for node in graph.nodes.values():
-        if south <= node.lat <= north and west <= node.lon <= east:
-            zone.add_node(node)
-            kept.add(node.id)
-    for arc in graph.arcs.values():
+    for node_id in graph.query_node_ids(bbox):
+        node = graph.get_node(node_id)
+        zone.add_node(node)
+        kept.add(node.id)
+    for arc_id in graph.query_arc_ids(bbox):
+        arc = graph.get_arc(arc_id)
         if arc.source in kept and arc.target in kept:
             zone.add_arc(arc)
+    for restriction in graph.turn_restrictions.values():
+        zone.add_turn_restriction(restriction)
+    zone.metadata = dict(graph.metadata)
     return zone
 
 

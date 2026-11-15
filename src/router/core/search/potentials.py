@@ -31,7 +31,7 @@ class ReverseCostHeuristic(Heuristic):
         self._tables.clear()
 
     def prepare(self, goal: Hashable, should_cancel: Callable[[], bool] | None = None) -> None:
-        from .astar import SearchCancelled
+        from .exceptions import SearchCancelled
         def check():
             if should_cancel is not None and should_cancel():
                 raise SearchCancelled("Busca cancelada pelo usuário")

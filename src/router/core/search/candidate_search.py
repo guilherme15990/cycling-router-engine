@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from .astar import MultiObjectiveAStar, SearchResult
 from .candidates import RouteCandidatePool, RouteDeduplicator
 from .config import SearchConfig
+from .circulation import ConditionEvaluator, CirculationPolicy, DEFAULT_POLICY
 from .heuristic import Heuristic
 from .objectives import SearchProfile
 from .state import SearchState
@@ -52,6 +53,8 @@ def search_candidates(
     on_candidate_state: CandidateStateCallback | None = None,
     should_cancel: Callable[[], bool] | None = None,
     stop_when_candidate: Callable[[], bool] | None = None,
+    condition_evaluator: ConditionEvaluator | None = None,
+    circulation_policy: CirculationPolicy = DEFAULT_POLICY,
 ) -> CandidateSearchResult:
     """Executa busca Pareto e prepara o pool sem selecionar a apresentacao."""
     astar = MultiObjectiveAStar(
@@ -65,6 +68,8 @@ def search_candidates(
         ),
         config=search_config,
         initial_speed_mps=initial_speed_mps,
+        condition_evaluator=condition_evaluator,
+        circulation_policy=circulation_policy,
     )
 
     callback = None

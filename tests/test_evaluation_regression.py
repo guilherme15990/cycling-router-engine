@@ -179,9 +179,11 @@ def test_ra_unresolved_restriction_reroutes_and_is_never_returned():
 def test_ra_absence_of_rule_does_not_reroute():
     plan = _plan(restrict_direct=False)
     assert plan.reached
-    # Sem restricao, a via direta (w101) esta disponivel.
-    used = {arc for route in plan.routes for arc in route.candidate.route.arc_ids}
-    assert "w101:0" in used
+    # Availability and Pareto selection are separate: an unrestricted road
+    # can still be dominated by a physically better route.
+    from router.core.search.circulation import arc_decision
+    assert arc_decision(_graph(restrict_direct=False).get_arc("w101:0")).allows
+    assert plan.recommended is not None and plan.recommended.eligible
 
 
 # --------------------------------------------------------------------------

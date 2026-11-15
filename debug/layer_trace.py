@@ -77,23 +77,23 @@ def layer_for(module, name):
     }:
         return "01"
     if module.startswith("router.core.physics") and name in {
-        "traverse", "traverse_arc", "equilibrium_speeds", "forces_at", "advance_speed",
+        "traverse", "traverse_arc", "equilibrium_speeds", "forces_at", "advance_speed", "advance_motion", "evaluate", "profile", "steps",
         "gravity_force_n", "rolling_force_n", "aerodynamic_force_n",
         "equilibrium_speed_mps", "required_rider_power_w",
     }:
         return "02"
     if module.startswith("router.core.search") and name in {
         "search", "search_candidates", "bounds", "route_profile_for", "routes_from_result",
-        "from_result", "order_labels", "select_distinct_routes", "arc_jaccard",
+        "from_result", "order_labels", "prepare", "lower_bounds", "arc_decision", "validate_route", "select_distinct_routes", "arc_jaccard",
     }:
         return "03"
-    if module.startswith(("router.core.prediction", "router.core.physiology")) and name in {"estimate_intensity", "segment_rpe", "segments_from_traversal", "predict", "load_predictor", "load_compatible", "extract_features", "predict_response", "estimate_rider_response"}:
+    if module.startswith(("router.core.prediction", "router.core.physiology")) and name in {"estimate_intensity", "segment_rpe", "segments_from_traversal", "predict", "load_predictor", "load_compatible", "extract_features", "predict_response", "estimate_rider_response", "rider_model_from_cyclist", "estimate_reference_power", "resolve_capacity_profile", "default_capacity_for_activity", "_heart_rate_parameters"}:
         return "04"
     if module.startswith("router.core.evaluation") and name in {"assess_route", "assess_candidates", "classify_routes", "classify_route", "evaluate_candidates", "classify_safety"}:
         return "05"
     if module.startswith(("router.app", "router.contracts")) and name in {
         "plan_routes", "plan_routes_progressive", "plan_offline_routes",
-        "to_contract", "_to_route_contract", "dumps", "_merge_leg_plans",
+        "resolve", "catalogue", "rider_model_from_cyclist", "plan", "prepare", "_network_for", "from_pbf", "from_osm", "to_json", "to_dict", "from_dict", "to_contract", "_to_route_contract", "dumps", "_merge_leg_plans",
     }:
         return "06"
     return None
@@ -148,6 +148,10 @@ class LayerTrace:
             def add_function(value, module_name):
                 if isinstance(value, (staticmethod, classmethod)):
                     value = value.__func__
+                # @offline preserves metadata but its wrapper code belongs to
+                # router.offline. Monitor the actual facade implementation.
+                if inspect.isfunction(value):
+                    value = inspect.unwrap(value)
                 if inspect.isfunction(value) and value.__module__ == module_name:
                     if layer_for(module_name, value.__name__) is not None:
                         codes.add(value.__code__)

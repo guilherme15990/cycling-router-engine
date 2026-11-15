@@ -19,9 +19,11 @@ from dataclasses import dataclass, replace
 from typing import Iterable, Sequence
 
 from router.core.data.geo import Coord, bbox_of, line_length_m
+from router.core.data.access import access_scopes, include_way
 from router.core.data.graph.model import BicycleAccess, RoutingGraph, Arc, Segment, Node
 from router.core.data.graph.restrictions import (
     parse_conditional_restrictions,
+    access_rules,
     turn_restriction_from_relation,
 )
 from router.core.data.graph.surface import Surface, surface_from_tags, surface_observation
@@ -91,6 +93,7 @@ class BuildOptions:
     allow_dismount: bool = True
     split_at_junctions: bool = True
     min_arc_length_m: float = 0.5
+    travel_mode: str | None = None
 
 
 @dataclass(frozen=True)
@@ -173,10 +176,25 @@ def bicycle_access(tags: dict[str, str], options: BuildOptions) -> BicycleAccess
     return BicycleAccess.YES
 
 
-def allowed_directions(tags: dict[str, str]) -> tuple[bool, bool]:
+def allowed_directions(tags: dict[str, str], travel_mode: str | None = None) -> tuple[bool, bool]:
     """``(ida, volta)`` considerando ``oneway`` e excecoes para bicicletas."""
     oneway = (tags.get("oneway") or "").strip().lower()
-    bike_oneway = (tags.get("oneway:bicycle") or "").strip().lower()
+    if travel_mode is not None and tags.get("highway") == "motorway" and "oneway" not in tags:
+        oneway = "yes"
+    scopes = access_scopes(travel_mode) if travel_mode is not None else ("bicycle",)
+    bike_mode = "bicycle" in scopes
+    bike_oneway = (tags.get("oneway:bicycle") or "").strip().lower() if bike_mode else ""
+    if travel_mode is not None:
+        for scope in scopes:
+            if scope == "access":
+                continue
+            if f"oneway:{scope}" in tags:
+                oneway = tags[f"oneway:{scope}"].strip().lower()
+                if bike_mode:
+                    bike_oneway = oneway
+                break
+        if travel_mode == "foot" and "oneway:foot" not in tags:
+            oneway = "no"
     junction = (tags.get("junction") or "").strip().lower()
 
     forward, backward = True, True
@@ -186,7 +204,7 @@ def allowed_directions(tags: dict[str, str]) -> tuple[bool, bool]:
     elif oneway in {"-1", "reverse"}:
         forward, backward = False, True
 
-    if junction in {"roundabout", "circular"} and oneway not in {"no", "false", "0"}:
+    if junction in {"roundabout", "circular"} and oneway not in {"no", "false", "0", "-1", "reverse"}:
         forward, backward = True, False
 
     if bike_oneway in {"no", "false", "0"}:
@@ -197,7 +215,10 @@ def allowed_directions(tags: dict[str, str]) -> tuple[bool, bool]:
         forward, backward = False, True
 
     for key in ("cycleway", "cycleway:left", "cycleway:right", "cycleway:both"):
-        if "opposite" in (tags.get(key) or "").lower():
+        explicit_mode_oneway = travel_mode is not None and any(
+            f"oneway:{scope}" in tags for scope in scopes if scope != "access"
+        )
+        if bike_mode and not explicit_mode_oneway and "opposite" in (tags.get(key) or "").lower():
             forward, backward = True, True
 
     return forward, backward
@@ -313,7 +334,13 @@ def build_graph(
     selected: list[RawWay] = []
     access_by_way: dict[int, BicycleAccess] = {}
     for way in data.ways:
-        access = bicycle_access(way.tags, options)
+        if options.travel_mode is None:
+            access = bicycle_access(way.tags, options)
+        else:
+            access = BicycleAccess.YES if include_way(way.tags, options.travel_mode) else None
+            if access is not None and "bicycle" in access_scopes(options.travel_mode):
+                if way.tags.get("bicycle") == "dismount":
+                    access = BicycleAccess.DISMOUNT if options.allow_dismount else None
         if access is None:
             continue
         selected.append(way)
@@ -384,7 +411,7 @@ def build_graph(
             osm_way_id=way.id,
             bicycle_access=access_by_way[way.id],
             max_speed_kmh=parse_max_speed_kmh(tags.get("maxspeed")),
-            restrictions=parse_conditional_restrictions(tags),
+            restrictions=(parse_conditional_restrictions(tags) if options.travel_mode is None else access_rules(tags)),
             geometry=coords,
             tags=tags,
         )
@@ -395,7 +422,7 @@ def build_graph(
             segments=(segment,),
         )
 
-        forward, backward = allowed_directions(tags)
+        forward, backward = allowed_directions(tags, options.travel_mode)
         if forward and backward:
             graph.add_bidirectional(arc, reverse_id=f"{arc_id}:rev")
         elif forward:
@@ -425,13 +452,17 @@ def build_graph(
                 "id": relation.id,
                 "tags": relation.tags,
                 "members": relation.members,
-            }
+            },
+            travel_mode=options.travel_mode,
         )
         if restriction is None:
             continue
         graph.add_turn_restriction(restriction)
         report.turn_restrictions += 1
 
+    if options.travel_mode is not None:
+        graph.metadata["transport_mode"] = options.travel_mode
+        graph.metadata["access_defaults"] = "generic_road_classes_not_jurisdiction_certification"
     return graph, report.as_stats()
 
 

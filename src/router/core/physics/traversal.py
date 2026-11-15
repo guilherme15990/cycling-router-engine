@@ -12,6 +12,7 @@ velocidade inicial da proxima travessia.
 
 from __future__ import annotations
 
+from dataclasses import fields
 from enum import Enum
 from typing import Sequence
 
@@ -19,7 +20,10 @@ from router.core.data.graph.model import Arc
 from ._validation import non_negative, positive
 from .bicycle import BicycleModel
 from .cyclist import CyclistModel
-from .arc_profile import ArcProfile, ProfileStep
+from .arc_profile import ArcProfile, ProfileStep, RoadProfileCache
+from .motion import MotionEngine
+from .propulsion import ConstantPower
+from router.core.data.mobility import MobilityProfile
 from .environment import Environment
 from .forces import equilibrium_speed_mps
 from .models import (
@@ -64,7 +68,7 @@ def _resolve_mode(mode: "SimulationMode | str") -> SimulationMode:
     return SimulationMode(mode)
 
 
-class PhysicalTraversal:
+class PhysicalTraversal(RoadProfileCache):
     """Simula a travessia fisica de arcos do grafo.
 
     O objeto mantem cache de perfis e passos por ``arc.id``. Como arcos do
@@ -87,33 +91,10 @@ class PhysicalTraversal:
         positive("step_m", resolved_step)
         non_negative("acceleration_limit_mps2", acceleration_limit_mps2)
 
-        self.step_m = resolved_step
+        super().__init__(step_m=resolved_step, require_elevation=require_elevation)
         self.acceleration_limit_mps2 = float(acceleration_limit_mps2)
-        #: Se True, um trecho sem elevacao produz ``UNAVAILABLE`` em vez de
-        #: ``DEGRADED`` (ADR-025, decisao 2).
-        self.require_elevation = bool(require_elevation)
-        self._profiles: dict[str, tuple[Arc, ArcProfile]] = {}
-        self._steps: dict[str, tuple[Arc, float, tuple[ProfileStep, ...]]] = {}
-        self._equilibrium: dict[
-            tuple[object, ...], tuple[tuple[float, float], ...]
-        ] = {}
-
-    # ------------------------------------------------------------------ cache
-    def profile(self, arc: Arc) -> ArcProfile:
-        cached = self._profiles.get(arc.id)
-        if cached is not None and cached[0] is arc:
-            return cached[1]
-        profile = ArcProfile.from_arc(arc)
-        self._profiles[arc.id] = (arc, profile)
-        return profile
-
-    def steps(self, arc: Arc) -> tuple[ProfileStep, ...]:
-        cached = self._steps.get(arc.id)
-        if cached is not None and cached[0] is arc and cached[1] == self.step_m:
-            return cached[2]
-        steps = self.profile(arc).steps(self.step_m)
-        self._steps[arc.id] = (arc, self.step_m, steps)
-        return steps
+        self._equilibrium: dict[tuple[object, ...], tuple[tuple[float, float], ...]] = {}
+        self._motion_engine = MotionEngine(geometry=self)
 
     def equilibrium_speeds(
         self,
@@ -204,93 +185,19 @@ class PhysicalTraversal:
             ValueError: Se ``power_w`` for negativo ou exceder
                 ``cyclist.max_power_w``.
         """
-        environment = environment or Environment()
-        state = initial_state if initial_state is not None else SimulationState()
-        initial_speed = state.speed_mps
-
         power = cyclist.default_power_w if power_w is None else float(power_w)
         non_negative("power_w", power)
         if power > cyclist.max_power_w:
-            raise ValueError(
-                f"power_w ({power}) excede max_power_w ({cyclist.max_power_w})"
-            )
-
-        profile = self.profile(arc)
-        steps = self.steps(arc)
-        mass = cyclist.mass_kg + bicycle.mass_kg
-        equilibrium = self.equilibrium_speeds(
-            arc, cyclist, bicycle, environment, power
+            raise ValueError(f"power_w ({power}) excede max_power_w ({cyclist.max_power_w})")
+        mobility = MobilityProfile.from_bicycle(
+            cyclist, bicycle, acceleration_limit_mps2=self.acceleration_limit_mps2,
         )
-
-        speed = max(0.0, float(initial_speed))
-        time_s = 0.0
-        wheel_energy_j = 0.0
-        rider_energy_j = 0.0
-        braking_energy_j = 0.0
-        aero_loss_j = 0.0
-        rolling_loss_j = 0.0
-        stalled = False
-        used_regularization = False
-
-        for index, step in enumerate(steps):
-            equilibrium_speed, terminal_speed = equilibrium[index]
-            step_result = advance_speed(
-                distance_m=step.distance_m,
-                slope_rad=step.slope_rad,
-                initial_speed_mps=speed,
-                available_power_w=power,
-                mass_kg=mass,
-                frontal_area_m2=cyclist.frontal_area_m2,
-                bicycle=bicycle,
-                environment=environment,
-                max_speed_mps=step.max_speed_mps,
-                acceleration_limit_mps2=self.acceleration_limit_mps2,
-                equilibrium_speed_mps_value=equilibrium_speed,
-                terminal_speed_mps_value=terminal_speed,
-            )
-            time_s += step_result.time_s
-            wheel_energy_j += step_result.wheel_energy_j
-            rider_energy_j += step_result.rider_energy_j
-            braking_energy_j += step_result.braking_energy_j
-            aero_loss_j += step_result.aero_loss_j
-            rolling_loss_j += step_result.rolling_loss_j
-            stalled = stalled or step_result.stalled
-            used_regularization = used_regularization or step_result.regularized
-            speed = step_result.final_speed_mps
-
-        final_state = SimulationState(
-            elapsed_s=state.elapsed_s + time_s,
-            speed_mps=speed,
-            wheel_work_j=state.wheel_work_j + wheel_energy_j,
-            rider_work_j=state.rider_work_j + rider_energy_j,
-            braking_loss_j=state.braking_loss_j + braking_energy_j,
+        result = self._motion_engine.traverse(
+            arc, mobility, ConstantPower(power), initial_state=initial_state,
+            environment=environment,
         )
-
-        uncertainty = profile.elevation_uncertainty
-        status = classify_status(
-            uncertainty, require_elevation=self.require_elevation
-        )
-
-        return TraversalResult(
-            time_s=time_s,
-            distance_m=profile.distance_m,
-            ascent_m=profile.ascent_m,
-            descent_m=profile.descent_m,
-            initial_speed_mps=max(0.0, float(initial_speed)),
-            final_speed_mps=speed,
-            mechanical_energy_j=wheel_energy_j,
-            rider_energy_j=rider_energy_j,
-            battery_energy_j=None,
-            braking_energy_j=braking_energy_j,
-            stalled=stalled,
-            arc_id=arc.id,
-            state=final_state,
-            elevation_uncertainty=uncertainty,
-            result_status=status,
-            aero_loss_j=aero_loss_j,
-            rolling_loss_j=rolling_loss_j,
-            used_min_speed_regularization=used_regularization,
-        )
+        # Preserve the historical result type/serialization for existing users.
+        return TraversalResult(**{item.name: getattr(result, item.name) for item in fields(TraversalResult)})
 
     def traverse_path(
         self,

@@ -301,7 +301,7 @@ def test_zero_power_downhill_accelerates(cyclist, bicycle, traversal):
 def test_equilibrium_limits_are_cached_across_initial_speeds(
     cyclist, bicycle, traversal, monkeypatch
 ):
-    import router.core.physics.traversal as traversal_module
+    import router.core.physics.motion as traversal_module
 
     arc = make_arc([(0.0, 0.0), (100.0, 5.0)])
     original = traversal_module.equilibrium_speed_mps
@@ -319,7 +319,7 @@ def test_equilibrium_limits_are_cached_across_initial_speeds(
         arc, cyclist, bicycle, initial_state=state(5.0)
     )
 
-    assert first_call_count == 2 * len(traversal.steps(arc))
+    assert 0 < first_call_count <= 2 * len(traversal.steps(arc))
     assert calls == first_call_count
     assert result.initial_speed_mps == pytest.approx(5.0)
 

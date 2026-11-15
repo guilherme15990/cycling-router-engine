@@ -1,218 +1,106 @@
-# Debug E2E (Streamlit)
+# Debug da MobilityEngine
 
-Aplicativo de depuração que consome a **API E2E** do motor:
-
-```python
-from router.integration import plan_routes_progressive
-
-progress = plan_routes_progressive(
-    graph,
-    origin,
-    destination,
-    cyclist=cyclist,
-    bicycle=bicycle,
-    profile="fastest",
-)
-```
-
-A interface principal é o **Consulta**: escolher os pontos **clicando no mapa**
-(ou digitando as coordenadas), ajustar ciclista/bicicleta e ver o resultado. Os
-logs ficam em uma **aba separada** (`Logs`), com filtro por nível, busca,
-download e limpeza.
-
-
-## Bancada de inspeção das camadas
-
-1. Carregue o grafo e monte o cenário na aba **Consulta**: pontos, paradas,
-   perfil de rota, ciclista e bicicleta.
-2. Ajuste ambiente, velocidade inicial, passo da simulação, snapping e margem
-   do bbox. O corredor é usado por padrão; marque **Buscar no grafo inteiro**
-   somente quando quiser expandir explicitamente a cobertura. Para experimentar predição local,
-   informe o diretório do `ModelStore`, a versão do artefato e, se necessário,
-   o perfil fisiológico. A API não treina um modelo automaticamente.
-3. Mantenha **Capturar entradas, cálculos e saídas das camadas** habilitado e
-   clique em **Executar API e capturar camadas**.
-4. Em **Inspeção por camada**, escolha uma das seis camadas e uma chamada
-   capturada. Confira **Entrada**, **Cálculos intermediários**, **Saída** e
-   **Implementação executada**. A linha do tempo preserva a ordem real de
-   entrada das chamadas, inclusive quando uma camada chama outra.
-5. Baixe `camadas-e2e.json` para guardar o cenário e os diagnósticos. O
-   `route-plan.json` completo continua disponível em Consulta.
-
-A captura acompanha a chamada real de `router.integration.plan_routes_progressive` com
-`sys.monitoring` quando disponível (com fallback para `sys.settrace`); não substitui funções nem reimplementa
-o algoritmo. Também observa a serialização pública. As seis vistas cobrem
-dados/snapping/bbox, física/matemática, perfis/busca, ML/predição,
-avaliação/seleção e contrato/resultado. As funções instrumentadas são
-explicitadas em `debug/layer_trace.py`.
-
-As chamadas instrumentadas são contadas. A captura inclui a orquestração
-comum `router.core.search.candidate_search.search_candidates`, o recorte por
-índice espacial, o pré-cálculo de equilíbrios da física, os limites da
-heurística e a seleção estrutural. Por padrão, uma amostra de cada função tem snapshot, e coleções grandes são
-truncadas com contagem explícita. Os tempos são inclusivos, com custo de
-depuração, e não representam benchmark. Uma camada sem chamada observada
-não é automaticamente considerada ausente. Exceções tratadas pelo motor
-aparecem como observações; a falha externa da API aparece separadamente.
-Se houver um debugger Python ativo, desligue a captura ou o debugger.
-
-A API publica a primeira rota validada enquanto a busca continua. O mapa mostra o resultado parcial e atualiza alternativas conforme são encontradas. A inspeção contém amostras das chamadas, não uma animação nem execução pausada entre etapas.
-
-### Diagnóstico de desempenho
-
-Depois da execução, **Inspeção por camada** mostra o caminho de orquestração,
-o escopo da busca, a presença do índice espacial persistente, o tamanho das
-caches de perfis/passos/equilíbrio e a política de publicação do preview. Esses
-valores são diagnósticos da execução, não uma medição de benchmark.
-
-## Escolher os pontos no mapa
-
-O mapa fica no topo da aba **Consulta** e aparece **antes** de carregar o grafo
-(nesse caso usa o centro da área do PBF padrão). Escolher os pontos:
-
-1. escolha se o clique define a **Origem** ou o **Destino**;
-2. clique no mapa — o ponto aparece na hora e a coordenada vai para o campo
-   correspondente (`Origem (lat, lon)` / `Destino (lat, lon)`);
-3. depois de escolhido, **arraste o marcador** para ajustar a posição;
-4. use **Inverter** para trocar origem/destino ou **Limpar pontos** para zerar;
-5. depois de calcular, a rota aparece desenhada no mesmo mapa e o seletor de
-   rota atualiza o traçado.
-
-Sem grafo carregado, use **Carregar grafo em cache** (logo abaixo do mapa) para
-carregar `debug/.cache/graph_v4.json`; os pontos já escolhidos são preservados.
-
-O mapa é um componente Leaflet bidirecional (`st.components.v2`) com tiles do
-OpenStreetMap carregados pelo navegador; o Python/motor continua sem rede.
-Desmarque **Mapa com tiles (online)** para ver apenas o traçado offline.
-
-## Altimetria (DEM local)
-
-A opção **Vias por declividade (DEM local)** consulta a API
-`router.integration.altimetry_edges(graph, bbox)` para a área visível no mapa.
-A função retorna vias, inclinações e faixas de cor compatíveis com o TopoRide:
-verde até 4%, laranja até 8% e vermelho acima de 8%. Cinza representa perfil
-incompleto ou indisponível. O retorno informa o total, a quantidade sem perfil e
-se houve amostragem por limite de desenho.
-
-**Baixar DEM da área visível** busca tiles Terrarium em segundo plano, em zoom
-12, com limite de 40 tiles por solicitação. A API reutiliza arquivos já
-existentes em `data/dem`. Para usar as altitudes na busca, na física e na
-camada de vias, aplique **Aplicar altimetria do DEM local** no painel lateral;
-o download não modifica automaticamente o grafo. A operação pode regravar o
-arquivo do grafo carregado. Não há fallback automático para OpenTopography.
-
-A API pública `prepare_dem_tiles(bbox, tiles_dir, zoom=12)` oferece a mesma
-preparação para outros consumidores. Seu bbox usa `(sul, oeste, norte, leste)`;
-a chamada acessa a rede somente quando faltam tiles. A leitura do DEM e a
-consulta das vias permanecem offline. A área disponível depende dos tiles
-locais e o motor mantém ausência de altitude como dado ausente.
-
-## Requisitos
-
-- Python 3.10+
-- Streamlit (veja `requirements.txt`)
-
-```powershell
-cd "C:\Users\sus\Documents\$apps\roteamento com ml"
-python -m pip install -r debug/requirements.txt
-```
-
-O app usa apenas a biblioteca padrão + Streamlit (para a camada de altimetria
-usa `Pillow` e `numpy`, que já são dependências do próprio Streamlit). Gráficos
-são Vega-Lite puro (`st.vega_lite_chart` com os dados dentro de cada camada); se
-o ambiente não conseguir renderizar, a mesma informação aparece em tabela
-Markdown. Nenhum widget depende de `pandas`/`pyarrow`.
-
-O mapa é um componente Leaflet bidirecional (`st.components.v2`), com Leaflet e
-tiles do OpenStreetMap carregados **pelo navegador** — o motor e o Python
-continuam sem acesso à rede. Em Streamlit sem `components.v2`, o app cai para um
-mapa estático (`st.iframe`), sem clique. Desmarque **Mapa com tiles (online)**
-para ver apenas o traçado offline.
-
-## Executar
-
-A partir da raiz do repositório:
+O app principal chama diretamente `router.integration.MobilityEngine.plan`.
+O worker transporta `MobilityPlan` no formato `roteamento.mobility-route-plan`,
+sem converter métricas para o antigo contrato de bicicletas.
 
 ```powershell
 python -m streamlit run debug/app.py
 ```
 
-O `app.py` adiciona `src/` ao `sys.path`, então funciona direto do checkout,
-sem instalar o pacote.
+## Consulta
 
-## Grafo
+1. Carregue um grafo v4 local ou prepare uma rede pelo PBF no painel lateral.
+2. Escolha origem e destino no mapa ou informe as coordenadas.
+3. Selecione veículo, propulsão e perfil de rota. `flattest` é o perfil inicial.
+4. Opcionalmente informe peso, carga ou potência em W/cv. Zero nos campos
+   opcionais mantém o preset; não significa massa ou potência física zero.
+5. Clique em **Executar API e capturar camadas**.
 
-O app espera um grafo no formato `roteamento.cycling-graph` **versão 4**.
-Os arquivos `data/se.json`, `data/se_raw.json` e `data/query.json` são legados
-(v1/v2) e não são aceitos pelo `load_graph` atual.
+A consulta percorre toda a rede preparada, inclusive desvios fora do corredor
+entre os pontos. A bbox serve à visualização; não recorta a busca.
+A tela principal exercita a consulta origem–destino da toolkit. Ritmo dinâmico
+e composição de paradas da API anterior não são executados por ela.
 
-Se não houver um grafo v4, use o painel lateral:
+## Rede por categoria e DEM
 
-1. abra **Construir grafo v4 a partir de PBF**;
-2. confirme o PBF local
-   (`data/sources/planet_-51.73_-17.379_ff78d815.osm.pbf`);
-3. o grafo simplificado será salvo em `debug/.cache/graph_v4.json` e
-   carregado automaticamente;
-4. se houver tiles em `data/dem`, a altimetria do DEM é aplicada ao grafo
-   durante o build.
+Uma rede preparada para bicicleta não é usada como se contivesse todas as vias
+para automóveis. Ao trocar de classe, o worker reconstrói a rede a partir do
+PBF informado e aplica os tiles Terrarium locais de `data/dem`. Sem esse PBF,
+uma categoria incompatível produz erro explícito.
 
-O `debug/.cache/` é ignorado pelo Git. A construção é local e não acessa a
-rede.
+As redes preparadas são persistidas em `debug/.cache/mobility/`, por categoria,
+fonte PBF e assinatura dos tiles DEM. Consultas seguintes reutilizam a preparação.
+O construtor do painel lateral também usa `MobilityEngine.from_pbf().prepare()`.
+Grafos antigos sem classe declarada continuam aceitos para bicicleta manual,
+com aviso de cobertura de acesso não verificada.
 
-## O que a aba Consulta mostra
+Os tiles podem ser baixados pelo botão **Baixar DEM da área visível**.
+A preparação e o cálculo usam arquivos locais; o download é uma ação separada.
+Os tiles de mapa online são requisitados pelo navegador e podem ser desligados.
 
-- métricas do contrato (`distância`, `tempo`, `subida`, `descida`, energia);
-- RPE médio e pico de RPE (estimativa provisória, Borg 6–20);
-- estado de segurança e avisos de truncamento;
-- mapa da rota com **Leaflet + tiles do OpenStreetMap** (marcadores de origem e
-  destino, link para abrir no OSM), **vias coloridas por declividade** do DEM local e
-  perfil de elevação;
-- distribuição de intensidade por distância e por tempo (`i1`..`i5`);
-- tabela da geometria (`dist_m`, velocidade, rampa, RPE, faixa, watts);
-- contrato público completo em JSON para download.
+## Resultado e progresso
 
-A aba **Logs** registra carregamento de grafo, parâmetros da consulta, chamada
-E2E, tempo de execução, avisos e erros com traceback.
+O app apresenta distância, tempo, subida, descida, trabalho mecânico na roda,
+energia de entrada da transmissão e energia da fonte/bateria quando conhecidas.
+Os presets e suas hipóteses ficam disponíveis no resultado. Nenhum RPE,
+eficiência elétrica ou autonomia é inventado para preencher a interface.
 
-## Escopo
+A primeira alternativa validada pode aparecer enquanto a busca continua.
+A toolkit publica previews pelo callback `on_plan`; a projeção e a validação
+são as mesmas usadas no resultado final. Sem assinante, previews não são
+calculados. Cancelar ou atingir o tempo limite preserva o último preview
+validado, identificado como incompleto.
 
-Este diretório é apenas de depuração: não é empacotado, não é descoberto pelos
-testes do projeto e não altera o motor.
-## Recuperação e limites da bancada
+O limite opcional de tempo inclui preparação. O botão de cancelamento, o
+heartbeat de sessão e o encerramento do subprocesso continuam disponíveis.
+Limites de expansão, buckets de velocidade e completude aparecem no contrato;
+concluir a fila com aproximação de estados não prova otimalidade exata.
 
-As consultas são executadas por `layer_worker.py` em processo separado.
-O Streamlit acompanha a execução sem bloquear o formulário e oferece
-**Cancelar consulta**. O limite inicial é zero (sem limite de tempo), configurável no
-formulário. Se definido, o próprio worker aplica esse limite mesmo sem navegador conectado.
-O tempo inclui a leitura do grafo de arquivo. Os resultados continuam vindo
-da mesma API, com inspeção das seis camadas.
+## Inspeção das camadas
 
-A captura usa uma amostra por função por padrão, sem contar cada chamada
-posterior dos cálculos físicos. Snapshots têm limite de tamanho. Esses
-contadores representam amostras, não o total de chamadas do algoritmo.
-Consultas canceladas ou encerradas pelo limite preservam o último plano validado, identificado como parcial.
-Se o navegador for fechado durante uma consulta, o worker encerra o cálculo
-após 30 segundos sem heartbeat; isso evita processos órfãos sem limitar
-consultas ativas.
+**Inspeção por camada** captura entradas, variáveis intermediárias e saídas das
+funções reais, usando `sys.monitoring` com fallback para `sys.settrace`.
+São observados `MobilityEngine.plan/prepare`, `MotionEngine.traverse`,
+`advance_motion`, modelos de resistência/propulsão, busca, circulação e
+serialização nativa. As caches exibidas pertencem ao `MotionEngine` executado.
 
-## Busca e publicação progressiva
+A vista de ML/fisiologia observa a resolução dos presets e da potência de
+referência quando o perfil do ciclista está presente. Predições calibradas
+de RPE/FC continuam opcionais; presets não são apresentados como medições.
+A captura acrescenta custo; seus tempos inclusivos não são benchmark.
 
-A consulta faz uma única busca multiobjetivo no corredor definido pelos pinos
-e pela margem do bbox. **Buscar no grafo inteiro** é uma expansão explícita da
-área de busca; não existe ampliação silenciosa nem uma segunda busca. O índice
-espacial persistente reduz o custo de recortar o corredor em grafos grandes.
+É possível baixar `mobility-route-plan.json` e `camadas-e2e.json`. Resultados
+antigos ainda podem ser exibidos pelo leitor de compatibilidade, sem executar
+o planejador anterior. A interface alternativa `debug/dash_app.py` também usa
+o mesmo adaptador da toolkit.
 
-Quando há um assinante (como o debug), a API pode publicar a primeira rota
-validada e previews posteriores. O controle **Publicar preview a cada N
-candidatas** reduz a frequência de avaliação/publicação; as avaliações e a
-geometria do preview são reutilizadas na finalização quando a identidade do
-traçado e os parâmetros coincidem. Sem assinante, a API não executa preview.
+## Validação
 
-Com paradas, as pernas podem ser processadas em paralelo; **Máximo de pernas
-simultâneas** limita essa concorrência e cada perna mantém seus caches
-mutáveis isolados. O cancelamento mantém a última rota parcial.
+```powershell
+python -m pytest tests/test_stream_progress.py tests/test_debug_mobility.py tests/test_mobility_toolkit.py
+```
 
-A conclusão cobre apenas o escopo escolhido no grafo fornecido e não é uma
-prova de otimalidade fora dele. A busca multiobjetivo pode continuar limitada
-por estados físicos contínuos; use **Cancelar** ou um tempo opcional se
-necessário. Veja `docs/reference/progressive.md`.
+Os testes Streamlit usam `AppTest` e executam o worker real sem abrir servidor.
+
+
+## Presets de ciclista restaurados
+
+**Perfil de capacidade** oferece os seis presets existentes no domínio:
+sedentário (1 W/kg), iniciante (1,5), recreacional (2), treinado (3),
+competitivo (4,2) e elite (5,5). **Nível de exercício habitual** mostra as seis
+faixas de atividade originais e seus minutos semanais. As definições vêm de
+`RiderPresets.catalogue()`, sem duplicar a tabela na interface.
+
+A referência respeita FTP > CP > perfil explícito > nível de exercício >
+padrão provisório. Uma potência manual da simulação prevalece sobre o preset.
+Sem seleção nem medida individual, a potência permanece em 200 W.
+Quando selecionado, o preset fornece a referência usada como hipótese de
+potência constante; isso fica declarado no contrato.
+
+Os valores anteriores voltaram ao formulário: ciclista 75 kg, bicicleta 12 kg,
+máxima 600 W, área frontal 0,5 m², Cd 0,9, Crr 0,005 e eficiência 0,97.
+O preview mostra massa total, CdA e potência resolvida. O resultado conserva
+o perfil, nível de exercício e proveniência usados naquela consulta,
+mesmo que os controles sejam alterados depois. As seleções são preservadas
+ao trocar de veículo.

@@ -17,31 +17,28 @@ def _table(rows):
 
 
 def init_state():
-    from router.core.physics.environment import Environment
-    from router.core.physics.traversal import PhysicalTraversal
-    from router.core.data.snapping import SnapOptions
-    env, traversal, snap = Environment(), PhysicalTraversal(), SnapOptions()
+    from router.integration import Environment, MotionEngine, SnapOptions
+    env, motion, snap = Environment(), MotionEngine(), SnapOptions()
     defaults = dict(job_timeout=0.0, capture_layers=True, trace_samples=1, wind_mps=env.headwind_mps,
                     air_density=env.air_density_kg_m3, gravity=env.gravity_m_s2,
                     speed_cap_kmh=env.safe_max_speed_mps * 3.6, initial_kmh=0.0,
-                    physics_step=traversal.step_m, require_elevation=False,
-                    snap_radius=snap.max_distance_m,
-                    bbox_padding=80.0, use_full_graph=True,
-                    progress_event_every=4, max_workers=4,
-                    predictor_enabled=False, predictor_store="debug/.cache/models", predictor_version="",
-                    rider_enabled=False, rider_ftp=0.0, rider_hr_max=0.0, rider_hr_rest=0.0,
-                    pacing_enabled=True, reference_speed_kmh=15.0)
+                    physics_step=motion.geometry.step_m, require_elevation=False,
+                    snap_radius=snap.max_distance_m, bbox_padding=80.0,
+                    progress_event_every=4, exact_speed=False, max_expansions=0,
+                    mobility_vehicle="bicycle", mobility_propulsion="manual",
+                    mobility_rider_mass=0.0, mobility_vehicle_mass=0.0, mobility_load=0.0,
+                    mobility_power=0.0, mobility_power_unit="W")
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
 
 
 def render_controls():
     st.number_input("Limite de tempo da consulta (s; 0 = sem limite)", min_value=0.0, max_value=3600.0, step=5.0, key="job_timeout")
-    st.caption("A busca apresenta rotas validadas enquanto continua. O limite opcional inclui carregar o grafo; cancelar preserva o último resultado parcial.")
-    with st.expander("Captura das camadas", expanded=True):
+    st.caption("A preparação e a busca são isoladas num worker. Cancelar preserva a última rota validada publicada.")
+    with st.expander("Captura das camadas"):
         st.checkbox("Capturar entradas, cálculos e saídas das camadas", key="capture_layers")
         st.number_input("Amostras por função", min_value=1, max_value=10, step=1, key="trace_samples")
-        st.caption("A captura acompanha a API real na thread desta consulta e acrescenta custo de depuração. As primeiras chamadas são observadas; entradas e saídas são amostradas para limitar o volume.")
+        st.caption("A instrumentação acompanha a toolkit real e acrescenta custo à consulta.")
     with st.expander("Ambiente, simulação e snapping"):
         a, b, c = st.columns(3)
         a.number_input("Vento frontal (m/s; negativo = cauda)", min_value=-50.0, max_value=50.0, key="wind_mps")
@@ -50,135 +47,50 @@ def render_controls():
         a, b, c = st.columns(3)
         a.number_input("Teto de velocidade (km/h)", min_value=1.0, max_value=200.0, key="speed_cap_kmh")
         b.number_input("Velocidade inicial (km/h)", min_value=0.0, max_value=200.0, key="initial_kmh")
-        c.number_input("Passo da simulação na busca (m)", min_value=0.5, max_value=100.0, key="physics_step")
-        st.caption("A avaliação completa usa o modo definido pelo próprio motor; a captura mostra o simulador efetivamente utilizado em cada chamada.")
+        c.number_input("Passo da simulação (m)", min_value=0.5, max_value=100.0, key="physics_step")
         st.checkbox("Exigir altimetria na simulação", key="require_elevation")
         st.number_input("Distância máxima de snapping (m)", min_value=1.0, max_value=5000.0, key="snap_radius")
-    with st.expander("Envelope de busca e bbox"):
-        st.number_input("Margem do mapa final (m)", min_value=0.0, max_value=10000.0, key="bbox_padding")
-        st.caption("A busca considera toda a malha carregada e pode encontrar desvios fora do corredor dos pontos. O mapa final acompanha as rotas devolvidas.")
     with st.expander("Busca e publicação progressiva"):
-        st.number_input(
-            "Publicar preview a cada N candidatas",
-            min_value=1,
-            max_value=100,
-            step=1,
-            key="progress_event_every",
-            help="A primeira candidata é publicada imediatamente; depois, o preview é atualizado a cada N candidatas. Isso reduz avaliações e eventos repetidos.",
-        )
-        st.number_input(
-            "Máximo de pernas simultâneas",
-            min_value=1,
-            max_value=16,
-            step=1,
-            key="max_workers",
-            help="Aplicado apenas quando há paradas. Cada perna mantém seus caches mutáveis isolados.",
-        )
-        st.caption("A captura do debug assina os eventos porque precisa mostrar o progresso. Um consumidor sem assinante não executa preview.")
-    with st.expander("Preditor ML local e dados fisiológicos"):
-        st.checkbox("Carregar preditor de um artefato local", key="predictor_enabled")
-        st.text_input("Diretório do ModelStore", key="predictor_store")
-        st.text_input("Versão do modelo registrado", key="predictor_version")
-        st.caption("Sem artefato, a API mantém a estimativa de intensidade e declara a indisponibilidade da predição calibrada. Não há treino automático nesta chamada.")
-        st.checkbox("Enviar perfil fisiológico", key="rider_enabled")
-        a, b, c = st.columns(3)
-        a.number_input("FTP medida (W; 0 = ausente)", min_value=0.0, max_value=2000.0, key="rider_ftp")
-        b.number_input("FC máxima informada (bpm; 0 = ausente)", min_value=0.0, max_value=250.0, key="rider_hr_max")
-        c.number_input("FC repouso informada (bpm; 0 = ausente)", min_value=0.0, max_value=200.0, key="rider_hr_rest")
-    with st.expander("Ritmo planejado (cartão de esforço)"):
-        st.checkbox("Aplicar política de ritmo `hold-reference-speed@2`", key="pacing_enabled")
-        st.number_input("Velocidade de referência (km/h)", min_value=1.0, max_value=60.0, step=0.5, key="reference_speed_kmh")
-        st.caption("A velocidade de referência é o ritmo planejado declarado — nunca derivada da potência. Com a política ativa, a potência varia por arco e o orçamento anaeróbio (W′) é contabilizado no próprio ritmo; sem ela, mantém-se a potência constante.")
+        st.checkbox("Comparar velocidades sem buckets (pode aumentar o custo)", key="exact_speed")
+        st.number_input("Limite de expansões (0 = sem limite)", min_value=0, step=1000, key="max_expansions")
+        st.number_input("Publicar preview a cada N candidatas", min_value=1, max_value=100, step=1, key="progress_event_every")
+        st.caption("A busca usa toda a rede preparada para a categoria. Aproximações e interrupções ficam explícitas no contrato.")
 
 
-def _execute_with_state(s, api, **request):
-    from pathlib import Path
-    from router.core.physics.environment import Environment
-    from router.core.physics.traversal import PhysicalTraversal
-    from router.core.data.snapping import SnapOptions
-    from router.core.physiology.prediction import RiderProfile
-    from router.core.prediction.model_store import ModelStore
-    from router.core.prediction.predictor import load_predictor
-    from router.integration import dumps
+def _execute_mobility_with_state(s, request, graph_path, *, on_plan=None, should_cancel=None, on_stage=None):
     from contextlib import nullcontext
-    trace = LayerTrace(samples=int(s.trace_samples)) if s.capture_layers else None
-    s.layer_report = None
-    options = {}
+    from mobility_debug import execute as execute_toolkit
+    settings = vars(s) if not isinstance(s, dict) else s
+    trace = LayerTrace(samples=int(settings["trace_samples"])) if settings["capture_layers"] else None
+    inspect = {}
     plan = None
+    s.layer_report = None
     try:
         with trace if trace is not None else nullcontext():
-            options = dict(environment=Environment(headwind_mps=s.wind_mps,
-                           air_density_kg_m3=s.air_density, gravity_m_s2=s.gravity,
-                           safe_max_speed_mps=s.speed_cap_kmh / 3.6),
-                           traversal=PhysicalTraversal(step_m=s.physics_step, require_elevation=s.require_elevation),
-                           snap_options=SnapOptions(max_distance_m=s.snap_radius),
-                           initial_speed_mps=s.initial_kmh / 3.6,
-                           pad_m=float(getattr(s, "bbox_padding", 80.0)),
-                           use_full_graph=True,
-                           progress_event_every=int(getattr(s, "progress_event_every", 4)),
-                           max_workers=int(getattr(s, "max_workers", 4)))
-            if s.predictor_enabled:
-                if not s.predictor_version.strip():
-                    raise ValueError("Informe a versão registrada do preditor local.")
-                store_path = Path(s.predictor_store).expanduser()
-                if not store_path.is_absolute():
-                    store_path = Path(__file__).resolve().parents[1] / store_path
-                options["predictor"] = load_predictor(ModelStore(store_path), s.predictor_version.strip())
-            if s.rider_enabled:
-                options["rider"] = RiderProfile(weight_kg=request["cyclist"].mass_kg,
-                    ftp_w=s.rider_ftp or None, max_heart_rate_bpm=s.rider_hr_max or None,
-                    resting_heart_rate_bpm=s.rider_hr_rest or None)
-            if getattr(s, "pacing_enabled", False):
-                from router.app.planning import reference_pacing_for
-                options["pacing"] = reference_pacing_for(
-                    request["cyclist"], options.get("rider"),
-                    reference_speed_kmh=float(s.reference_speed_kmh))
-            plan = api(**request, **options)
-            if plan is not None:
-                dumps(plan)  # Exercita também a serialização pública na captura.
-            return plan
-    except Exception as exc:
-        if trace is not None and not getattr(trace, "failure", None):
-            trace.failure = f"{type(exc).__name__}: {exc}"
-        raise
+            plan = execute_toolkit(request, settings, graph_path, on_plan=on_plan,
+                                   should_cancel=should_cancel, on_stage=on_stage, inspect=inspect)
+            plan.to_json()  # Native toolkit serialization is part of the trace.
+        return plan
     finally:
+        s.prepared_graph_path = inspect.get("prepared_graph_path")
         if trace is not None:
             report = trace.report()
-            graph = request.get("graph")
-            traversal = options.get("traversal")
-            spatial_index = None
-            if graph is not None and hasattr(graph, "has_spatial_index"):
-                spatial_index = {
-                    "persistent_grid": bool(graph.has_spatial_index()),
-                    "node_index": type(getattr(graph, "_node_spatial_index", None)).__name__
-                    if getattr(graph, "_node_spatial_index", None) is not None else None,
-                    "arc_index": type(getattr(graph, "_arc_spatial_index", None)).__name__
-                    if getattr(graph, "_arc_spatial_index", None) is not None else None,
-                }
+            engine = inspect.get("engine")
+            motion = engine.motion if engine is not None else None
             report["performance"] = {
+                "api": "router.integration.MobilityEngine.plan",
                 "search_orchestration": "router.core.search.candidate_search.search_candidates",
                 "search_scope": "provided_graph",
-                "spatial_index": spatial_index,
+                "preparation_s": inspect.get("preparation_s"),
+                "prepared_graph_path": inspect.get("prepared_graph_path"),
                 "physics_cache": {
-                    "profiles": len(getattr(traversal, "_profiles", {})),
-                    "steps": len(getattr(traversal, "_steps", {})),
-                    "equilibrium_entries": len(getattr(traversal, "_equilibrium", {})),
-                } if traversal is not None else None,
-                "preview": {
-                    "subscribed": True,
-                    "progress_event_every": int(getattr(s, "progress_event_every", 4)),
-                    "max_workers": int(getattr(s, "max_workers", 4)),
-                    "geometry_reused": True,
-                    "preview_assessments_reused": True,
-                },
-                "result": {
-                    "routes": len(getattr(plan, "routes", ()) or ()) if plan is not None else 0,
-                    "search_mode": getattr(plan, "search_mode", None) if plan is not None else None,
-                    "search_complete": getattr(plan, "search_complete", None) if plan is not None else None,
-                    "optimality_proven": getattr(plan, "optimality_proven", None) if plan is not None else None,
-                },
+                    "profiles": len(motion.geometry._profiles), "steps": len(motion.geometry._steps),
+                    "equilibrium_entries": len(motion._equilibrium),
+                } if motion is not None else None,
+                "result": plan.diagnostics if plan is not None else None,
+                "optional_layers": {"04": "Presets e referência do ciclista são observados quando informados; RPE e previsão de FC continuam opcionais."},
             }
-            report["request"] = {k: snapshot(v) for k, v in {**request, **options}.items()}
+            report["request"] = snapshot(request)
             s.layer_report = report
 
 
@@ -259,12 +171,7 @@ def render():
                        file_name="camadas-e2e.json", mime="application/json", key="layer_report_download")
 
 
-def execute(api, **request):
-    return _execute_with_state(st.session_state, api, **request)
-
-
 def start_job(**request):
-    import dataclasses
     import os
     import subprocess
     import sys
@@ -279,15 +186,15 @@ def start_job(**request):
         raise ValueError('Carregue um grafo de arquivo antes de executar a consulta isolada.')
     settings_keys = ('capture_layers', 'trace_samples', 'wind_mps', 'air_density', 'gravity',
         'speed_cap_kmh', 'initial_kmh', 'physics_step', 'require_elevation', 'snap_radius',
-        'bbox_padding', 'use_full_graph', 'progress_event_every', 'max_workers', 'predictor_enabled',
-        'predictor_store', 'predictor_version', 'rider_enabled', 'rider_ftp', 'rider_hr_max', 'rider_hr_rest',
-        'pacing_enabled', 'reference_speed_kmh')
+        'progress_event_every', 'exact_speed', 'max_expansions')
     settings = {key: s[key] for key in settings_keys}
+    source = Path(s.pbf_path_input).expanduser()
+    if not source.is_absolute():
+        source = Path(__file__).resolve().parents[1] / source
+    settings.update(pbf_path=str(source), dem_dir=str(Path(__file__).resolve().parents[1] / 'data/dem'))
     cache = Path(__file__).resolve().parent / '.cache' / 'jobs'
     cache.mkdir(parents=True, exist_ok=True)
     folder = Path(tempfile.mkdtemp(prefix='consulta-', dir=cache))
-    request['cyclist'] = dataclasses.asdict(request['cyclist'])
-    request['bicycle'] = dataclasses.asdict(request['bicycle'])
     payload = dict(graph_path=str(graph_path), settings=settings, request=request, timeout=float(s.job_timeout))
     input_path, output_path = folder / 'input.json', folder / 'result.json'
     input_path.write_text(json.dumps(payload), encoding='utf-8')
@@ -312,7 +219,7 @@ def render_job():
     import time
     from datetime import datetime
     from pathlib import Path
-    from router.integration import loads
+    from mobility_debug import read_plan
     s = st.session_state
     job = s.get('route_job')
     if job is None:
@@ -343,8 +250,8 @@ def render_job():
                 job['progress_version'] = version
                 s.progress_status = event['status']
                 details = event.get('details') or {}
-                if event['status'] in ('searching', 'route_found'):
-                    zone = ""
+                if event['status'] in ('preparing', 'searching', 'route_found'):
+                    zone = "Preparando rede da categoria" if event['status'] == 'preparing' else ""
                     if details.get('zone_nodes') is not None:
                         zone = f" · zona {details['zone_nodes']:,} nós/{details.get('zone_arcs', 0):,} arcos"
                     s.progress_message = (
@@ -352,17 +259,17 @@ def render_job():
                         f" · busca {details.get('iteration', '—')}{zone}"
                     )
                 if event.get('plan'):
-                    candidate = loads(json.dumps(event['plan']))
-                    signature = tuple((route.id, len(route.geometry)) for route in candidate.routes)
+                    candidate = read_plan(event['plan'])
+                    signature = tuple((getattr(route, 'route_id', getattr(route, 'id', None)), len(route.geometry)) for route in candidate.routes)
                     if signature != job.get('plan_signature'):
                         job['plan_signature'] = signature
                         s.last_plan = candidate
                         req = job['request']
                         s.last_run = dict(timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                             elapsed=elapsed, profile=req['profile'],
-                            sustained_power=req['cyclist']['sustainable_power_w'], stops=len(req['stops']))
+                            vehicle=req.get('vehicle', 'bicycle'), propulsion=req.get('propulsion_type', 'manual'))
                         s.selected_plan_key += 1
-                        s.selected_route = next((i for i, route in enumerate(candidate.routes) if route.id == candidate.recommended_route_id), 0)
+                        s.selected_route = next((i for i, route in enumerate(candidate.routes) if getattr(route, 'recommended', False) or getattr(route, 'id', None) == getattr(candidate, 'recommended_route_id', '__none__')), 0)
                         s.map_fit_key = f'plan:{time.time()}'
                         st.rerun(scope='app')
         except (OSError, ValueError, KeyError):
@@ -383,6 +290,14 @@ def render_job():
             raise RuntimeError(f'Processo da consulta terminou com código {code}. {tail}')
         result = json.loads(output.read_text(encoding='utf-8'))
         s.layer_report = result.get('report')
+        prepared_path = result.get('prepared_graph_path')
+        if prepared_path and prepared_path != s.graph_path:
+            from router.integration import load_graph
+            s.graph = load_graph(prepared_path)
+            s.graph_path = prepared_path
+            nodes = tuple(s.graph.nodes.values())
+            if nodes:
+                s.graph_bounds = [[min(n.lat for n in nodes), min(n.lon for n in nodes)], [max(n.lat for n in nodes), max(n.lon for n in nodes)]]
         if result.get('error'):
             raise RuntimeError(result['error'])
         status = result.get('status', 'interrupted')
@@ -393,14 +308,14 @@ def render_job():
                 s.last_error = s.progress_message or 'Busca interrompida antes da primeira rota.'
                 st.rerun(scope='app')
             raise RuntimeError('A API não retornou um plano.')
-        plan = loads(json.dumps(result['plan']))
+        plan = read_plan(result['plan'])
         s.last_plan = plan
         req = job['request']
         s.last_run = dict(timestamp=datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                          elapsed=result['elapsed'], profile=req['profile'],
-                         sustained_power=req['cyclist']['sustainable_power_w'], stops=len(req['stops']))
+                         vehicle=req.get('vehicle', 'bicycle'), propulsion=req.get('propulsion_type', 'manual'))
         s.selected_plan_key += 1
-        s.selected_route = next((i for i, route in enumerate(plan.routes) if route.id == plan.recommended_route_id), 0)
+        s.selected_route = next((i for i, route in enumerate(plan.routes) if getattr(route, 'recommended', False) or getattr(route, 'id', None) == getattr(plan, 'recommended_route_id', '__none__')), 0)
         s.map_fit_key = f'plan:{time.time()}'
     except Exception as exc:
         s.last_error = str(exc)

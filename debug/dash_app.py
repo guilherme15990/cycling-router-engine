@@ -13,9 +13,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from dash import Dash, Input, Output, State, dcc, html, no_update, ctx
 import plotly.graph_objects as go
 
-from router.integration import BicycleModel, CyclistModel, load_graph, plan_routes_progressive
+from mobility_debug import execute, VEHICLES, PROPULSIONS
+from router.integration import Environment, MotionEngine, SnapOptions
 
-import effort_colors
 
 DEFAULT_GRAPH = ROOT / "data" / "graph.json"
 if not DEFAULT_GRAPH.exists():
@@ -25,74 +25,73 @@ if not DEFAULT_GRAPH.exists():
 JOB: dict[str, object] = {"status": "idle", "plan": None, "message": "Aguardando consulta."}
 LOCK = threading.RLock()
 
-def _color(rpe):
-    return effort_colors.rpe_color(rpe)
-
 def _figure(plan):
     fig = go.Figure()
-    if plan and plan.routes:
-        route = plan.routes[0]
-        pts = list(route.geometry)
-        for a, b in zip(pts, pts[1:]):
-            fig.add_trace(go.Scattermap(
-                lat=[a.lat, b.lat], lon=[a.lon, b.lon], mode="lines",
-                line={"color": _color(b.rpe if b.rpe is not None else a.rpe), "width": 7},
-                customdata=[[b.rpe, b.grade_pct], [b.rpe, b.grade_pct]],
-                hovertemplate="RPE %{customdata[0]:.1f}<br>Inclinação %{customdata[1]:.1f}%<extra></extra>",
-                showlegend=False,
-            ))
-        fig.add_trace(go.Scattermap(lat=[pts[0].lat, pts[-1].lat], lon=[pts[0].lon, pts[-1].lon],
-                                    mode="markers", marker={"size": 13, "color": ["#16a34a", "#dc2626"]},
-                                    text=["Origem", "Destino"], showlegend=False))
-    center = {"lat": pts[0].lat, "lon": pts[0].lon} if plan and plan.routes and pts else {"lat": -17.78, "lon": -50.91}
-    fig.update_layout(map={"style": "open-street-map", "zoom": 12, "center": center}, margin={"l": 0, "r": 0, "t": 0, "b": 0}, height=620)
+    pts = plan.routes[0].geometry if plan and plan.routes else ()
+    if pts:
+        fig.add_trace(go.Scattermap(lat=[p[0] for p in pts], lon=[p[1] for p in pts], mode="lines",
+                                   line={"color": "#2563eb", "width": 7}, showlegend=False))
+    center = {"lat": pts[0][0], "lon": pts[0][1]} if pts else {"lat": -17.78, "lon": -50.91}
+    fig.update_layout(map={"style": "open-street-map", "zoom": 12, "center": center},
+                      margin={"l": 0, "r": 0, "t": 0, "b": 0}, height=620)
     return fig
 
+
 def _route_rows(plan):
-    if not plan: return []
-    rows = []
-    for route in plan.routes:
-        rows.append({"id": route.id, "perfil": route.profile, "distância_km": round(route.metrics.distance_m / 1000, 2),
-                     "tempo_min": round(route.metrics.time_s / 60, 1), "RPE_médio": round(route.ml.mean_rpe, 1),
-                     "RPE_pico": round(route.ml.peak_rpe, 1), "segura": "sim" if route.safety.eligible else "não"})
-    return rows
+    return [{"id": r.route_id, "distância_km": round(r.metrics.distance_m / 1000, 2),
+             "tempo_min": round(r.metrics.time_s / 60, 1), "subida_m": round(r.metrics.ascent_m, 1),
+             "trabalho_kJ": round(r.metrics.mechanical_energy_j / 1000, 1),
+             "fonte_Wh": "desconhecida" if r.metrics.source_energy_j is None else round(r.metrics.source_energy_j / 3600, 1)}
+            for r in plan.routes] if plan else []
+
 
 def _zone_figure(plan):
     route = plan.routes[0] if plan and plan.routes else None
-    fractions = route.ml.band_distance_fraction if route else {}
-    values = [float(fractions.get(f'i{i}', 0.0)) for i in range(1, 6)] if fractions else []
-    if not values: return go.Figure().update_layout(title="Distribuição de RPE indisponível")
-    colors = [effort_colors.RPE_BAND_COLORS[f"i{i}"] for i in range(1, 6)]
-    return go.Figure(go.Bar(x=[f'I{i}' for i in range(1, 6)], y=values, marker_color=colors)).update_layout(title="Faixas de intensidade por distância", xaxis_title="Faixa estimada", yaxis_title="Fração da distância")
+    if not route:
+        return go.Figure().update_layout(title="Energia indisponível")
+    return go.Figure(go.Bar(x=["Roda", "Entrada da transmissão"],
+        y=[route.metrics.mechanical_energy_j / 1000, route.metrics.drive_input_energy_j / 1000])).update_layout(
+            title="Trabalho mecânico", yaxis_title="kJ")
 
-def _run(origin, destination, graph_path, profile, mass, power, bike_mass):
+
+def _run(origin, destination, graph_path, profile, mass, power, vehicle_mass, vehicle, propulsion, pbf):
     try:
-        graph = load_graph(graph_path)
-        def event(e):
+        env = Environment()
+        settings = dict(physics_step=5., require_elevation=False, wind_mps=0., air_density=env.air_density_kg_m3,
+                        gravity=env.gravity_m_s2, speed_cap_kmh=env.safe_max_speed_mps * 3.6,
+                        initial_kmh=0., snap_radius=SnapOptions().max_distance_m,
+                        pbf_path=pbf, dem_dir=str(ROOT / "data/dem"))
+        def event(plan):
             with LOCK:
-                JOB["status"] = e.status
-                JOB["plan"] = e.plan
-                JOB["message"] = f"{e.status} · perna {e.leg or 1}/{e.legs}"
-        result = plan_routes_progressive(graph, tuple(origin), tuple(destination),
-            cyclist=CyclistModel(mass_kg=mass, sustainable_power_w=power), bicycle=BicycleModel(mass_kg=bike_mass), profile=profile, on_event=event, should_cancel=lambda: bool(JOB.get('cancel')))
+                JOB.update(status="route_found", plan=plan, message="Rota parcial validada; a busca continua.")
+        def stage(name, details):
+            with LOCK:
+                JOB.update(status=name, message=name)
+        plan = execute(dict(origin=origin, destination=destination, vehicle=vehicle, propulsion_type=propulsion,
+            profile=profile, refinements={"rider_mass_kg": mass or None, "vehicle_mass_kg": vehicle_mass or None,
+                                        "power_w": power or None}), settings, graph_path,
+            on_plan=event, on_stage=stage, should_cancel=lambda: bool(JOB.get('cancel')))
         with LOCK:
-            JOB.update(status=result.status, plan=result.plan, message=result.status)
+            JOB.update(status="completed" if plan.routes else "no_route", plan=plan, message="Consulta concluída.")
     except Exception as exc:
         with LOCK:
-            JOB.update(status="error", message=f"{type(exc).__name__}: {exc}")
+            JOB.update(status="interrupted" if JOB.get('cancel') else "error", message=f"{type(exc).__name__}: {exc}")
 
 app = Dash(__name__, title="Roteamento offline · API E2E")
 app.layout = html.Div([
-    html.Div([html.Span("TOPO / LAB", style={"color": "#5eead4", "letterSpacing": "0.18em", "fontWeight": "bold"}), html.H2("Bancada de roteamento", style={"margin": "8px 0"}), html.Div("Inspeção da API offline · grafo, física e intensidade", style={"color": "#94a3b8"})], style={"background": "#0f172a", "color": "white", "padding": "24px 32px", "borderRadius": "12px"}),
+    html.Div([html.Span("TOPO / LAB", style={"color": "#5eead4", "letterSpacing": "0.18em", "fontWeight": "bold"}), html.H2("Bancada de roteamento", style={"margin": "8px 0"}), html.Div("MobilityEngine · rede por categoria, física e contrato nativo", style={"color": "#94a3b8"})], style={"background": "#0f172a", "color": "white", "padding": "24px 32px", "borderRadius": "12px"}),
     html.Div([html.Div([html.H4("Entrada"), dcc.Input(id="origin", value="-17.7818345,-50.9034942", style={"width": "100%"}),
               dcc.Input(id="destination", value="-17.7711026,-50.9197426", style={"width": "100%"}),
               dcc.Input(id="graph", value=str(DEFAULT_GRAPH), style={"width": "100%"}),
-              html.Label("Perfil de busca"), dcc.Dropdown(id="profile", options=[{"label": x, "value": x} for x in ("fastest", "shortest", "balanced")], value="fastest", clearable=False),
-              html.Label("Ciclista · massa (kg)"), dcc.Input(id="mass", type="number", value=75, min=1),
-              html.Label("Potência sustentável (W)"), dcc.Input(id="power", type="number", value=200, min=1),
-              html.Label("Bicicleta · massa (kg)"), dcc.Input(id="bike_mass", type="number", value=12, min=1),
+              html.Label("Perfil de busca"), dcc.Dropdown(id="profile", options=[{"label": x, "value": x} for x in ("fastest", "shortest", "flattest", "balanced", "electric")], value="flattest", clearable=False),
+              html.Label("Veículo"), dcc.Dropdown(id="vehicle", options=[{"label": v, "value": k} for k, v in VEHICLES.items()], value="bicycle", clearable=False),
+              html.Label("Propulsão"), dcc.Dropdown(id="propulsion", options=[{"label": v, "value": k} for k, v in PROPULSIONS.items()], value="manual", clearable=False),
+              html.Label("PBF para preparar outra categoria"), dcc.Input(id="pbf", value=str(ROOT / "data/sources/planet_-51.73_-17.379_ff78d815.osm.pbf")),
+              html.Label("Peso do usuário (kg; 0 = estimado)"), dcc.Input(id="mass", type="number", value=0, min=0),
+              html.Label("Potência (W; 0 = estimada)"), dcc.Input(id="power", type="number", value=0, min=0),
+              html.Label("Peso do veículo (kg; 0 = estimado)"), dcc.Input(id="bike_mass", type="number", value=0, min=0),
               html.Button("Calcular rota", id="run", n_clicks=0, style={"width": "100%"}), html.Button("Cancelar", id="cancel", n_clicks=0)], style={"width": "290px", "display": "grid", "gap": "8px"}),
-             html.Div([html.H4("Camadas"), html.Ul([html.Li("01 · dados e snapping"), html.Li("02 · DEM e altimetria"), html.Li("03 · perfis e A*"), html.Li("04 · ML / RPE"), html.Li("05 · segurança"), html.Li("06 · contrato")])], style={"paddingLeft": "24px"})], style={"display": "flex", "gap": "32px", "padding": "12px"}),
+             html.Div([html.H4("Camadas"), html.Ul([html.Li("01 · dados e snapping"), html.Li("02 · DEM e altimetria"), html.Li("03 · perfis e A*"), html.Li("04 · predição opcional (não executada)"), html.Li("05 · validação de circulação"), html.Li("06 · contrato")])], style={"paddingLeft": "24px"})], style={"display": "flex", "gap": "32px", "padding": "12px"}),
     html.Div([
         html.Div(id="status", children="Aguardando consulta.", style={"fontWeight": "600"}),
         html.Div(id="summary", style={"display": "flex", "gap": "24px", "padding": "8px 0"}),
@@ -100,14 +99,14 @@ app.layout = html.Div([
     dcc.Interval(id="poll", interval=1000, n_intervals=0),
     dcc.Tabs([dcc.Tab(label="Mapa e segmentos", children=[dcc.Graph(id="map", figure=_figure(None))]),
               dcc.Tab(label="Rotas", children=[html.Div(id="route_table")]),
-              dcc.Tab(label="RPE e zonas", children=[dcc.Graph(id="zone_chart", figure=_zone_figure(None))]),
+              dcc.Tab(label="Energia", children=[dcc.Graph(id="zone_chart", figure=_zone_figure(None))]),
               dcc.Tab(label="Contrato / diagnóstico", children=[html.Pre(id="details", style={"whiteSpace": "pre-wrap", "padding": "12px"})])]),
 ], style={"fontFamily": "Segoe UI, sans-serif", "background": "#f1f5f9", "color": "#0f172a", "padding": "20px", "maxWidth": "1600px", "margin": "auto"})
 
 @app.callback(Output("status", "children"), Output("map", "figure"), Output("details", "children"), Output("route_table", "children"), Output("zone_chart", "figure"), Output("summary", "children"),
               Input("run", "n_clicks"), Input("poll", "n_intervals"), Input("cancel", "n_clicks"),
-              State("origin", "value"), State("destination", "value"), State("graph", "value"), State("profile", "value"), State("mass", "value"), State("power", "value"), State("bike_mass", "value"), prevent_initial_call=True)
-def update(_, __, cancel, origin_text, destination_text, graph_path, profile, mass, power, bike_mass):
+              State("origin", "value"), State("destination", "value"), State("graph", "value"), State("profile", "value"), State("mass", "value"), State("power", "value"), State("bike_mass", "value"), State("vehicle", "value"), State("propulsion", "value"), State("pbf", "value"), prevent_initial_call=True)
+def update(_, __, cancel, origin_text, destination_text, graph_path, profile, mass, power, bike_mass, vehicle, propulsion, pbf):
     if ctx.triggered_id == 'cancel':
         with LOCK: JOB['cancel'] = True
     if not JOB.get("thread") or not getattr(JOB.get("thread"), "is_alive", lambda: False)():
@@ -116,7 +115,7 @@ def update(_, __, cancel, origin_text, destination_text, graph_path, profile, ma
                 origin = tuple(map(float, origin_text.split(",")))
                 destination = tuple(map(float, destination_text.split(",")))
                 with LOCK: JOB.update(status="searching", message="Iniciando busca.", plan=None, cancel=False)
-                thread = threading.Thread(target=_run, args=(origin, destination, graph_path, profile, mass, power, bike_mass), daemon=True)
+                thread = threading.Thread(target=_run, args=(origin, destination, graph_path, profile, mass, power, bike_mass, vehicle, propulsion, pbf), daemon=True)
                 with LOCK: JOB["thread"] = thread
                 thread.start()
             except Exception as exc:
@@ -126,12 +125,10 @@ def update(_, __, cancel, origin_text, destination_text, graph_path, profile, ma
     details = ""
     rows = _route_rows(plan)
     if plan:
-        route = plan.routes[0] if plan.routes else None
-        details = json.dumps({"status": status, "routes": len(plan.routes), "mean_rpe": route.ml.mean_rpe if route else None,
-                              "peak_rpe": route.ml.peak_rpe if route else None, "zone": plan.zone.to_dict()}, ensure_ascii=False, indent=2)
+        details = plan.to_json(indent=2)
     table = html.Table([html.Thead(html.Tr([html.Th(k) for k in (rows[0].keys() if rows else ["Nenhuma rota"])])),
                         html.Tbody([html.Tr([html.Td(v) for v in row.values()]) for row in rows])], style={"width": "100%", "padding": "12px"}) if rows else html.Div("Nenhuma rota elegível.")
-    summary = [html.Div(f"RPE médio: {rows[0]['RPE_médio']}") for _ in [0]] if rows else []
+    summary = [html.Div(f"Rotas: {len(rows)} · acesso: {plan.diagnostics.get('access_mode')}")] if rows else []
     return message, _figure(plan), details, table, _zone_figure(plan), summary
 
 if __name__ == "__main__":

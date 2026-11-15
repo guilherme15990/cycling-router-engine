@@ -51,7 +51,39 @@ from router.contracts import (
 )
 from router.offline import OfflineViolation, is_network_disabled, offline
 
+_MOBILITY_EXPORTS = (
+    "RiderPresets",
+    "MobilityEngine",
+    "SearchCancelled",
+    "MobilityProfile",
+    "VehicleCategory",
+    "PropulsionType",
+    "MotionEngine",
+    "PropulsionModel",
+    "PropulsionOutput",
+    "ConstantPower",
+    "ConstantForce",
+    "RoadLoadModel",
+    "StandardRoadLoad",
+    "RoadProfile",
+    "RoadStep",
+    "ForceBreakdown",
+    "MotionState",
+    "Environment",
+    "SnapOptions",
+    "SearchConfig",
+    "MobilityPlan",
+    "MobilityRoute",
+    "MobilityMetrics",
+    "power_in_watts",
+    "ElevationProvider",
+    "CallableElevation",
+    "TerrariumElevation",
+)
+
+
 __all__ = [
+    *_MOBILITY_EXPORTS,
     "plan_routes_progressive",
     "RouteProgress",
     "altimetry_edges",
@@ -113,6 +145,9 @@ def __getattr__(name: str) -> Any:
     apenas ``contracts``/``offline``. Cada ramo e um import estatico; nomes
     desconhecidos levantam ``AttributeError`` (inclusive os DTOs internos).
     """
+    if name in _MOBILITY_EXPORTS:
+        from router.app import mobility
+        return getattr(mobility, name)
     if name in {"plan_routes_progressive", "RouteProgress"}:
         from router.app.progressive import plan_routes_progressive, RouteProgress
         return {"plan_routes_progressive": plan_routes_progressive, "RouteProgress": RouteProgress}[name]

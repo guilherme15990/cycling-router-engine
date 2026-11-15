@@ -1,7 +1,7 @@
 """Debug E2E do motor de roteamento, em Streamlit.
 
 A aba **Consulta** e a interface principal: carrega um grafo v4, monta a
-consulta, chama ``router.integration.plan_routes_progressive`` e mostra o
+consulta, chama ``router.integration.MobilityEngine.plan`` e mostra o
 resultado validado, incluindo previews enquanto a busca continua.
 A aba **Logs** e separada e registra cada etapa da sessao.
 
@@ -43,12 +43,9 @@ import effort_colors
 import layer_lab
 
 from router.integration import (
-    BicycleModel,
-    CyclistModel,
     PROFILE_IDS,
     dumps,
     load_graph,
-    plan_routes,
 )
 from router.core.data.geo import haversine_m
 
@@ -385,17 +382,10 @@ def _default_state() -> dict[str, Any]:
         "origin_text": "",
         "destination_text": "",
         "stops_text": "",
-        "profile_select": "fastest" if "fastest" in PROFILE_IDS else PROFILE_IDS[0],
+        "profile_select": "flattest" if "flattest" in PROFILE_IDS else PROFILE_IDS[0],
         "max_routes": 0,
         "collapse_similar": False,
         "sustained_power": 200.0,
-        "cyclist_mass": 75.0,
-        "max_power": 600.0,
-        "frontal_area": 0.5,
-        "bike_mass": 12.0,
-        "crr": 0.005,
-        "cd": 0.9,
-        "efficiency": 0.97,
         "graph_path_input": str(DEFAULT_GRAPH),
         "pbf_path_input": str(DEFAULT_PBF),
         "graph_out_input": str(GRAPH_CACHE),
@@ -696,111 +686,22 @@ def _suggest_if_empty(graph: Any) -> None:
 
 
 def _build_graph(pbf: Path, out: Path) -> None:
-    from router.app.tooling import (
-        BuildOptions,
-        build_graph,
-        read_osm_pbf,
-        save_json,
-        simplify_graph,
-    )
-
-    _log("INFO", f"Lendo OSM.PBF: {_display_path(pbf)}")
-    data = read_osm_pbf(pbf)
-    _log("INFO", f"OSM: {len(data.nodes)} nos, {len(data.ways)} vias")
-
-    graph, stats = build_graph(data, BuildOptions())
-    _log(
-        "INFO",
-        f"Grafo bruto: {graph.node_count} nos, {graph.arc_count} arcos "
-        f"({stats.segments} segmentos)",
-    )
-
-    simplified, simplify_stats = simplify_graph(graph)
-    _log(
-        "INFO",
-        "Simplificacao: "
-        f"{simplify_stats.nodes_before}->{simplify_stats.nodes_after} nos, "
-        f"{simplify_stats.arcs_before}->{simplify_stats.arcs_after} arcos",
-    )
-
-    if _dem_zoom() is None:
-        _log("WARN", f"Sem tiles de altimetria em {_display_path(DEM_DIR)}; grafo fica sem DEM.")
-    else:
-        try:
-            _apply_dem_elevation(simplified)
-        except Exception as exc:
-            _log_exc("Falha ao aplicar altimetria do DEM", exc)
-
+    from router.integration import MobilityEngine, MobilityProfile, save_graph
+    mobility = MobilityProfile.create(st.session_state.mobility_vehicle, st.session_state.mobility_propulsion)
+    _log("INFO", f"Preparando {mobility.transport_mode} a partir de {_display_path(pbf)}")
+    engine = MobilityEngine.from_pbf(pbf, elevation_tiles=DEM_DIR if _dem_zoom() is not None else None)
+    graph = engine.prepare(mobility=mobility)
+    graph.metadata["source_pbf"] = str(pbf.resolve())
     out.parent.mkdir(parents=True, exist_ok=True)
-    save_json(simplified, out)
-    _set_graph(simplified, out)
+    save_graph(graph, out)
+    _set_graph(graph, out)
     st.session_state["_pending_graph_path"] = str(out)
-    _log("OK", f"Grafo v4 salvo em {_display_path(out)}")
-    _suggest_if_empty(simplified)
+    _suggest_if_empty(graph)
+    _log("OK", f"Rede {mobility.transport_mode} salva em {_display_path(out)}")
 
 
 # ==========================================================================
 # Execucao E2E
-# ==========================================================================
-def _execute_plan(
-    *,
-    graph: Any,
-    origin: tuple[float, float],
-    destination: tuple[float, float],
-    stops: tuple[tuple[float, float], ...],
-    profile: str,
-    cyclist: CyclistModel,
-    bicycle: BicycleModel,
-    max_routes: int,
-    collapse_similar: bool = True,
-) -> tuple[Any, float]:
-    _log(
-        "INFO",
-        "plan_routes: "
-        f"origem={_format_coord(origin)} | destino={_format_coord(destination)} | "
-        f"paradas={len(stops)} | perfil={profile!r}",
-    )
-    started = time.perf_counter()
-    plan = layer_lab.execute(
-        plan_routes,
-        graph=graph,
-        origin=origin,
-        destination=destination,
-        stops=stops,
-        cyclist=cyclist,
-        bicycle=bicycle,
-        profile=profile,
-        max_routes=max_routes or None,
-        collapse_similar=collapse_similar,
-    )
-    elapsed = time.perf_counter() - started
-
-    if plan.reached and plan.routes:
-        _log(
-            "OK",
-            f"Plano concluido em {elapsed:.2f}s: {len(plan.routes)} rota(s); "
-            f"recomendada={plan.recommended_route_id!r}",
-        )
-    else:
-        _log(
-            "WARN",
-            f"Plano sem rota em {elapsed:.2f}s (reached={plan.reached})",
-        )
-
-    for warning in plan.warnings:
-        _log("WARN", warning)
-    if plan.truncated:
-        _log("WARN", "Busca truncada por max_expansions.")
-    if plan.frontier_truncated:
-        _log(
-            "WARN",
-            f"Fronteira podada: {plan.dropped_labels} label(s) nao dominada(s).",
-        )
-    return plan, elapsed
-
-
-# ==========================================================================
-# Renderizacao
 # ==========================================================================
 def _render_sidebar() -> None:
     with st.sidebar:
@@ -844,7 +745,7 @@ def _render_sidebar() -> None:
 
             has_elevation = _graph_has_elevation(graph)
             if not has_elevation:
-                st.warning("Grafo sem altimetria (perfil plano).", icon=":material/landscape:")
+                st.warning("Grafo sem altimetria.", icon=":material/landscape:")
             if _dem_zoom() is None:
                 st.caption(f"Sem tiles DEM em `{_display_path(DEM_DIR)}`.")
             elif st.button(
@@ -877,7 +778,7 @@ def _render_sidebar() -> None:
         with st.expander("Construir grafo v4 a partir de PBF"):
             st.caption(
                 "Preparacao local (opcional). O fluxo principal continua sendo "
-                "a chamada E2E em `plan_routes_progressive`."
+                "a chamada E2E em `MobilityEngine.plan`."
             )
             st.text_input("PBF local", key="pbf_path_input")
             st.text_input("Saida do grafo", key="graph_out_input")
@@ -902,177 +803,82 @@ def _render_sidebar() -> None:
             st.markdown(
                 "A aba **Consulta** configura e executa a API. **Inspeção por camada** mostra entradas, cálculos e saídas reais. A aba **Logs** "
                 "registra cada etapa da sessao.\n\n"
-                "API E2E: `router.integration.plan_routes_progressive`.\n\n"
+                "API E2E: `router.integration.MobilityEngine.plan`.\n\n"
                 "Clique no mapa para escolher origem/destino; a rota aparece "
                 "no mesmo mapa depois do calculo."
             )
 
 
 def _render_form() -> None:
+    from mobility_debug import VEHICLES, PROPULSIONS, profile_for_request
+    from router.integration import RiderPresets
+    import rider_controls
+    st.subheader("Parâmetros da rota", icon=":material/tune:")
+    a, b = st.columns(2)
+    a.selectbox("Veículo", list(VEHICLES), format_func=VEHICLES.get, key="mobility_vehicle")
+    b.selectbox("Propulsão", list(PROPULSIONS), format_func=PROPULSIONS.get, key="mobility_propulsion")
+    cycling = st.session_state.mobility_vehicle in {"bicycle", "cargo_bike"}
+    if cycling:
+        rider_controls.render_selectors()
     with st.form("route_form"):
-        st.subheader("Parâmetros da rota", icon=":material/tune:")
-        c1, c2 = st.columns(2)
-        c1.text_input(
-            "Origem (lat, lon)",
-            key="origin_text",
-            placeholder="-23.550000, -46.630000",
-        )
-        c2.text_input(
-            "Destino (lat, lon)",
-            key="destination_text",
-            placeholder="-23.560000, -46.640000",
-        )
-
-        st.text_area(
-            "Paradas intermediarias (uma por linha: lat, lon)",
-            key="stops_text",
-            height=72,
-            placeholder="Opcional. Ex.: -23.555000, -46.635000",
-        )
-
-        c3, c4, c5 = st.columns(3)
-        c3.selectbox("Perfil", list(PROFILE_IDS), key="profile_select")
-        c4.number_input(
-            "Max. rotas (0 = automatico)",
-            min_value=0,
-            max_value=50,
-            step=1,
-            key="max_routes",
-            help=(
-                "Com o colapso ligado: 0 devolve o conjunto distinto (corte no "
-                "maior salto) e N devolve as N rotas mais dissimiles "
-                "(farthest-first). Com o colapso desligado: 0 devolve a "
-                "fronteira inteira e N limita as N primeiras da ordem do perfil."
-            ),
-        )
-        c5.number_input(
-            "Potencia sustentada (W)",
-            min_value=0.0,
-            max_value=2_000.0,
-            step=10.0,
-            key="sustained_power",
-            help="0 usa o padrao do motor: min(200, potencia maxima).",
-        )
-
-        st.checkbox(
-            "Colapsar rotas quase-iguais (conjunto distinto)",
-            key="collapse_similar",
-            help=(
-                "Ligado (padrao): apresenta apenas as rotas estruturalmente "
-                "distintas — a fronteira Pareto costuma ter dezenas de "
-                "quase-duplicatas. Desligue para comparar com a fronteira "
-                "inteira, sem colapso."
-            ),
-        )
-
-        with st.expander("Ciclista e bicicleta"):
-            p1, p2, p3 = st.columns(3)
-            p1.number_input(
-                "Massa do ciclista (kg)",
-                min_value=30.0,
-                max_value=200.0,
-                step=1.0,
-                key="cyclist_mass",
-            )
-            p2.number_input(
-                "Potencia maxima (W)",
-                min_value=100.0,
-                max_value=2_000.0,
-                step=10.0,
-                key="max_power",
-            )
-            p3.number_input(
-                "Area frontal (m2)",
-                min_value=0.2,
-                max_value=1.2,
-                step=0.01,
-                key="frontal_area",
-            )
-            b1, b2, b3, b4 = st.columns(4)
-            b1.number_input(
-                "Massa da bike (kg)",
-                min_value=5.0,
-                max_value=40.0,
-                step=0.5,
-                key="bike_mass",
-            )
-            b2.number_input(
-                "Crr",
-                min_value=0.001,
-                max_value=0.02,
-                step=0.001,
-                format="%.3f",
-                key="crr",
-            )
-            b3.number_input(
-                "Cd",
-                min_value=0.3,
-                max_value=1.5,
-                step=0.05,
-                key="cd",
-            )
-            b4.number_input(
-                "Eficiencia",
-                min_value=0.7,
-                max_value=1.0,
-                step=0.01,
-                key="efficiency",
-            )
-
+        a, b = st.columns(2)
+        a.text_input("Origem (lat, lon)", key="origin_text")
+        b.text_input("Destino (lat, lon)", key="destination_text")
+        st.selectbox("Perfil da rota", list(PROFILE_IDS), key="profile_select")
+        if cycling:
+            rider_controls.render_physical_inputs()
+        else:
+            with st.expander("Refinamentos opcionais"):
+                a, b = st.columns(2)
+                a.number_input("Peso do usuário (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_rider_mass")
+                b.number_input("Peso do veículo (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_vehicle_mass")
+        a, b, c = st.columns(3)
+        a.number_input("Potência manual da simulação (0 = perfil/padrão)", min_value=0.0, step=10.0, key="mobility_power")
+        b.selectbox("Unidade da potência", ["W", "cv"], key="mobility_power_unit")
+        c.number_input("Carga adicional (kg)", min_value=0.0, step=1.0, key="mobility_load")
+        st.number_input("Máximo de rotas (0 = todas)", min_value=0, max_value=50, step=1, key="max_routes")
+        st.checkbox("Colapsar rotas quase-iguais (conjunto distinto)", key="collapse_similar")
         layer_lab.render_controls()
-        submitted = st.form_submit_button(
-            "Executar API e capturar camadas", type="primary", disabled=st.session_state.get("route_job") is not None, **_WIDE
-        )
-
-    if not submitted:
-        return
-
-    st.session_state.layer_report = None
-    graph = st.session_state.graph
-    if graph is None:
-        st.error("Carregue um grafo antes de calcular.")
-        return
-
+        submitted = st.form_submit_button("Executar API e capturar camadas", type="primary",
+            disabled=st.session_state.get("route_job") is not None, width="stretch")
     try:
-        origin = _parse_coord(st.session_state.origin_text, "origem")
-        destination = _parse_coord(st.session_state.destination_text, "destino")
-        stops = _parse_stops(st.session_state.stops_text)
-
-        max_power = float(st.session_state.max_power)
-        sustained = float(st.session_state.sustained_power)
-        if sustained <= 0.0:
-            sustained = min(200.0, max_power)
-
-        cyclist = CyclistModel(
-            mass_kg=float(st.session_state.cyclist_mass),
-            max_power_w=max_power,
-            sustainable_power_w=sustained,
-            frontal_area_m2=float(st.session_state.frontal_area),
-        )
-        bicycle = BicycleModel(
-            mass_kg=float(st.session_state.bike_mass),
-            rolling_resistance=float(st.session_state.crr),
-            drag_coefficient=float(st.session_state.cd),
-            drivetrain_efficiency=float(st.session_state.efficiency),
-        )
-
+        refinements = {"rider_mass_kg": st.session_state.cyclist_mass if cycling else st.session_state.mobility_rider_mass or None,
+                       "vehicle_mass_kg": st.session_state.bike_mass if cycling else st.session_state.mobility_vehicle_mass or None,
+                       "load_mass_kg": st.session_state.mobility_load}
+        if cycling:
+            refinements.update(cda_m2=st.session_state.frontal_area * st.session_state.cd,
+                               rolling_resistance=st.session_state.crr,
+                               drive_efficiency=st.session_state.efficiency)
+        if st.session_state.mobility_power:
+            refinements["power_cv" if st.session_state.mobility_power_unit == "cv" else "power_w"] = st.session_state.mobility_power
+        request = dict(vehicle=st.session_state.mobility_vehicle, propulsion_type=st.session_state.mobility_propulsion,
+                       refinements=refinements, rider=rider_controls.rider_request() if cycling else None)
+        if cycling:
+            mobility, context = RiderPresets.resolve(profile_for_request(request), request["rider"])
+            rider_controls.render_resolved(mobility, context)
+        if not submitted:
+            return
         layer_lab.start_job(
-            origin=origin, destination=destination, stops=stops,
-            cyclist=cyclist, bicycle=bicycle,
-            profile=st.session_state.profile_select,
+            origin=_parse_coord(st.session_state.origin_text, "origem"),
+            destination=_parse_coord(st.session_state.destination_text, "destino"),
+            **request, profile=st.session_state.profile_select,
             max_routes=int(st.session_state.max_routes) or None,
-            collapse_similar=bool(st.session_state.collapse_similar),
-        )
+            collapse_similar=bool(st.session_state.collapse_similar))
     except Exception as exc:
-        st.session_state.last_plan = None
-        st.session_state.last_error = traceback.format_exc()
-        _log_exc("Falha ao iniciar consulta", exc)
         st.error(str(exc))
+        if submitted:
+            st.session_state.last_error = traceback.format_exc()
+            _log_exc("Falha ao iniciar consulta", exc)
         return
     st.rerun()
 
 
 def _render_plan(plan: Any) -> None:
+    from router.integration import MobilityPlan
+    if isinstance(plan, MobilityPlan):
+        from mobility_view import render
+        render(plan, render_chart=_render_chart)
+        return
     run = st.session_state.last_run or {}
     st.divider()
     head_left, head_right = st.columns([4, 1])
@@ -1092,8 +898,8 @@ def _render_plan(plan: Any) -> None:
     if run:
         st.caption(
             f"Execucao {run['timestamp']} em {run['elapsed']:.2f}s | "
-            f"{run['profile']} | {run['sustained_power']:.0f} W | "
-            f"paradas={run['stops']}"
+            f"{run['profile']} | {run.get('sustained_power', 0):.0f} W | "
+            f"paradas={run.get('stops', 0)}"
         )
 
     pareto = int(getattr(plan, "pareto_route_count", 0) or 0)
@@ -1129,7 +935,7 @@ def _render_plan(plan: Any) -> None:
     routes = list(plan.routes)
     labels = [
         (
-            f"{'[recomendada] ' if route.id == plan.recommended_route_id else ''}"
+            f"{'[recomendada] ' if getattr(route, "recommended", False) or getattr(route, "id", None) == getattr(plan, "recommended_route_id", "__none__") else ''}"
             f"{route.id} | {route.metrics.distance_m / 1000.0:.2f} km | "
             f"{route.metrics.time_s / 60.0:.1f} min"
         )
@@ -1223,7 +1029,7 @@ def _recommended_route_index(plan: Any) -> int:
         (
             index
             for index, route in enumerate(routes)
-            if route.id == plan.recommended_route_id
+            if getattr(route, "recommended", False) or getattr(route, "id", None) == getattr(plan, "recommended_route_id", "__none__")
         ),
         0,
     )
@@ -1252,7 +1058,8 @@ def _selected_route_coords() -> list[list[float]]:
     routes = list(plan.routes)
     index = _selected_route_index(len(routes))
     points = [
-        [round(float(point.lat), 6), round(float(point.lon), 6)]
+        [round(float(point[0]), 6), round(float(point[1]), 6)] if isinstance(point, (tuple, list))
+        else [round(float(point.lat), 6), round(float(point.lon), 6)]
         for point in routes[index].geometry
     ]
     if len(points) > 2_000:
@@ -1268,6 +1075,9 @@ def _selected_route_segments() -> list[dict[str, Any]]:
     index = _selected_route_index(len(plan.routes))
     geometry = list(plan.routes[index].geometry)
     segments: list[dict[str, Any]] = []
+    if geometry and isinstance(geometry[0], (tuple, list)):
+        return [{"pts": [list(a), list(b)], "rpe": None, "grade_pct": None, "band": None}
+                for a, b in zip(geometry, geometry[1:])]
     for previous, current in zip(geometry, geometry[1:]):
         segments.append({
             "pts": [[round(float(previous.lat), 6), round(float(previous.lon), 6)],
@@ -2098,8 +1908,8 @@ def _render_system() -> None:
         )
     st.caption(
         "Consulta E2E via "
-        "`router.integration.plan_routes_progressive` (grafo -> snapping -> fisica -> "
-        "intensidade -> contrato)."
+        "`router.integration.MobilityEngine.plan` (grafo -> snapping -> fisica -> "
+        "mobilidade -> contrato nativo)."
     )
 
     # O seletor de pontos fica sempre no topo, mesmo sem grafo carregado:
@@ -2136,7 +1946,7 @@ def _render_system() -> None:
     graph = st.session_state.graph
     if not _graph_has_elevation(graph):
         st.info(
-            "Este grafo nao tem altimetria (o perfil da rota fica plano). "
+            "Este grafo não tem altimetria; os resultados terão incerteza de elevação. "
             "Use **Aplicar altimetria do DEM local** no painel lateral, ou "
             "reconstrua o grafo a partir do PBF (o build ja aplica o DEM)."
         )
@@ -2161,6 +1971,8 @@ def main() -> None:
     )
     _init_state()
     layer_lab.init_state()
+    import rider_controls
+    rider_controls.init_state()
     _apply_pending()
     _render_sidebar()
 

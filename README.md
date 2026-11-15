@@ -31,3 +31,10 @@ A maioria dos roteadores convencionais trata o relevo e o esforço como penalida
 
 O planejamento usa o mesmo motor físico em todos os perfis e considera o grafo
 carregado completo. Veja [busca física, precisão e benchmarks](docs/physical-search.md).
+
+
+### Toolkit de mobilidade
+
+A engine também oferece uma API orientada à estrada, com presets leves por
+veículo/propulsão e extensões para tração e resistência, preservando a API
+ciclável. Veja [uso, contratos e limites do toolkit](docs/mobility-toolkit.md).

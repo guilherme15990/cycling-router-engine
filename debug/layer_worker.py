@@ -5,7 +5,6 @@ import sys
 import threading
 import time
 import traceback
-from dataclasses import asdict
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -37,31 +36,25 @@ def main():
         if reason is not None:
             result.update(status='interrupted', details={'reason': reason})
             return
-        from router.integration import plan_routes_progressive, load_graph, CyclistModel, BicycleModel, dumps
-        from layer_lab import _execute_with_state
+        from router.integration import SearchCancelled
+        from layer_lab import _execute_mobility_with_state
         request = payload['request']
-        request['cyclist'] = CyclistModel(**request['cyclist'])
-        request['bicycle'] = BicycleModel(**request['bicycle'])
-        request['origin'] = tuple(request['origin'])
-        request['destination'] = tuple(request['destination'])
-        request['stops'] = tuple(map(tuple, request['stops']))
-        request['graph'] = load_graph(payload['graph_path'])
         progress_path = input_path.with_name('progress.json')
         cancel_path = input_path.with_name('cancel')
         heartbeat_path = input_path.with_name('heartbeat')
         last_write = [0.0]
         latest_event = [None]
-        def publish(event):
-            latest_event[0] = event
+        def publish(status, plan=None, details=None):
+            if plan is not None:
+                latest_event[0] = plan
             now = time.monotonic()
-            terminal = event.status in {'completed', 'no_route', 'interrupted'}
-            first_route = event.status == 'route_found' and not getattr(publish, 'sent_route', False)
+            terminal = status in {'completed', 'no_route', 'interrupted'}
+            first_route = status == 'route_found' and not getattr(publish, 'sent_route', False)
             if not terminal and not first_route and now - last_write[0] < 1:
                 return
             if first_route:
                 publish.sent_route = True
-            data = {'status': event.status, 'plan': event.plan.to_dict() if event.plan else None,
-                    'leg': event.leg, 'legs': event.legs, 'details': event.details}
+            data = {'status': status, 'plan': plan.to_dict() if plan is not None else None, 'details': details}
             temporary = progress_path.with_suffix('.tmp')
             try:
                 temporary.write_text(json.dumps(data, ensure_ascii=False), encoding='utf-8')
@@ -81,19 +74,25 @@ def main():
                           'Sessão inativa por mais de 30 segundos' if inactive else None)
                 last_check[:] = [now, reason is not None, reason]
             return last_check[1]
-        def progressive_api(**kwargs):
-            event = plan_routes_progressive(**kwargs, on_event=publish, should_cancel=cancelled)
-            result['status'] = event.status
-            result['details'] = ({'reason': last_check[2]} if event.status == 'interrupted' and last_check[2]
-                                 else event.details)
-            return event.plan
-        plan = _execute_with_state(state, progressive_api, **request)
-        if plan is not None:
-            result['plan'] = json.loads(dumps(plan))
+        try:
+            plan = _execute_mobility_with_state(
+                state, request, payload['graph_path'],
+                on_plan=lambda plan: publish('route_found', plan), should_cancel=cancelled,
+                on_stage=lambda name, details: publish(name, details=details),
+            )
+            result['status'] = 'completed' if plan.routes else 'no_route'
+            result['plan'] = plan.to_dict()
+            publish(result['status'], plan)
+        except (SearchCancelled, InterruptedError):
+            result.update(status='interrupted', details={'reason': last_check[2] or 'Consulta interrompida'})
+            if latest_event[0] is not None:
+                result['plan'] = latest_event[0].to_dict()
+            publish('interrupted', latest_event[0], result['details'])
     except Exception:
         result['error'] = traceback.format_exc()
     finally:
-        result.update(report=state.layer_report, elapsed=time.monotonic() - started)
+        result.update(report=state.layer_report, elapsed=time.monotonic() - started,
+                      prepared_graph_path=getattr(state, "prepared_graph_path", None))
         temp = output_path.with_suffix('.tmp')
         temp.write_text(json.dumps(result, ensure_ascii=False), encoding='utf-8')
         temp.replace(output_path)

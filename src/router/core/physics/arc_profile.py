@@ -23,6 +23,33 @@ from .models import ElevationUncertainty
 _EPS = 1e-9
 
 
+class RoadProfileCache:
+    """Vehicle-independent road preparation, reused by every motion adapter."""
+    def __init__(self, step_m: float = 5.0, require_elevation: bool = False):
+        if not math.isfinite(step_m) or step_m <= 0:
+            raise ValueError("step_m must be finite and positive")
+        self.step_m = float(step_m)
+        self.require_elevation = bool(require_elevation)
+        self._profiles = {}
+        self._steps = {}
+
+    def profile(self, arc: Arc) -> "ArcProfile":
+        cached = self._profiles.get(arc.id)
+        if cached is not None and cached[0] is arc:
+            return cached[1]
+        profile = ArcProfile.from_arc(arc)
+        self._profiles[arc.id] = (arc, profile)
+        return profile
+
+    def steps(self, arc: Arc) -> tuple["ProfileStep", ...]:
+        cached = self._steps.get(arc.id)
+        if cached is not None and cached[0] is arc and cached[1] == self.step_m:
+            return cached[2]
+        steps = self.profile(arc).steps(self.step_m)
+        self._steps[arc.id] = (arc, self.step_m, steps)
+        return steps
+
+
 @dataclass(frozen=True, slots=True)
 class SegmentProfile:
     """Resumo fisico de um ``Segment``."""
@@ -39,6 +66,8 @@ class SegmentProfile:
     observed_elevation_m: float = 0.0
     interpolated_elevation_m: float = 0.0
     estimated_elevation_m: float = 0.0
+    tags: tuple[tuple[str, str], ...] = ()
+    geometry: tuple[tuple[float, float], ...] = ()
 
     @property
     def elevation_delta_m(self) -> float | None:
@@ -60,6 +89,11 @@ class ProfileStep:
     bicycle_access: BicycleAccess
     max_speed_mps: float | None
     segment_id: str
+    tags: tuple[tuple[str, str], ...] = ()
+    geometry: tuple[tuple[float, float], ...] = ()
+
+    def tag(self, name: str, default=None):
+        return next((value for key, value in self.tags if key == name), default)
 
     @property
     def elevation_delta_m(self) -> float | None:
@@ -198,6 +232,8 @@ class ArcProfile:
                     observed_elevation_m=observed,
                     interpolated_elevation_m=interpolated,
                     estimated_elevation_m=estimated,
+                    tags=tuple(sorted(segment.tags.items())),
+                    geometry=segment.geometry,
                 )
             )
             ascent += segment.elevation_gain_m
@@ -377,6 +413,8 @@ def _flat_steps(
             bicycle_access=segment.bicycle_access,
             max_speed_mps=segment.max_speed_mps,
             segment_id=segment.segment_id,
+            tags=segment.tags,
+            geometry=segment.geometry,
         )
         for index in range(count)
     ]
@@ -414,6 +452,8 @@ def _sloped_steps(
                 bicycle_access=segment.bicycle_access,
                 max_speed_mps=segment.max_speed_mps,
                 segment_id=segment.segment_id,
+                tags=segment.tags,
+                geometry=segment.geometry,
             )
         )
     return steps
