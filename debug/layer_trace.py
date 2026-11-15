@@ -87,13 +87,13 @@ def layer_for(module, name):
         "from_result", "order_labels", "prepare", "lower_bounds", "arc_decision", "validate_route", "select_distinct_routes", "arc_jaccard",
     }:
         return "03"
-    if module.startswith(("router.core.prediction", "router.core.physiology")) and name in {"estimate_intensity", "segment_rpe", "segments_from_traversal", "predict", "load_predictor", "load_compatible", "extract_features", "predict_response", "estimate_rider_response", "rider_model_from_cyclist", "estimate_reference_power", "resolve_capacity_profile", "default_capacity_for_activity", "_heart_rate_parameters"}:
+    if module.startswith(("router.core.prediction", "router.core.physiology")) and name in {"estimate_intensity", "segment_rpe", "segments_from_traversal", "predict", "load_predictor", "load_compatible", "extract_features", "predict_response", "estimate_rider_response"}:
         return "04"
     if module.startswith("router.core.evaluation") and name in {"assess_route", "assess_candidates", "classify_routes", "classify_route", "evaluate_candidates", "classify_safety"}:
         return "05"
     if module.startswith(("router.app", "router.contracts")) and name in {
         "plan_routes", "plan_routes_progressive", "plan_offline_routes",
-        "resolve", "catalogue", "rider_model_from_cyclist", "plan", "prepare", "_network_for", "from_pbf", "from_osm", "to_json", "to_dict", "from_dict", "to_contract", "_to_route_contract", "dumps", "_merge_leg_plans",
+        "plan", "prepare", "_network_for", "from_pbf", "from_osm", "to_json", "to_dict", "from_dict", "to_contract", "_to_route_contract", "dumps", "_merge_leg_plans",
     }:
         return "06"
     return None

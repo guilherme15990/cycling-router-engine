@@ -27,7 +27,6 @@ from router.core.search.candidate_search import search_candidates
 from router.core.search.circulation import DEFAULT_POLICY, arc_decision, validate_route
 from router.core.search.objectives import profile_for
 from router.core.search.route_set import select_distinct_routes
-from router.app.rider_presets import RiderPresets
 
 
 class MobilityEngine:
@@ -112,7 +111,7 @@ class MobilityEngine:
              max_routes: int | None = None, collapse_similar: bool = False,
              snap_options: SnapOptions | None = None, search_config=None,
              condition_evaluator=None, circulation_policy=DEFAULT_POLICY, should_cancel=None,
-             access_filter=None, on_plan=None, progress_event_every: int = 4, rider=None) -> MobilityPlan:
+             access_filter=None, on_plan=None, progress_event_every: int = 4) -> MobilityPlan:
         def check():
             if should_cancel is not None and should_cancel():
                 raise SearchCancelled("Busca cancelada pelo usuário")
@@ -128,7 +127,6 @@ class MobilityEngine:
         if max_routes is not None and (isinstance(max_routes, bool) or not isinstance(max_routes, int) or max_routes <= 0):
             raise ValueError("max_routes must be a positive integer or None")
         mobility = mobility if mobility is not None else MobilityProfile.create(vehicle, propulsion_type)
-        mobility, rider_context = RiderPresets.resolve(mobility, rider)
         objective_profile = profile_for(profile)
         model = MotionTraversalModel(self.motion, mobility, propulsion, self.environment, access_filter)
         graph = self._network_for(mobility.transport_mode)
@@ -156,8 +154,7 @@ class MobilityEngine:
             box = query_bbox((origin, destination))
             return MobilityPlan(origin, destination, objective_profile.id, objective_profile.names,
                                 mobility.to_dict(), (), box, 0, True, False, False,
-                                {"reason": "no_accessible_snap", "graph_nodes": graph.node_count, "graph_arcs": graph.arc_count,
-                                 "rider": rider_context}, tuple(warnings))
+                                {"reason": "no_accessible_snap", "graph_nodes": graph.node_count, "graph_arcs": graph.arc_count}, tuple(warnings))
         check()
         def present(result, pool):
             if collapse_similar:
@@ -226,8 +223,7 @@ class MobilityEngine:
                      generated=result.generated, goal_pruned=result.goal_pruned, truncated=result.truncated,
                      frontier_truncated=result.frontier_truncated, rejected_routes=rejected,
                      physics_calls=model.traversal_cache_misses, cache_hits=model.traversal_cache_hits,
-                     coverage="provided_graph", access_mode=mobility.transport_mode, scenario=scenario,
-                     rider=rider_context), tuple(warnings),
+                     coverage="provided_graph", access_mode=mobility.transport_mode, scenario=scenario), tuple(warnings),
             )
         published = [0]
         def candidate_found(state, astar):
@@ -256,7 +252,7 @@ class MobilityEngine:
 
 
 __all__ = [
-    "MobilityEngine", "MobilityProfile", "VehicleCategory", "PropulsionType", "SearchCancelled", "RiderPresets",
+    "MobilityEngine", "MobilityProfile", "VehicleCategory", "PropulsionType", "SearchCancelled",
     "MotionEngine", "PropulsionModel", "ConstantPower", "ConstantForce", "RoadLoadModel",
     "StandardRoadLoad", "MobilityPlan", "MobilityRoute", "MobilityMetrics", "power_in_watts",
     "Environment", "SnapOptions", "SearchConfig", "PropulsionOutput", "ForceBreakdown", "RoadProfile", "RoadStep", "MotionState",

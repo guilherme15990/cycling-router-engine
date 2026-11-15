@@ -386,6 +386,13 @@ def _default_state() -> dict[str, Any]:
         "max_routes": 0,
         "collapse_similar": False,
         "sustained_power": 200.0,
+        "cyclist_mass": 75.0,
+        "max_power": 600.0,
+        "frontal_area": 0.5,
+        "bike_mass": 12.0,
+        "crr": 0.005,
+        "cd": 0.9,
+        "efficiency": 0.97,
         "graph_path_input": str(DEFAULT_GRAPH),
         "pbf_path_input": str(DEFAULT_PBF),
         "graph_out_input": str(GRAPH_CACHE),
@@ -810,65 +817,49 @@ def _render_sidebar() -> None:
 
 
 def _render_form() -> None:
-    from mobility_debug import VEHICLES, PROPULSIONS, profile_for_request
-    from router.integration import RiderPresets
-    import rider_controls
-    st.subheader("Parâmetros da rota", icon=":material/tune:")
-    a, b = st.columns(2)
-    a.selectbox("Veículo", list(VEHICLES), format_func=VEHICLES.get, key="mobility_vehicle")
-    b.selectbox("Propulsão", list(PROPULSIONS), format_func=PROPULSIONS.get, key="mobility_propulsion")
-    cycling = st.session_state.mobility_vehicle in {"bicycle", "cargo_bike"}
-    if cycling:
-        rider_controls.render_selectors()
+    from mobility_debug import VEHICLES, PROPULSIONS
     with st.form("route_form"):
+        st.subheader("Parâmetros da rota", icon=":material/tune:")
         a, b = st.columns(2)
         a.text_input("Origem (lat, lon)", key="origin_text")
         b.text_input("Destino (lat, lon)", key="destination_text")
-        st.selectbox("Perfil da rota", list(PROFILE_IDS), key="profile_select")
-        if cycling:
-            rider_controls.render_physical_inputs()
-        else:
-            with st.expander("Refinamentos opcionais"):
-                a, b = st.columns(2)
-                a.number_input("Peso do usuário (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_rider_mass")
-                b.number_input("Peso do veículo (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_vehicle_mass")
         a, b, c = st.columns(3)
-        a.number_input("Potência manual da simulação (0 = perfil/padrão)", min_value=0.0, step=10.0, key="mobility_power")
-        b.selectbox("Unidade da potência", ["W", "cv"], key="mobility_power_unit")
-        c.number_input("Carga adicional (kg)", min_value=0.0, step=1.0, key="mobility_load")
+        a.selectbox("Veículo", list(VEHICLES), format_func=VEHICLES.get, key="mobility_vehicle")
+        b.selectbox("Propulsão", list(PROPULSIONS), format_func=PROPULSIONS.get, key="mobility_propulsion")
+        c.selectbox("Perfil", list(PROFILE_IDS), key="profile_select")
+        st.caption("Veículo e propulsão bastam para começar. Os demais parâmetros usam estimativas identificadas no resultado.")
+        with st.expander("Refinamentos opcionais"):
+            a, b, c = st.columns(3)
+            a.number_input("Peso do usuário (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_rider_mass")
+            b.number_input("Peso do veículo (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_vehicle_mass")
+            c.number_input("Carga adicional (kg)", min_value=0.0, step=1.0, key="mobility_load")
+            a, b = st.columns(2)
+            a.number_input("Potência (0 = estimada)", min_value=0.0, step=10.0, key="mobility_power")
+            b.selectbox("Unidade da potência", ["W", "cv"], key="mobility_power_unit")
         st.number_input("Máximo de rotas (0 = todas)", min_value=0, max_value=50, step=1, key="max_routes")
         st.checkbox("Colapsar rotas quase-iguais (conjunto distinto)", key="collapse_similar")
         layer_lab.render_controls()
         submitted = st.form_submit_button("Executar API e capturar camadas", type="primary",
             disabled=st.session_state.get("route_job") is not None, width="stretch")
+    if not submitted:
+        return
     try:
-        refinements = {"rider_mass_kg": st.session_state.cyclist_mass if cycling else st.session_state.mobility_rider_mass or None,
-                       "vehicle_mass_kg": st.session_state.bike_mass if cycling else st.session_state.mobility_vehicle_mass or None,
+        refinements = {"rider_mass_kg": st.session_state.mobility_rider_mass or None,
+                       "vehicle_mass_kg": st.session_state.mobility_vehicle_mass or None,
                        "load_mass_kg": st.session_state.mobility_load}
-        if cycling:
-            refinements.update(cda_m2=st.session_state.frontal_area * st.session_state.cd,
-                               rolling_resistance=st.session_state.crr,
-                               drive_efficiency=st.session_state.efficiency)
         if st.session_state.mobility_power:
             refinements["power_cv" if st.session_state.mobility_power_unit == "cv" else "power_w"] = st.session_state.mobility_power
-        request = dict(vehicle=st.session_state.mobility_vehicle, propulsion_type=st.session_state.mobility_propulsion,
-                       refinements=refinements, rider=rider_controls.rider_request() if cycling else None)
-        if cycling:
-            mobility, context = RiderPresets.resolve(profile_for_request(request), request["rider"])
-            rider_controls.render_resolved(mobility, context)
-        if not submitted:
-            return
         layer_lab.start_job(
             origin=_parse_coord(st.session_state.origin_text, "origem"),
             destination=_parse_coord(st.session_state.destination_text, "destino"),
-            **request, profile=st.session_state.profile_select,
+            vehicle=st.session_state.mobility_vehicle, propulsion_type=st.session_state.mobility_propulsion,
+            refinements=refinements, profile=st.session_state.profile_select,
             max_routes=int(st.session_state.max_routes) or None,
             collapse_similar=bool(st.session_state.collapse_similar))
     except Exception as exc:
+        st.session_state.last_error = traceback.format_exc()
+        _log_exc("Falha ao iniciar consulta", exc)
         st.error(str(exc))
-        if submitted:
-            st.session_state.last_error = traceback.format_exc()
-            _log_exc("Falha ao iniciar consulta", exc)
         return
     st.rerun()
 
@@ -1971,8 +1962,6 @@ def main() -> None:
     )
     _init_state()
     layer_lab.init_state()
-    import rider_controls
-    rider_controls.init_state()
     _apply_pending()
     _render_sidebar()
 

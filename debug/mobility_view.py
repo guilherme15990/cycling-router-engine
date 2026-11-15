@@ -26,18 +26,6 @@ def render(plan, *, render_chart=None):
     if run:
         st.caption(f"{run['timestamp']} · {run['elapsed']:.2f} s · {plan.mobility['vehicle']} / {plan.mobility['propulsion']}")
     st.caption(f"{plan.pareto_route_count} candidata(s) na fronteira · {len(plan.routes)} apresentada(s) · acesso: {plan.diagnostics.get('access_mode', '—')}")
-    rider = plan.diagnostics.get("rider")
-    if rider:
-        from rider_controls import CAPACITY_LABELS, ACTIVITY_LABELS
-        st.subheader("Ciclista usado nesta consulta")
-        reference = rider["reference"]
-        a, b, c = st.columns(3)
-        a.metric("Perfil de capacidade", CAPACITY_LABELS.get(rider["capacity_profile"], "Padrão do motor"))
-        b.metric("Nível de exercício", ACTIVITY_LABELS.get(rider["activity_level"], "Não informado"))
-        c.metric("Potência da simulação", f"{rider['simulation_power_w']:g} W")
-        st.caption(f"Referência: {reference['power_w']:g} W · {reference['w_per_kg']:g} W/kg · tipo: {reference['kind']} · origem: {reference['source']}")
-        with st.expander("Dados e origem do perfil do ciclista"):
-            st.json(rider, expanded=False)
     if plan.routes:
         selected = s.get("selected_route", 0)
         if not isinstance(selected, int) or not 0 <= selected < len(plan.routes):

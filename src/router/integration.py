@@ -52,7 +52,6 @@ from router.contracts import (
 from router.offline import OfflineViolation, is_network_disabled, offline
 
 _MOBILITY_EXPORTS = (
-    "RiderPresets",
     "MobilityEngine",
     "SearchCancelled",
     "MobilityProfile",

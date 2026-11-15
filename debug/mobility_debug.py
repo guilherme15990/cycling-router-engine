@@ -98,6 +98,5 @@ def execute(request, settings, graph_path, *, on_plan=None, should_cancel=None, 
         search_config=SearchConfig(exact_speed=bool(settings.get("exact_speed", False)),
                                    max_expansions=settings.get("max_expansions") or None),
         should_cancel=should_cancel, on_plan=on_plan,
-        rider=request.get("rider"),
         progress_event_every=int(settings.get("progress_event_every", 4)),
     )

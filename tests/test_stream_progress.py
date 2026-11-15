@@ -34,10 +34,6 @@ def app_for_graph(tmp_path, vehicle="bicycle", propulsion="manual"):
 @pytest.mark.parametrize("vehicle,propulsion", [("bicycle", "manual"), ("motorcar", "electric"), ("motorcycle", "combustion")])
 def test_real_worker_finishes_and_returns_public_plan(tmp_path, vehicle, propulsion):
     app = app_for_graph(tmp_path, vehicle, propulsion)
-    if vehicle == "bicycle":
-        app.selectbox(key="rider_capacity").select("trained").run()
-        app.selectbox(key="rider_activity").select("lightly_active").run()
-        assert not app.exception, [e.message for e in app.exception]
     submit = next(b for b in app.button if b.label == 'Executar API e capturar camadas')
     submit.click().run()
     assert not app.exception, [e.message for e in app.exception]
@@ -63,12 +59,6 @@ def test_real_worker_finishes_and_returns_public_plan(tmp_path, vehicle, propuls
         assert not any('plan_offline_routes' in fn or 'PhysicalTraversal.traverse' in fn for fn in functions)
         assert report['performance']['physics_cache']['equilibrium_entries'] > 0
         assert report['performance']['api'] == 'router.integration.MobilityEngine.plan'
-        if vehicle == "bicycle":
-            plan = app.session_state['last_plan']
-            assert plan.mobility['nominal_power_w'] == 225
-            assert plan.diagnostics['rider']['capacity_profile'] == 'trained'
-            assert plan.diagnostics['rider']['activity_level'] == 'lightly_active'
-            assert any('Ciclista usado nesta consulta' in item.value for item in app.subheader)
     finally:
         if job['process'].poll() is None:
             job['process'].kill()
@@ -133,22 +123,3 @@ def test_worker_stops_when_session_heartbeat_is_stale(tmp_path):
     outcome = json.loads(result.read_text(encoding='utf-8'))
     assert outcome['status'] == 'interrupted'
     assert 'Sessão inativa' in outcome['details']['reason']
-
-
-def test_restored_rider_controls_show_defaults_and_preserve_selection_across_vehicle_changes(tmp_path):
-    app = app_for_graph(tmp_path)
-    assert app.number_input(key="cyclist_mass").value == 75
-    assert app.number_input(key="bike_mass").value == 12
-    assert app.number_input(key="max_power").value == 600
-    assert app.number_input(key="frontal_area").value == .5
-    assert app.number_input(key="crr").value == .005
-    assert app.number_input(key="efficiency").value == .97
-    assert len(app.selectbox(key="rider_capacity").options) == 7
-    assert len(app.selectbox(key="rider_activity").options) == 7
-    app.selectbox(key="rider_capacity").select("elite").run()
-    assert not app.exception, [e.message for e in app.exception]
-    assert any('412.5 W' in item.value for item in app.caption)
-    app.selectbox(key="mobility_vehicle").select("motorcar").run()
-    app.selectbox(key="mobility_vehicle").select("bicycle").run()
-    assert not app.exception, [e.message for e in app.exception]
-    assert app.selectbox(key="rider_capacity").value == "elite"

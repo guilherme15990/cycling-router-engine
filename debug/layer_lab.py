@@ -88,7 +88,7 @@ def _execute_mobility_with_state(s, request, graph_path, *, on_plan=None, should
                     "equilibrium_entries": len(motion._equilibrium),
                 } if motion is not None else None,
                 "result": plan.diagnostics if plan is not None else None,
-                "optional_layers": {"04": "Presets e referência do ciclista são observados quando informados; RPE e previsão de FC continuam opcionais."},
+                "optional_layers": {"04": "Não faz parte da consulta de mobilidade; nenhuma fisiologia foi inferida."},
             }
             report["request"] = snapshot(request)
             s.layer_report = report

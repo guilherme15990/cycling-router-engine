@@ -218,24 +218,3 @@ de projeção de previews. O plano final continua sendo o retorno de `plan()`.
 `should_cancel` é cooperativo e pode lançar `router.integration.SearchCancelled`.
 O consumidor pode preservar o último preview ao cancelar. O debug faz isso e
 usa `MobilityPlan.from_dict()` para ler o contrato nativo do worker.
-
-
-## Perfis opcionais de ciclista
-
-`RiderPresets.catalogue()` expõe os perfis de capacidade, os níveis de atividade
-e os padrões existentes. `plan(..., rider={"weight_kg": 75,
-"capacity_profile": "trained", "activity_level": "active"})` resolve a referência
-na camada de aplicação e entrega apenas parâmetros físicos à simulação.
-A fisiologia mantém a precedência FTP > CP > perfil > atividade > provisório.
-Sem potência manual explícita, uma referência selecionada pode ser usada como
-hipótese de potência constante em bicicletas manuais. Uma potência explícita
-em `MobilityProfile` prevalece. Perfil de ciclista não substitui potência de
-propulsão elétrica ou de veículos motorizados.
-
-Para manter os dados consistentes, informe a mesma massa do ciclista em
-`MobilityProfile.create(..., rider_mass_kg=...)` e no campo `rider.weight_kg`;
-o peso da referência é o do ciclista, enquanto `mass_total_kg` inclui veículo
-e carga. O debug monta ambos a partir do mesmo controle.
-O contrato registra o contexto em `diagnostics.rider`, incluindo referência,
-origem, nível de exercício e potência usada. Nenhuma previsão de RPE é
-produzida apenas por selecionar um preset.

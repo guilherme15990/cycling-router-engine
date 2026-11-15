@@ -19,8 +19,8 @@ python -m streamlit run debug/app.py
 
 A consulta percorre toda a rede preparada, inclusive desvios fora do corredor
 entre os pontos. A bbox serve à visualização; não recorta a busca.
-A tela principal exercita a consulta origem–destino da toolkit. Ritmo dinâmico
-e composição de paradas da API anterior não são executados por ela.
+A tela principal exercita a consulta origem–destino da toolkit. Ritmo,
+fisiologia e composição de paradas da API anterior não são executados por ela.
 
 ## Rede por categoria e DEM
 
@@ -65,9 +65,8 @@ São observados `MobilityEngine.plan/prepare`, `MotionEngine.traverse`,
 `advance_motion`, modelos de resistência/propulsão, busca, circulação e
 serialização nativa. As caches exibidas pertencem ao `MotionEngine` executado.
 
-A vista de ML/fisiologia observa a resolução dos presets e da potência de
-referência quando o perfil do ciclista está presente. Predições calibradas
-de RPE/FC continuam opcionais; presets não são apresentados como medições.
+A vista de ML/fisiologia permanece identificada como extensão opcional sem
+chamadas nesta consulta. Sua ausência não representa falha da toolkit.
 A captura acrescenta custo; seus tempos inclusivos não são benchmark.
 
 É possível baixar `mobility-route-plan.json` e `camadas-e2e.json`. Resultados
@@ -82,25 +81,3 @@ python -m pytest tests/test_stream_progress.py tests/test_debug_mobility.py test
 ```
 
 Os testes Streamlit usam `AppTest` e executam o worker real sem abrir servidor.
-
-
-## Presets de ciclista restaurados
-
-**Perfil de capacidade** oferece os seis presets existentes no domínio:
-sedentário (1 W/kg), iniciante (1,5), recreacional (2), treinado (3),
-competitivo (4,2) e elite (5,5). **Nível de exercício habitual** mostra as seis
-faixas de atividade originais e seus minutos semanais. As definições vêm de
-`RiderPresets.catalogue()`, sem duplicar a tabela na interface.
-
-A referência respeita FTP > CP > perfil explícito > nível de exercício >
-padrão provisório. Uma potência manual da simulação prevalece sobre o preset.
-Sem seleção nem medida individual, a potência permanece em 200 W.
-Quando selecionado, o preset fornece a referência usada como hipótese de
-potência constante; isso fica declarado no contrato.
-
-Os valores anteriores voltaram ao formulário: ciclista 75 kg, bicicleta 12 kg,
-máxima 600 W, área frontal 0,5 m², Cd 0,9, Crr 0,005 e eficiência 0,97.
-O preview mostra massa total, CdA e potência resolvida. O resultado conserva
-o perfil, nível de exercício e proveniência usados naquela consulta,
-mesmo que os controles sejam alterados depois. As seleções são preservadas
-ao trocar de veículo.
