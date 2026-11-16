@@ -8,7 +8,7 @@ from router.core.data.graph.model import Arc, Segment, ElevationSample
 from router.core.data.graph.surface import Surface
 from router.core.physics import PhysicalTraversal, CyclistModel, BicycleModel, Environment, SimulationState
 from router.core.physics.motion import MotionEngine, MotionTraversalModel
-from router.core.physics.propulsion import ConstantPower, ConstantForce, PropulsionOutput
+from router.core.physics.propulsion import ConstantPower, ConstantForce, PropulsionOutput, ReferenceSpeedPower
 from router.core.physics.road_load import StandardRoadLoad
 
 
@@ -17,6 +17,34 @@ def road(arc_id="r", distance=100, delta=5, surface=Surface.ASPHALT):
         "s", distance, surface=surface, elevation_gain_m=max(0, delta), elevation_loss_m=max(0, -delta),
         elevation_profile=(ElevationSample(0, 700), ElevationSample(distance, 700 + delta)),
     ),))
+
+
+def test_reference_speed_power_tracks_terrain_and_respects_profile_limit():
+    engine = MotionEngine()
+    mobility = MobilityProfile.create()
+    propulsion = ReferenceSpeedPower(150, road_load=engine.road_load)
+    powers = []
+    for delta in (-15, 0, 15):
+        arc = road(delta=delta)
+        step = engine.geometry.steps(arc)[0]
+        power = propulsion.evaluate(0, step, mobility, Environment()).input_power_w
+        result = engine.traverse(arc, mobility, propulsion)
+        assert 0 <= result.rider_energy_j <= 150 * result.time_s + 1e-8
+        powers.append(power)
+    assert powers[0] == 0
+    assert 0 < powers[1] < powers[2] == 150
+
+
+def test_reference_speed_power_uses_wind_surface_and_road_speed_limits():
+    engine = MotionEngine(road_load=StandardRoadLoad(((Surface.GRAVEL, .04),)))
+    mobility = MobilityProfile.create()
+    propulsion = ReferenceSpeedPower(412.5, road_load=engine.road_load)
+    step = engine.geometry.steps(road(delta=0))[0]
+    plain = propulsion.evaluate(0, step, mobility, Environment()).input_power_w
+    rough = propulsion.evaluate(0, replace(step, surface=Surface.GRAVEL), mobility, Environment()).input_power_w
+    windy = propulsion.evaluate(0, step, mobility, Environment(headwind_mps=5)).input_power_w
+    slow = propulsion.evaluate(0, replace(step, max_speed_mps=2), mobility, Environment()).input_power_w
+    assert rough > plain and windy > plain and slow < plain
 
 
 def test_minimal_configuration_has_explicit_assumptions_and_optional_weight():

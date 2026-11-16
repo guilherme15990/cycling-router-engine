@@ -1,6 +1,12 @@
 # Proposta: candidata de rota gerada por ML sem dupla contagem
 
-**Estado:** desenho para revisão; nenhuma busca ou contrato público foi alterado.
+**Estado:** implementação inicial disponível em `MobilityEngine.plan(ml_route=True)`.
+Ela treina/reutiliza uma rede antes das buscas, com alvos físicos por metro
+condicionados ao perfil de rota, gera até uma candidata neural independente
+da Pareto e identifica ambas as origens no contrato e no debug. Veja o fluxo
+atual em [mobility-toolkit.md](mobility-toolkit.md#geração-de-uma-candidata-de-rota-por-ml).
+O texto abaixo preserva a proposta anterior de modelos de resíduos e features
+adicionais para evolução; essas partes não descrevem o modo implementado.
 
 ## Papel do ML
 

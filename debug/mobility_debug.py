@@ -32,6 +32,12 @@ def read_plan(payload):
 
 def profile_for_request(request):
     refinements = {key: value for key, value in request.get("refinements", {}).items() if value is not None}
+    if request.get("rider"):
+        from router.integration import ManualRiderProfile
+        rider = ManualRiderProfile(**request["rider"])
+        refinements.pop("power_w", None)
+        refinements.pop("power_cv", None)
+        refinements["rider_mass_kg"] = rider.mass_kg
     return MobilityProfile.create(request.get("vehicle", "bicycle"), request.get("propulsion_type"), **refinements)
 
 
@@ -39,6 +45,8 @@ def execute(request, settings, graph_path, *, on_plan=None, should_cancel=None, 
     """Prepare once per source/category, then call MobilityEngine.plan directly."""
     started = time.monotonic()
     mobility = profile_for_request(request)
+    from router.integration import ManualRiderProfile
+    rider = ManualRiderProfile(**request["rider"]) if request.get("rider") else None
     def check():
         if should_cancel is not None and should_cancel():
             # Let the application facade own the public cancellation exception.
@@ -97,6 +105,6 @@ def execute(request, settings, graph_path, *, on_plan=None, should_cancel=None, 
         snap_options=SnapOptions(max_distance_m=float(settings["snap_radius"])),
         search_config=SearchConfig(exact_speed=bool(settings.get("exact_speed", False)),
                                    max_expansions=settings.get("max_expansions") or None),
-        should_cancel=should_cancel, on_plan=on_plan,
+        should_cancel=should_cancel, on_plan=on_plan, rider=rider, ml_route=bool(request.get("ml_route", False)),
         progress_event_every=int(settings.get("progress_event_every", 4)),
     )

@@ -59,6 +59,16 @@ def test_real_worker_finishes_and_returns_public_plan(tmp_path, vehicle, propuls
         assert not any('plan_offline_routes' in fn or 'PhysicalTraversal.traverse' in fn for fn in functions)
         assert report['performance']['physics_cache']['equilibrium_entries'] > 0
         assert report['performance']['api'] == 'router.integration.MobilityEngine.plan'
+        assert any('ml' in route.origins for route in app.session_state['last_plan'].routes)
+        assert report['neural_routing']['model_version']
+        assert any(fn.endswith('train_route_network') for fn in functions)
+        assert any(fn.endswith('search_learned') for fn in functions)
+        if vehicle == 'bicycle' and propulsion == 'manual':
+            assert app.session_state['last_plan'].routes[0].effort_estimate is not None
+            segments = json.loads(app.get('bidi_component')[0].proto.json)['route_segments']
+            assert segments and all(segment['rpe'] is not None for segment in segments)
+            assert any(fn.endswith('estimate_intensity') for fn in functions)
+            assert any(fn.endswith('estimate_rider_response') for fn in functions)
     finally:
         if job['process'].poll() is None:
             job['process'].kill()

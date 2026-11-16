@@ -83,11 +83,12 @@ def layer_for(module, name):
     }:
         return "02"
     if module.startswith("router.core.search") and name in {
+        "search_learned",
         "search", "search_candidates", "bounds", "route_profile_for", "routes_from_result",
         "from_result", "order_labels", "prepare", "lower_bounds", "arc_decision", "validate_route", "select_distinct_routes", "arc_jaccard",
     }:
         return "03"
-    if module.startswith(("router.core.prediction", "router.core.physiology")) and name in {"estimate_intensity", "segment_rpe", "segments_from_traversal", "predict", "load_predictor", "load_compatible", "extract_features", "predict_response", "estimate_rider_response"}:
+    if module.startswith(("router.core.prediction", "router.core.physiology")) and name in {"train_route_network", "feature_influence", "route_features", "estimate_intensity", "segment_rpe", "segments_from_traversal", "predict", "predict_row", "load_predictor", "load_compatible", "extract_features", "predict_response", "estimate_rider_response"}:
         return "04"
     if module.startswith("router.core.evaluation") and name in {"assess_route", "assess_candidates", "classify_routes", "classify_route", "evaluate_candidates", "classify_safety"}:
         return "05"
@@ -230,6 +231,9 @@ class LayerTrace:
                 sample = {"order": len(self.events) + 1, "layer": layer, "function": function,
                           "file": code.co_filename, "line": code.co_firstlineno,
                           "inputs": {k: snapshot(v) for k, v in itertools.islice(frame.f_locals.items(), 40)}, "exceptions": []}
+                if frame.f_globals.get("__name__") == "router.core.prediction.models" and code.co_name == "predict_row":
+                    from ml_debug import explain_model
+                    sample["ml"] = explain_model(frame.f_locals["self"], frame.f_locals["row"])
                 self.events.append(sample)
                 if function not in self.sources:
                     try:

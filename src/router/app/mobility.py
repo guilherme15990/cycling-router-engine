@@ -1,7 +1,7 @@
 """Road-centric toolkit facade over the shared physics/search/network engines."""
 from __future__ import annotations
 
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from threading import RLock
 import math
 
@@ -111,11 +111,16 @@ class MobilityEngine:
              max_routes: int | None = None, collapse_similar: bool = False,
              snap_options: SnapOptions | None = None, search_config=None,
              condition_evaluator=None, circulation_policy=DEFAULT_POLICY, should_cancel=None,
-             access_filter=None, on_plan=None, progress_event_every: int = 4) -> MobilityPlan:
+             access_filter=None, on_plan=None, progress_event_every: int = 4, rider=None,
+             ml_route: bool = False, ml_model=None) -> MobilityPlan:
         def check():
             if should_cancel is not None and should_cancel():
                 raise SearchCancelled("Busca cancelada pelo usuário")
         check()
+        if not isinstance(ml_route, bool):
+            raise TypeError("ml_route deve ser bool")
+        if ml_model is not None:
+            ml_route = True
         if isinstance(progress_event_every, bool) or not isinstance(progress_event_every, int) or progress_event_every < 1:
             raise ValueError("progress_event_every must be a positive integer")
         for coord in (origin, destination):
@@ -126,7 +131,25 @@ class MobilityEngine:
             raise ValueError("initial_speed_mps must be finite and nonnegative")
         if max_routes is not None and (isinstance(max_routes, bool) or not isinstance(max_routes, int) or max_routes <= 0):
             raise ValueError("max_routes must be a positive integer or None")
-        mobility = mobility if mobility is not None else MobilityProfile.create(vehicle, propulsion_type)
+        if rider is not None:
+            from router.app.manual_rider import ManualRiderProfile
+            if not isinstance(rider, ManualRiderProfile):
+                raise TypeError("rider deve ser ManualRiderProfile")
+        mobility = mobility if mobility is not None else MobilityProfile.create(
+            vehicle, propulsion_type, **({"rider_mass_kg": rider.mass_kg} if rider is not None else {}))
+        if rider is not None:
+            if mobility.propulsion_type is not PropulsionType.MANUAL or mobility.category not in (VehicleCategory.BICYCLE, VehicleCategory.CARGO_BIKE):
+                raise ValueError("RPE por preset disponível apenas para bicicletas manuais")
+            if propulsion is None:
+                from router.core.physics.propulsion import ReferenceSpeedPower
+                propulsion = ReferenceSpeedPower(rider.reference_power_w, road_load=self.motion.road_load)
+                sources = dict(mobility.parameter_sources)
+                sources["nominal_power_w"] = "profile_estimated"
+                mobility = replace(mobility, nominal_power_w=rider.reference_power_w,
+                    parameter_sources=tuple(sorted(sources.items())),
+                    assumptions=tuple(item for item in mobility.assumptions
+                                      if item != "constant_power_is_not_a_driving_or_effort_prediction")
+                                + ("manual-reference-speed@1",))
         objective_profile = profile_for(profile)
         model = MotionTraversalModel(self.motion, mobility, propulsion, self.environment, access_filter)
         graph = self._network_for(mobility.transport_mode)
@@ -137,6 +160,10 @@ class MobilityEngine:
                     "road_load_model": type(self.motion.road_load).__module__ + "." + type(self.motion.road_load).__qualname__}
         if type(model.propulsion) in (ConstantPower, ConstantForce):
             scenario["propulsion_parameters"] = asdict(model.propulsion)
+        if rider is not None and hasattr(model.propulsion, "target_speed_mps"):
+            scenario["manual_pacing"] = dict(policy="manual-reference-speed@1",
+                target_speed_kmh=model.propulsion.target_speed_mps * 3.6,
+                power_limit_w=rider.reference_power_w, source="provisional_default")
         warnings = list(mobility.assumptions)
         if "access_defaults" in graph.metadata:
             warnings.append(graph.metadata["access_defaults"])
@@ -156,13 +183,43 @@ class MobilityEngine:
                                 mobility.to_dict(), (), box, 0, True, False, False,
                                 {"reason": "no_accessible_snap", "graph_nodes": graph.node_count, "graph_arcs": graph.arc_count}, tuple(warnings))
         check()
+        neural_model = None
+        neural_candidate = None
+        neural_info = {"status": "disabled"}
+        if ml_route:
+            from router.app.neural_routing import FEATURE_NAMES, NeuralRouteModel, prepare_route_model, learned_step_cost
+            from router.core.search.learned import search_learned
+            from router.core.search.candidates import RouteCandidate
+            from router.core.search.route import route_from_state
+            if ml_model is not None and (not isinstance(ml_model, NeuralRouteModel)
+                    or ml_model.profile != objective_profile.id or ml_model.objectives != objective_profile.names):
+                raise ValueError("modelo ML incompatível com o perfil de rota selecionado")
+            neural_model = ml_model if ml_model is not None else prepare_route_model(
+                query.graph, model, objective_profile, check=check,
+                condition_evaluator=condition_evaluator, circulation_policy=circulation_policy)
+            neural_info = {"status": "model_unavailable", "source": "simulation_surrogate", "calibrated": False}
+            if neural_model is not None:
+                neural_info = dict(status="model_ready", source="simulation_surrogate", calibrated=False,
+                    profile=neural_model.profile, objectives=list(neural_model.objectives),
+                    feature_names=list(FEATURE_NAMES),
+                    feature_influence=neural_model.feature_influence(), model_version=neural_model.model_version,
+                    training_samples=neural_model.training_samples, validation_samples=neural_model.validation_samples,
+                    validation_mse=neural_model.validation_mse, model_reused=ml_model is not None,
+                    influence_method="absolute_weight_paths_standardized_inputs",
+                    target="physical_objectives_per_metre", model=neural_model.to_dict())
         def present(result, pool):
-            if collapse_similar:
+            pareto_paths = {tuple(candidate.route.arc_ids) for candidate in pool.candidates}
+            if ml_route:
+                candidates = pool.candidates
+                if neural_candidate is not None and neural_candidate.arc_ids not in pareto_paths:
+                    candidates = (*candidates, neural_candidate)
+            elif collapse_similar:
                 indices = select_distinct_routes(pool.routes, max_routes=max_routes).indices
                 candidates = tuple(pool.candidates[index] for index in indices)
             else:
                 candidates = pool.candidates if max_routes is None else pool.candidates[:max_routes]
             routes = []
+            validated_candidates = []
             rejected = []
             for candidate in candidates:
                 check()
@@ -174,6 +231,7 @@ class MobilityEngine:
                     continue
                 speed = initial_speed_mps
                 parts = []
+                arc_geometries = []
                 geometry = []
                 elevation_profile = []
                 offset_m = 0.0
@@ -188,6 +246,8 @@ class MobilityEngine:
                     offset_m += part.distance_m
                     speed = part.final_speed_mps
                     points = arc.geometry or (query.graph.get_node(arc.source).coord, query.graph.get_node(arc.target).coord)
+                    if rider is not None:
+                        arc_geometries.append([list(point) for point in points])
                     for point in points:
                         if not geometry or geometry[-1] != point:
                             geometry.append(point)
@@ -205,25 +265,64 @@ class MobilityEngine:
                     source_energy_j=optional_sum("source_energy_j"), battery_energy_j=optional_sum("battery_energy_j"),
                 )
                 route = candidate.route
+                effort_estimate = None
+                if rider is not None:
+                    from router.app.manual_rider import estimate_manual_effort
+                    effort_estimate = estimate_manual_effort(parts, rider)
+                    effort_estimate["pacing"] = scenario.get("manual_pacing")
+                    for segment, points in zip(effort_estimate["segments"], arc_geometries):
+                        segment["geometry"] = points
                 if route.elevation_uncertainty is not None and route.elevation_uncertainty.has_gap:
                     if "missing_elevation_assumed_flat" not in warnings:
                         warnings.append("missing_elevation_assumed_flat")
+                origins = ("pareto",) if tuple(path) in pareto_paths else ()
+                if neural_candidate is not None and tuple(path) == neural_candidate.arc_ids:
+                    origins = (*origins, "ml")
+                learned_cost = None
+                if neural_model is not None:
+                    costs = [learned_step_cost(neural_model, part) for part in parts]
+                    learned_cost = tuple(sum(column) for column in zip(*costs))
                 routes.append(MobilityRoute(candidate.route_id, path, tuple(geometry), metrics, not routes,
                                             route.result_status.value, route.used_min_speed_regularization, route.stalled,
                                             bool(validation.unresolved),
                                             None if route.elevation_uncertainty is None else route.elevation_uncertainty.to_dict(),
-                                            tuple(elevation_profile)))
+                                            tuple(elevation_profile), effort_estimate, origins,
+                                            neural_info.get("model_version") if "ml" in origins else None, learned_cost))
+                validated_candidates.append(candidate)
+            evaluated_count = len(routes)
+            if ml_route:
+                # A recomendação usa a política existente do perfil e as
+                # métricas físicas de TODAS as candidatas, não o escore neural.
+                from router.core.search.ranking import rank_candidates
+                from router.core.search.profiles import route_profile_for
+                index_by_id = {candidate.route_id: i for i, candidate in enumerate(validated_candidates)}
+                ordered = [index_by_id[item.candidate.route_id] for item in
+                           rank_candidates(validated_candidates, route_profile_for(objective_profile.id))]
+                routes = [routes[i] for i in ordered]
+                validated_candidates = [validated_candidates[i] for i in ordered]
+                pareto_indices = [i for i, route in enumerate(routes) if "pareto" in route.origins]
+                if collapse_similar:
+                    chosen = select_distinct_routes([validated_candidates[i].route for i in pareto_indices], max_routes=max_routes).indices
+                    kept = [pareto_indices[i] for i in chosen]
+                else:
+                    kept = pareto_indices if max_routes is None else pareto_indices[:max_routes]
+                kept = sorted(set(kept) | {i for i, route in enumerate(routes) if "ml" in route.origins})
+                routes = [replace(routes[i], recommended=index == 0) for index, i in enumerate(kept)]
             box = query_bbox((origin, destination), [route.geometry for route in routes])
-            complete = not result.truncated and not result.stopped_early
+            pareto_complete = not result.truncated and not result.stopped_early
+            complete = pareto_complete and neural_info.get("status") != "expansion_limit"
             return MobilityPlan(
                 origin, destination, objective_profile.id, objective_profile.names, mobility.to_dict(), tuple(routes), box,
                 len(pool.candidates), complete, result.state_approximated,
-                complete and not result.frontier_truncated and not result.state_approximated and not rejected,
+                complete and not result.frontier_truncated and not result.state_approximated and not rejected and not ml_route,
                 dict(graph_nodes=graph.node_count, graph_arcs=graph.arc_count, expanded=result.expanded,
                      generated=result.generated, goal_pruned=result.goal_pruned, truncated=result.truncated,
                      frontier_truncated=result.frontier_truncated, rejected_routes=rejected,
                      physics_calls=model.traversal_cache_misses, cache_hits=model.traversal_cache_hits,
-                     coverage="provided_graph", access_mode=mobility.transport_mode, scenario=scenario), tuple(warnings),
+                     coverage="provided_graph", access_mode=mobility.transport_mode, scenario=scenario,
+                     neural_routing=dict(neural_info), evaluated_candidates=evaluated_count,
+                     selection_policy="physical_route_profile" if ml_route else "pareto_order",
+                     pareto_search_complete=pareto_complete), tuple(warnings),
             )
         published = [0]
         def candidate_found(state, astar):
@@ -242,6 +341,22 @@ class MobilityEngine:
             if plan.routes:
                 on_plan(plan)
 
+        if neural_model is not None:
+            # O modelo e suas influências já estão resolvidos; esta busca não
+            # consome nem aguarda a frente Pareto.
+            learned = search_learned(query.graph, model, query.origin_id, query.destination_id,
+                lambda part: learned_step_cost(neural_model, part), initial_speed_mps=initial_speed_mps,
+                config=search_config, should_cancel=should_cancel, condition_evaluator=condition_evaluator,
+                circulation_policy=circulation_policy)
+            neural_info.update(status=learned.status, expanded=learned.expanded,
+                               state_approximated=learned.state_approximated,
+                               search_cost=None if learned.cost is None else list(learned.cost))
+            if learned.state is not None:
+                neural_candidate = RouteCandidate.from_route(route_from_state(learned.state), route_id="ml-route")
+                if on_plan is not None:
+                    preview = SearchResult(query.origin_id, query.destination_id, objective_profile,
+                                           (), stopped_early=True)
+                    on_plan(present(preview, RouteCandidatePool()))
         searched = search_candidates(query.graph, model, objective_profile, query.origin_id, query.destination_id,
                                      initial_speed_mps=initial_speed_mps, search_config=search_config,
                                      should_cancel=should_cancel, condition_evaluator=condition_evaluator,

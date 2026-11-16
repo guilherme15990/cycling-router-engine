@@ -8,6 +8,7 @@ from typing import Protocol
 from router.core.data.mobility import MobilityProfile
 from .arc_profile import ProfileStep
 from .environment import Environment
+from .road_load import RoadLoadModel, StandardRoadLoad
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,3 +100,36 @@ class ConstantForce:
         return PropulsionOutput(force, input_power, wheel_power,
                                 None if self.source_efficiency is None else input_power / self.source_efficiency,
                                 work_mode="force")
+
+
+@dataclass(frozen=True, slots=True)
+class ReferenceSpeedPower:
+    """Ritmo automático: demanda da via num ritmo alvo, limitada pela capacidade.
+
+    5 m/s (18 km/h) é uma hipótese de engenharia declarada, não capacidade
+    medida. A potência constante em cada passo é calculada pelas mesmas
+    resistências da simulação. Não há reserva anaeróbia nem fator de fadiga.
+    """
+
+    max_power_w: float
+    target_speed_mps: float = 5.0
+    road_load: RoadLoadModel = StandardRoadLoad()
+
+    def __post_init__(self):
+        for name in ("max_power_w", "target_speed_mps"):
+            value = getattr(self, name)
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+
+    @property
+    def cache_key(self):
+        load_key = getattr(self.road_load, "cache_key", None)
+        return None if load_key is None else (type(self), self.max_power_w, self.target_speed_mps, load_key)
+
+    def evaluate(self, speed_mps, road, mobility, environment):
+        caps = [value for value in (road.max_speed_mps, mobility.max_speed_mps,
+                environment.safe_max_speed_mps, self.target_speed_mps) if value is not None]
+        target = min(caps)
+        forces = self.road_load.evaluate(road, mobility, environment, target)
+        demand_w = max(0.0, forces.total_n * target / mobility.drive_efficiency)
+        return ConstantPower(min(demand_w, self.max_power_w)).evaluate(speed_mps, road, mobility, environment)

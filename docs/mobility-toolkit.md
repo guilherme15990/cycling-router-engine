@@ -58,6 +58,43 @@ existente. A rede de entrada é preservada. O cliente de demonstração separa
 
 ## Personalização opcional
 
+Para estimar RPE de bicicletas manuais sem sensores, a API oferece seis presets
+absolutos de capacidade: sedentário 75 W, iniciante 112,5 W, recreativo 150 W,
+treinado 225 W, competitivo 315 W e elite 412,5 W. São hipóteses provisórias
+versionadas (`manual-rider-presets@1`), independentes do peso. Não são FTP medida.
+
+```python
+from router.integration import MANUAL_RIDER_PRESETS, ManualRiderProfile
+
+rider = ManualRiderProfile(profile="recreational", mass_kg=75, age_years=35)
+plan = engine.plan(origin, destination, rider=rider)
+for route in plan.routes:
+    print(route.effort_estimate["mean_rpe"], route.effort_estimate["peak_rpe"])
+```
+
+`rider` é opcional, válido apenas para bicicleta ou bicicleta de carga manual.
+Sem `mobility` explícito, o peso do ciclista também alimenta o preset físico.
+Com `mobility` explícito, o integrador deve compor a massa total com o mesmo
+peso corporal. Com `rider` e sem `propulsion` explícita, a API usa ritmo
+automático (`manual-reference-speed@1`): calcula a potência necessária para
+buscar 18 km/h, limitada pelo preset e pelos limites de velocidade da via.
+A potência varia com inclinação, rolamento, vento e massa. O preset é um teto,
+não uma potência aplicada continuamente. Nas descidas a demanda pode ser zero;
+subidas exigentes podem reduzir a velocidade. O ritmo de 18 km/h é uma hipótese
+provisória de engenharia, registrada em `diagnostics.scenario.manual_pacing`
+e em `effort_estimate.pacing`. Não há parâmetro de potência a preencher no debug
+para esse fluxo. `propulsion=ConstantPower(...)` continua disponível para um
+integrador que queira declarar outra hipótese de pedalada.
+O RPE usa a potência humana efetivamente simulada e a duração por arco. O
+algoritmo e os objetivos de ranking continuam os mesmos; a mudança de ritmo
+pode alterar tempos, energias e as alternativas encontradas. Sem perfil de
+ciclista, a API mantém os presets anteriores de potência constante por veículo.
+`effort_estimate` acompanha previews e JSON final. Planos antigos sem esse campo
+continuam legíveis. O resultado é um baseline determinístico identificado como
+`calibrated=False` e `is_ml=False`, e não preenche uma previsão de ML calibrada.
+A idade é opcional e registrada como contexto; não aplica um fator ao RPE.
+Sem parâmetros CP/W' individuais, não há estimativa de fadiga acumulada.
+
 ```python
 from router.integration import MobilityProfile
 
@@ -73,7 +110,46 @@ configuração existente: `MobilityProfile.from_bicycle(cyclist, bicycle)`.
 Potência opcional pode ser informada em `power_w` ou `power_cv`, nunca nos dois.
 `power_in_watts()` aceita W, kW e cv (cavalo-vapor métrico), sem confundir cv com hp.
 
-## Responsabilidades e extensões
+## Geração de uma candidata de rota por ML
+
+```python
+from router.integration import NeuralRouteModel
+
+plan = engine.plan(origin, destination, profile="flattest", rider=rider, ml_route=True)
+for route in plan.routes:
+    print(route.origins, route.recommended, route.generation_model_version)
+
+artifact = plan.diagnostics["neural_routing"]["model"]
+model = NeuralRouteModel.from_dict(artifact)  # também aceita JSON decodificado
+next_plan = engine.plan(origin, destination, profile="flattest", rider=rider, ml_model=model)
+```
+
+Por compatibilidade, `ml_route=False` é o padrão da API; o debug o habilita.
+`ml_model` ativa a geração e exige o mesmo perfil e schema de objetivos.
+Um modelo é treinado/reutilizado antes das buscas, e a busca neural é executada
+antes da Pareto. Não depende da frente Pareto nem ajusta pesos às rotas finais.
+Ela usa previsões dos objetivos por metro e preserva a ordem lexicográfica do
+perfil (ou a composição normalizada do equilibrado). Distância física é o
+último desempate, impedindo ciclos gratuitos em custos primários nulos.
+
+A rede é um MLP de sete entradas, oito neurônios ocultos e uma saída por
+objetivo, implementado em Python. Treinamento determinístico: até 128 arcos ×
+duas velocidades de entrada, 180 épocas, seed 42; sem dependências adicionais.
+Rótulos vêm da simulação, não de medições de ciclistas. Nenhuma calibração
+fisiológica é alegada. O modelo e as estatísticas viajam no diagnóstico, com
+identidade derivada do conteúdo e percentuais de influência dos caminhos de
+pesos. Esses percentuais explicam o modelo e não são pesos do score de busca.
+
+Toda candidata passa pela mesma física, circulação e, com `rider`, estimativa
+de RPE. A recomendação usa a política existente do perfil sobre métricas físicas,
+independentemente da origem. O limite `max_routes` reserva até N rotas Pareto e
+mantém a ML, podendo retornar N+1 rotas. Duplicatas por caminho têm origens
+`("pareto", "ml")`. Planos antigos assumem origem `pareto` ao serem lidos.
+Modelos de fadiga não entram neste custo; inserir histórico adicional exigirá
+ampliar o estado da busca. Buckets, limites, modelo indisponível e ausência de
+caminho são reportados; a candidata neural não prova otimalidade física.
+
+## Componentes
 
 | Componente | Contrato |
 | --- | --- |

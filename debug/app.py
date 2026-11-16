@@ -287,7 +287,7 @@ async function mount(component) {
             for (const seg of segments) {
                 if (!Array.isArray(seg.pts) || seg.pts.length < 2) continue;
                 L.polyline(seg.pts, { color: rpeColor(seg.rpe), weight: 6, opacity: 0.92 })
-                    .bindTooltip(`RPE ${seg.rpe == null ? '—' : Number(seg.rpe).toFixed(1)} · inclinação ${Number(seg.grade_pct || 0).toFixed(1)}%`, {sticky: true})
+                    .bindTooltip(`RPE ${seg.rpe_source === 'route_mean' ? 'médio da rota' : 'estimado do trecho'}: ${seg.rpe == null ? '—' : Number(seg.rpe).toFixed(1)} · inclinação média do trecho: ${seg.grade_pct == null ? '—' : Number(seg.grade_pct).toFixed(1) + '%'}`, {sticky: true})
                     .addTo(state.routeLayer);
             }
         } else {
@@ -818,25 +818,33 @@ def _render_sidebar() -> None:
 
 def _render_form() -> None:
     from mobility_debug import VEHICLES, PROPULSIONS
+    import rider_view
+    a, b = st.columns(2)
+    a.selectbox("Veículo", list(VEHICLES), format_func=VEHICLES.get, key="mobility_vehicle")
+    b.selectbox("Propulsão", list(PROPULSIONS), format_func=PROPULSIONS.get, key="mobility_propulsion")
+    rider_view.sync_power_controls()
+    rider_view.render_controls()
+    st.checkbox("Gerar uma rota por ML", key="ml_route_enabled")
+    st.caption("A rede aprende os objetivos do perfil de rota usando a simulação. A busca ML é independente da Pareto; o modelo não é calibrado com atividades reais.")
     with st.form("route_form"):
         st.subheader("Parâmetros da rota", icon=":material/tune:")
         a, b = st.columns(2)
         a.text_input("Origem (lat, lon)", key="origin_text")
         b.text_input("Destino (lat, lon)", key="destination_text")
-        a, b, c = st.columns(3)
-        a.selectbox("Veículo", list(VEHICLES), format_func=VEHICLES.get, key="mobility_vehicle")
-        b.selectbox("Propulsão", list(PROPULSIONS), format_func=PROPULSIONS.get, key="mobility_propulsion")
-        c.selectbox("Perfil", list(PROFILE_IDS), key="profile_select")
+        st.selectbox("Perfil", list(PROFILE_IDS), key="profile_select")
         st.caption("Veículo e propulsão bastam para começar. Os demais parâmetros usam estimativas identificadas no resultado.")
         with st.expander("Refinamentos opcionais"):
             a, b, c = st.columns(3)
-            a.number_input("Peso do usuário (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_rider_mass")
+            if not rider_view.is_manual_bicycle():
+                a.number_input("Peso do usuário (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_rider_mass")
             b.number_input("Peso do veículo (kg; 0 = estimado)", min_value=0.0, step=1.0, key="mobility_vehicle_mass")
             c.number_input("Carga adicional (kg)", min_value=0.0, step=1.0, key="mobility_load")
-            a, b = st.columns(2)
-            a.number_input("Potência (0 = estimada)", min_value=0.0, step=10.0, key="mobility_power")
-            b.selectbox("Unidade da potência", ["W", "cv"], key="mobility_power_unit")
-        st.number_input("Máximo de rotas (0 = todas)", min_value=0, max_value=50, step=1, key="max_routes")
+            if not rider_view.is_manual_bicycle():
+                a, b = st.columns(2)
+                a.number_input("Potência (0 = estimada)", min_value=0.0, step=10.0, key="mobility_power")
+                b.selectbox("Unidade da potência", ["W", "cv"], key="mobility_power_unit")
+        st.number_input("Máximo de rotas Pareto (0 = todas; ML adicional)" if st.session_state.ml_route_enabled
+                        else "Máximo de rotas (0 = todas)", min_value=0, max_value=50, step=1, key="max_routes")
         st.checkbox("Colapsar rotas quase-iguais (conjunto distinto)", key="collapse_similar")
         layer_lab.render_controls()
         submitted = st.form_submit_button("Executar API e capturar camadas", type="primary",
@@ -847,13 +855,15 @@ def _render_form() -> None:
         refinements = {"rider_mass_kg": st.session_state.mobility_rider_mass or None,
                        "vehicle_mass_kg": st.session_state.mobility_vehicle_mass or None,
                        "load_mass_kg": st.session_state.mobility_load}
-        if st.session_state.mobility_power:
+        if not rider_view.is_manual_bicycle() and st.session_state.mobility_power:
             refinements["power_cv" if st.session_state.mobility_power_unit == "cv" else "power_w"] = st.session_state.mobility_power
         layer_lab.start_job(
             origin=_parse_coord(st.session_state.origin_text, "origem"),
             destination=_parse_coord(st.session_state.destination_text, "destino"),
             vehicle=st.session_state.mobility_vehicle, propulsion_type=st.session_state.mobility_propulsion,
             refinements=refinements, profile=st.session_state.profile_select,
+            rider=rider_view.request_payload(),
+            ml_route=bool(st.session_state.ml_route_enabled),
             max_routes=int(st.session_state.max_routes) or None,
             collapse_similar=bool(st.session_state.collapse_similar))
     except Exception as exc:
@@ -1067,8 +1077,8 @@ def _selected_route_segments() -> list[dict[str, Any]]:
     geometry = list(plan.routes[index].geometry)
     segments: list[dict[str, Any]] = []
     if geometry and isinstance(geometry[0], (tuple, list)):
-        return [{"pts": [list(a), list(b)], "rpe": None, "grade_pct": None, "band": None}
-                for a, b in zip(geometry, geometry[1:])]
+        from route_overlay import mobility_segments
+        return mobility_segments(plan.routes[index])
     for previous, current in zip(geometry, geometry[1:]):
         segments.append({
             "pts": [[round(float(previous.lat), 6), round(float(previous.lon), 6)],
@@ -1119,6 +1129,11 @@ def _dem_download_status() -> None:
 
 def _render_picker() -> None:
     st.subheader("Origem e destino", icon=":material/map:")
+    active_plan = st.session_state.get("last_plan")
+    if active_plan is not None and active_plan.routes:
+        active_route = active_plan.routes[_selected_route_index(len(active_plan.routes))]
+        if "ml" in getattr(active_route, "origins", ()):
+            st.caption("Rota no mapa: gerada por ML" + (" e também encontrada pela Pareto." if "pareto" in active_route.origins else "."))
     st.caption(
         "Clique no mapa para definir o ponto escolhido abaixo; as coordenadas "
         "vao para os campos de origem/destino. Depois de escolhido, arraste o "
@@ -1293,6 +1308,7 @@ def _render_static_map(
         destination,
         height=420,
         tiles=bool(st.session_state.map_tiles),
+        route_segments=_selected_route_segments(),
     )
     _embed_html(html, height=440)
 
@@ -1312,6 +1328,7 @@ def _leaflet_map_html(
     *,
     height: int,
     tiles: bool = True,
+    route_segments: list[dict[str, Any]] | None = None,
 ) -> str:
     """HTML autonomo com Leaflet + tiles do OSM (sem pandas/pyarrow)."""
     points = [
@@ -1347,11 +1364,20 @@ def _leaflet_map_html(
 <div id="map"></div>
 <script>
   var route = __ROUTE__;
+  var segments = __SEGMENTS__;
+  __RPE_COLOR_JS__
   var origin = __ORIGIN__;
   var destination = __DESTINATION__;
   var map = L.map('map');
   __TILES__
-  if (route.length > 1) {
+  if (segments.length) {
+    for (const seg of segments) {
+      if (!Array.isArray(seg.pts) || seg.pts.length < 2) continue;
+      L.polyline(seg.pts, {color: rpeColor(seg.rpe), weight: 6, opacity: 0.92})
+        .bindTooltip(`RPE ${seg.rpe_source === 'route_mean' ? 'médio da rota' : 'estimado do trecho'}: ${seg.rpe == null ? '—' : Number(seg.rpe).toFixed(1)} · inclinação média do trecho: ${seg.grade_pct == null ? '—' : Number(seg.grade_pct).toFixed(1) + '%'}`, {sticky: true})
+        .addTo(map);
+    }
+  } else if (route.length > 1) {
     L.polyline(route, {
       color: '#dc3545', weight: 5, opacity: 0.9, lineJoin: 'round'
     }).addTo(map);
@@ -1379,6 +1405,8 @@ def _leaflet_map_html(
 </html>"""
     return (
         template.replace("__ROUTE__", route_json)
+        .replace("__SEGMENTS__", json.dumps(route_segments or [], separators=(",", ":")))
+        .replace("__RPE_COLOR_JS__", effort_colors.rpe_color_js())
         .replace("__ORIGIN__", origin_json)
         .replace("__DESTINATION__", destination_json)
         .replace("__TILES__", tile_js)

@@ -3,6 +3,11 @@ import json
 import streamlit as st
 
 
+def route_label(route):
+    origin = "Gerada por ML + Pareto" if set(route.origins) == {"pareto", "ml"} else "Gerada por ML" if "ml" in route.origins else "Pareto"
+    return f"{'[recomendada] ' if route.recommended else ''}[{origin}] {route.route_id} | {route.metrics.distance_m / 1000:.2f} km | {route.metrics.time_s / 60:.1f} min"
+
+
 def render(plan, *, render_chart=None):
     from layer_lab import _table
     s = st.session_state
@@ -31,8 +36,11 @@ def render(plan, *, render_chart=None):
         if not isinstance(selected, int) or not 0 <= selected < len(plan.routes):
             s.selected_route = 0
         index = st.selectbox("Rota", range(len(plan.routes)), key="selected_route",
-            format_func=lambda i: f"{'[recomendada] ' if plan.routes[i].recommended else ''}{plan.routes[i].route_id} | {plan.routes[i].metrics.distance_m / 1000:.2f} km | {plan.routes[i].metrics.time_s / 60:.1f} min")
+            format_func=lambda i: route_label(plan.routes[i]))
         route = plan.routes[index]
+        if "ml" in route.origins:
+            st.caption(f"Rota gerada pela busca ML · modelo {route.generation_model_version}. "
+                       + ("O mesmo caminho também pertence à fronteira Pareto." if "pareto" in route.origins else "Candidata da busca neural independente."))
         m = route.metrics
         a, b, c, d = st.columns(4)
         a.metric("Distância", f"{m.distance_m / 1000:.2f} km")
@@ -44,6 +52,8 @@ def render(plan, *, render_chart=None):
         b.metric("Energia de entrada da transmissão", f"{m.drive_input_energy_j / 1000:.1f} kJ")
         c.metric("Energia da fonte", "Desconhecida" if m.source_energy_j is None else f"{m.source_energy_j / 3600:.1f} Wh")
         d.metric("Consumo de bateria", "Desconhecido" if m.battery_energy_j is None else f"{m.battery_energy_j / 3600:.1f} Wh")
+        from rider_view import render_estimate
+        render_estimate(route.effort_estimate, _table)
         st.caption(f"Simulação: {route.simulation_status} · regularização na partida: {route.used_min_speed_regularization} · circulação não resolvida: {route.circulation_unresolved}")
         if route.elevation_uncertainty:
             with st.expander("Qualidade da altimetria"):
@@ -76,6 +86,10 @@ def render(plan, *, render_chart=None):
             st.caption(warning)
     with st.expander("Diagnósticos da busca"):
         st.json(plan.diagnostics, expanded=False)
+    if plan.diagnostics.get("neural_routing") and plan.diagnostics["neural_routing"].get("status") != "disabled":
+        with st.expander("Modelo ML e influência das features"):
+            from ml_debug import render_neural
+            render_neural(plan.diagnostics.get("neural_routing"), _table)
     with st.expander("Contrato público da toolkit (JSON)"):
         text = plan.to_json(indent=2)
         st.download_button("Baixar mobility-route-plan.json", text,

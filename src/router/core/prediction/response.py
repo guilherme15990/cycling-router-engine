@@ -600,8 +600,10 @@ def estimate_rider_response(
 
     rpe_values = tuple(segment_rpes)
     if rpe_values:
-        mean_rpe_time = _time_weighted_mean(rpe_values, durations)
-        mean_rpe_distance = _distance_weighted_mean(rpe_values, distances)
+        # A média de escores válidos pode ultrapassar 20 por arredondamento
+        # binário (ex.: 20.000000000000004); preserve os limites da escala.
+        mean_rpe_time = borg_scale.clamp(_time_weighted_mean(rpe_values, durations))
+        mean_rpe_distance = borg_scale.clamp(_distance_weighted_mean(rpe_values, distances))
     else:
         mean_rpe_time = borg_scale.min_score
         mean_rpe_distance = borg_scale.min_score

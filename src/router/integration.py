@@ -82,6 +82,10 @@ _MOBILITY_EXPORTS = (
 
 
 __all__ = [
+    "NeuralRouteModel",
+    "MANUAL_RIDER_PRESETS",
+    "ManualRiderPreset",
+    "ManualRiderProfile",
     *_MOBILITY_EXPORTS,
     "plan_routes_progressive",
     "RouteProgress",
@@ -144,6 +148,12 @@ def __getattr__(name: str) -> Any:
     apenas ``contracts``/``offline``. Cada ramo e um import estatico; nomes
     desconhecidos levantam ``AttributeError`` (inclusive os DTOs internos).
     """
+    if name == "NeuralRouteModel":
+        from router.app.neural_routing import NeuralRouteModel
+        return NeuralRouteModel
+    if name in {"MANUAL_RIDER_PRESETS", "ManualRiderPreset", "ManualRiderProfile"}:
+        from router.app import manual_rider
+        return getattr(manual_rider, name)
     if name in _MOBILITY_EXPORTS:
         from router.app import mobility
         return getattr(mobility, name)

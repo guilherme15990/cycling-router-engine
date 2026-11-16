@@ -8,7 +8,7 @@ import math
 from router.core.data.mobility import MobilityProfile, PropulsionType
 from .environment import Environment
 from .models import SimulationState, TraversalResult, classify_status
-from .propulsion import PropulsionModel, ConstantPower
+from .propulsion import PropulsionModel, ConstantPower, ReferenceSpeedPower
 from .road_load import RoadLoadModel, StandardRoadLoad, MotionParameters
 from .speed import advance_motion, MIN_SPEED_MPS
 from .forces import equilibrium_speed_mps
@@ -73,16 +73,18 @@ class MotionEngine:
             # Only this known analytic combination promises the monotone
             # equilibrium law used by the original solver. Custom models still
             # integrate their own forces, without an invented equilibrium cap.
-            analytic = type(self.road_load) is StandardRoadLoad and type(propulsion) is ConstantPower and propulsion.force_limit_n is None
+            analytic = type(self.road_load) is StandardRoadLoad and (
+                (type(propulsion) is ConstantPower and propulsion.force_limit_n is None)
+                or (type(propulsion) is ReferenceSpeedPower and propulsion.road_load is self.road_load))
             if analytic:
                 parameters = self.road_load.parameters(road, mobility)
-                key = (road.slope_rad, road.max_speed_mps, cap, mobility.mass_total_kg, parameters, environment, propulsion.power_w)
+                key = (road.slope_rad, road.max_speed_mps, cap, mobility.mass_total_kg, parameters, environment, output.input_power_w)
                 pair = self._equilibrium.get(key)
                 if pair is None:
                     pair = tuple(equilibrium_speed_mps(
                         road.slope_rad, mobility.mass_total_kg, 1.0, parameters, environment, power,
                         max_speed_mps=cap,
-                    ) for power in (propulsion.power_w, 0.0))
+                    ) for power in (output.input_power_w, 0.0))
                     self._equilibrium[key] = pair
                 equilibrium, terminal = pair
             step = advance_motion(

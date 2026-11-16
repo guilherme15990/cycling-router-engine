@@ -34,6 +34,10 @@ class MobilityRoute:
     circulation_unresolved: bool
     elevation_uncertainty: dict | None
     elevation_profile: tuple[tuple[float, float | None], ...] = ()
+    effort_estimate: dict | None = None
+    origins: tuple[str, ...] = ("pareto",)
+    generation_model_version: str | None = None
+    learned_cost: tuple[float, ...] | None = None
 
     def to_dict(self):
         return dict(route_id=self.route_id, arc_ids=list(self.arc_ids),
@@ -41,7 +45,10 @@ class MobilityRoute:
                     recommended=self.recommended, simulation_status=self.simulation_status,
                     used_min_speed_regularization=self.used_min_speed_regularization, stalled=self.stalled,
                     circulation_unresolved=self.circulation_unresolved, elevation_uncertainty=self.elevation_uncertainty,
-                    elevation_profile=[list(point) for point in self.elevation_profile])
+                    elevation_profile=[list(point) for point in self.elevation_profile],
+                    effort_estimate=self.effort_estimate, origins=list(self.origins),
+                    generation_model_version=self.generation_model_version,
+                    learned_cost=None if self.learned_cost is None else list(self.learned_cost))
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +81,10 @@ class MobilityPlan:
             stalled=row["stalled"], circulation_unresolved=row["circulation_unresolved"],
             elevation_uncertainty=row["elevation_uncertainty"],
             elevation_profile=tuple(tuple(point) for point in row.get("elevation_profile", ())),
+            effort_estimate=row.get("effort_estimate"),
+            origins=tuple(row.get("origins", ("pareto",))),
+            generation_model_version=row.get("generation_model_version"),
+            learned_cost=None if row.get("learned_cost") is None else tuple(row["learned_cost"]),
         ) for row in payload["routes"])
         return cls(
             origin=tuple(payload["origin"]), destination=tuple(payload["destination"]),

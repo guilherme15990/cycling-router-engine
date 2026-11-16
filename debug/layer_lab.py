@@ -27,7 +27,8 @@ def init_state():
                     progress_event_every=4, exact_speed=False, max_expansions=0,
                     mobility_vehicle="bicycle", mobility_propulsion="manual",
                     mobility_rider_mass=0.0, mobility_vehicle_mass=0.0, mobility_load=0.0,
-                    mobility_power=0.0, mobility_power_unit="W")
+                    mobility_power=0.0, mobility_power_unit="W",
+                    manual_fitness="recreational", manual_age=None, ml_route_enabled=True)
     for key, value in defaults.items():
         st.session_state.setdefault(key, value)
 
@@ -60,6 +61,12 @@ def render_controls():
 def _execute_mobility_with_state(s, request, graph_path, *, on_plan=None, should_cancel=None, on_stage=None):
     from contextlib import nullcontext
     from mobility_debug import execute as execute_toolkit
+    if request.get("rider"):
+        # sys.monitoring registra somente códigos já carregados no início.
+        from router.integration import ManualRiderProfile
+    if request.get("ml_route"):
+        from router.app import neural_routing
+        from router.core.search import learned
     settings = vars(s) if not isinstance(s, dict) else s
     trace = LayerTrace(samples=int(settings["trace_samples"])) if settings["capture_layers"] else None
     inspect = {}
@@ -88,9 +95,10 @@ def _execute_mobility_with_state(s, request, graph_path, *, on_plan=None, should
                     "equilibrium_entries": len(motion._equilibrium),
                 } if motion is not None else None,
                 "result": plan.diagnostics if plan is not None else None,
-                "optional_layers": {"04": "Não faz parte da consulta de mobilidade; nenhuma fisiologia foi inferida."},
+                "optional_layers": {"04": "Baseline provisório de RPE por perfil." if request.get("rider") else "Nenhum RPE solicitado nesta consulta."},
             }
             report["request"] = snapshot(request)
+            report["neural_routing"] = plan.diagnostics.get("neural_routing") if plan is not None else None
             s.layer_report = report
 
 
@@ -108,6 +116,8 @@ def render():
             st.info("Nenhuma execução capturada. Execute a consulta para iniciar a inspeção.")
         for number, title in LAYERS.items():
             st.markdown(f"**{number} · {title}**")
+        from ml_debug import render as render_ml
+        render_ml(None, _table)
         return
     if report.get("failure"):
         st.error(report["failure"])
@@ -141,6 +151,9 @@ def render():
     _table(overview)
     layer = st.selectbox("Camada para inspecionar", list(LAYERS),
                          format_func=lambda key: f"{key} · {LAYERS[key]}", key="inspect_layer")
+    if layer == "04":
+        from ml_debug import render as render_ml
+        render_ml(report, _table)
     layer_functions = [row for row in functions if row["layer"] == layer]
     if not layer_functions:
         st.info("Nenhum ponto instrumentado dessa camada foi chamado neste cenário. Isso não comprova que toda a camada está ausente; confira a falha e o fluxo anterior.")
