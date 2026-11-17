@@ -15,6 +15,14 @@ class MobilityMetrics:
     drive_input_energy_j: float
     source_energy_j: float | None
     battery_energy_j: float | None
+    kinetic_energy_start_j: float = 0.0
+    kinetic_energy_end_j: float = 0.0
+    delta_kinetic_j: float = 0.0
+    dissipative_loss_j: float = 0.0
+    braking_energy_j: float = 0.0
+    energy_loss_detected: bool = False
+    kinetic_assist_j: float = 0.0
+    climb_entry_kinetic_j: float = 0.0
 
     def to_dict(self):
         from dataclasses import asdict

@@ -21,6 +21,7 @@ from router.core.physics.forces import ForceBreakdown
 from router.core.physics.models import SimulationState as MotionState
 from router.core.search.config import SearchConfig
 from router.core.physics.models import SimulationStatus
+from router.core.physics.energy import kinetic_energy_j
 from router.core.search.astar import SearchCancelled, SearchResult, order_labels
 from router.core.search.candidates import RouteCandidatePool
 from router.core.search.candidate_search import search_candidates
@@ -43,7 +44,15 @@ class MobilityEngine:
         self.network = network
         self.network_mode = network_mode
         self.motion = motion if motion is not None else MotionEngine()
-        self.environment = environment if environment is not None else Environment()
+        # A rota não precisa de um teto global artificial para determinar se
+        # há perda de energia: a resistência aerodinâmica já produz a
+        # velocidade de equilíbrio. Um teto continua disponível quando o
+        # consumidor o fornece explicitamente (por segurança/legislação).
+        self.environment = (
+            environment
+            if environment is not None
+            else Environment(safe_max_speed_mps=None)
+        )
         if elevation_tiles is not None and elevation_provider is not None:
             raise ValueError("provide elevation_tiles or elevation_provider, not both")
         self.elevation_provider = TerrariumElevation(elevation_tiles) if elevation_tiles is not None else elevation_provider
@@ -257,12 +266,38 @@ class MobilityEngine:
                 def optional_sum(name):
                     values = [getattr(part, name) for part in parts]
                     return sum(values) if values and all(value is not None for value in values) else None
+                kinetic_start = (
+                    kinetic_energy_j(model.mobility.mass_total_kg, parts[0].initial_speed_mps)
+                    if parts else 0.0
+                )
+                kinetic_end = (
+                    kinetic_energy_j(model.mobility.mass_total_kg, parts[-1].final_speed_mps)
+                    if parts else 0.0
+                )
+                aero_loss = sum(part.aero_loss_j for part in parts)
+                rolling_loss = sum(part.rolling_loss_j for part in parts)
+                braking_energy = sum(part.braking_energy_j for part in parts)
+                dissipative_loss = (
+                    max(0.0, aero_loss)
+                    + max(0.0, rolling_loss)
+                    + max(0.0, braking_energy)
+                )
                 metrics = MobilityMetrics(
                     time_s=sum(part.time_s for part in parts), distance_m=sum(part.distance_m for part in parts),
                     ascent_m=sum(part.ascent_m for part in parts), descent_m=sum(part.descent_m for part in parts),
                     mechanical_energy_j=sum(part.mechanical_energy_j for part in parts),
                     drive_input_energy_j=sum(part.rider_energy_j for part in parts),
                     source_energy_j=optional_sum("source_energy_j"), battery_energy_j=optional_sum("battery_energy_j"),
+                    kinetic_energy_start_j=kinetic_start,
+                    kinetic_energy_end_j=kinetic_end,
+                    delta_kinetic_j=kinetic_end - kinetic_start,
+                    dissipative_loss_j=dissipative_loss,
+                    braking_energy_j=braking_energy,
+                    energy_loss_detected=dissipative_loss > 1e-6,
+                    kinetic_assist_j=sum(part.kinetic_assist_j for part in parts),
+                    climb_entry_kinetic_j=sum(
+                        part.climb_entry_kinetic_j for part in parts
+                    ),
                 )
                 route = candidate.route
                 effort_estimate = None

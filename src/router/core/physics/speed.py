@@ -59,6 +59,10 @@ class SpeedStep:
     aero_loss_j: float = 0.0
     rolling_loss_j: float = 0.0
     regularized: bool = False
+    #: Parte da energia cinética consumida de forma útil numa subida.
+    kinetic_assist_j: float = 0.0
+    #: Energia cinética disponível na entrada de uma subida.
+    climb_entry_kinetic_j: float = 0.0
 
 
 def advance_speed(
@@ -278,6 +282,17 @@ def advance_motion(
         aero_loss_j=aero * distance_m,
         rolling_loss_j=rolling * distance_m,
         regularized=regularized_low_speed or stalled,
+        kinetic_assist_j=(
+            min(
+                max(0.0, 0.5 * mass_kg * (v0 * v0 - v1 * v1) - braking),
+                mass_kg * environment.gravity_m_s2 * max(0.0, distance_m * math.sin(slope_rad)),
+            )
+            if slope_rad > 0.0
+            else 0.0
+        ),
+        climb_entry_kinetic_j=(
+            0.5 * mass_kg * v0 * v0 if slope_rad > 0.0 else 0.0
+        ),
     )
 
 

@@ -55,7 +55,8 @@ class MotionEngine:
         state = initial_state if initial_state is not None else SimulationState()
         profile = self.geometry.profile(arc)
         totals = dict(time_s=0.0, mechanical_energy_j=0.0, rider_energy_j=0.0,
-                      braking_energy_j=0.0, aero_loss_j=0.0, rolling_loss_j=0.0)
+                      braking_energy_j=0.0, aero_loss_j=0.0, rolling_loss_j=0.0,
+                      kinetic_assist_j=0.0, climb_entry_kinetic_j=0.0)
         source_energy = 0.0
         source_known = True
         stalled = regularized = False
@@ -100,6 +101,8 @@ class MotionEngine:
             totals["braking_energy_j"] += step.braking_energy_j
             totals["aero_loss_j"] += step.aero_loss_j
             totals["rolling_loss_j"] += step.rolling_loss_j
+            totals["kinetic_assist_j"] += step.kinetic_assist_j
+            totals["climb_entry_kinetic_j"] += step.climb_entry_kinetic_j
             if step.pedaling:
                 if output.source_power_w is None:
                     source_known = False

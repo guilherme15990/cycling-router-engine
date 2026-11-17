@@ -536,9 +536,13 @@ class RouteTelemetry:
     """Observaveis do esforco e do traçado, para o cartao de rota.
 
     ``rpe_band`` usa ``i1``..``i5``; ``rpe_label`` e o rotulo verbal do Borg.
-    ``inertia_fraction`` e a fracao da distancia em que a velocidade de saida
-    do arco nao caiu mais que 0.2 m/s. ``arterial_entries`` conta **entradas**
+    ``inertia_fraction`` e a retenção média de energia cinética ao longo da
+    rota (razão ``E_k_saida / E_k_entrada``, limitada a 1); ela não depende de
+    uma velocidade máxima arbitrária. ``arterial_entries`` conta **entradas**
     em vias arteriais (trechos consecutivos contam uma vez).
+    ``kinetic_assist_j`` mede a parcela da energia cinética consumida de forma
+    útil nos trechos de subida; ``climb_entry_kinetic_j`` mede o embalo na
+    entrada desses trechos.
     ``heart_rate_zones`` fica ``None`` quando nao existe metodo fisiologico
     real — o campo existe para nao inventar zonas cardiacas.
     """
@@ -555,6 +559,14 @@ class RouteTelemetry:
     w_prime_is_provisional: bool = True
     heart_rate_zones: dict[str, float] | None = None
     heart_rate_zone_definition: str | None = None
+    kinetic_energy_start_j: float | None = None
+    kinetic_energy_end_j: float | None = None
+    delta_kinetic_j: float | None = None
+    dissipative_loss_j: float | None = None
+    braking_energy_j: float | None = None
+    energy_loss_detected: bool | None = None
+    kinetic_assist_j: float | None = None
+    climb_entry_kinetic_j: float | None = None
 
     def __post_init__(self) -> None:
         _str(self.policy, "telemetry.policy")
@@ -580,6 +592,18 @@ class RouteTelemetry:
         _float(self.w_prime_start_j, "telemetry.w_prime_start_j", allow_none=True, minimum=0.0)
         _float(self.w_prime_end_j, "telemetry.w_prime_end_j", allow_none=True, minimum=0.0)
         _bool(self.w_prime_is_provisional, "telemetry.w_prime_is_provisional")
+        for name in (
+            "kinetic_energy_start_j",
+            "kinetic_energy_end_j",
+            "dissipative_loss_j",
+            "braking_energy_j",
+            "kinetic_assist_j",
+            "climb_entry_kinetic_j",
+        ):
+            _float(getattr(self, name), f"telemetry.{name}", allow_none=True, minimum=0.0)
+        _float(self.delta_kinetic_j, "telemetry.delta_kinetic_j", allow_none=True)
+        if self.energy_loss_detected is not None:
+            _bool(self.energy_loss_detected, "telemetry.energy_loss_detected")
         if self.heart_rate_zones is not None:
             _unit_distribution(
                 self.heart_rate_zones, "telemetry.heart_rate_zones"
@@ -614,6 +638,14 @@ class RouteTelemetry:
                 }
             ),
             "heart_rate_zone_definition": self.heart_rate_zone_definition,
+            "kinetic_energy_start_j": _round(self.kinetic_energy_start_j, 3),
+            "kinetic_energy_end_j": _round(self.kinetic_energy_end_j, 3),
+            "delta_kinetic_j": _round(self.delta_kinetic_j, 3),
+            "dissipative_loss_j": _round(self.dissipative_loss_j, 3),
+            "braking_energy_j": _round(self.braking_energy_j, 3),
+            "energy_loss_detected": self.energy_loss_detected,
+            "kinetic_assist_j": _round(self.kinetic_assist_j, 3),
+            "climb_entry_kinetic_j": _round(self.climb_entry_kinetic_j, 3),
         }
 
     @classmethod
@@ -664,6 +696,52 @@ class RouteTelemetry:
                     item.get("heart_rate_zone_definition"),
                     "telemetry.heart_rate_zone_definition",
                 )
+            ),
+            kinetic_energy_start_j=_float(
+                item.get("kinetic_energy_start_j"),
+                "telemetry.kinetic_energy_start_j",
+                allow_none=True,
+                minimum=0.0,
+            ),
+            kinetic_energy_end_j=_float(
+                item.get("kinetic_energy_end_j"),
+                "telemetry.kinetic_energy_end_j",
+                allow_none=True,
+                minimum=0.0,
+            ),
+            delta_kinetic_j=_float(
+                item.get("delta_kinetic_j"),
+                "telemetry.delta_kinetic_j",
+                allow_none=True,
+            ),
+            dissipative_loss_j=_float(
+                item.get("dissipative_loss_j"),
+                "telemetry.dissipative_loss_j",
+                allow_none=True,
+                minimum=0.0,
+            ),
+            braking_energy_j=_float(
+                item.get("braking_energy_j"),
+                "telemetry.braking_energy_j",
+                allow_none=True,
+                minimum=0.0,
+            ),
+            energy_loss_detected=(
+                None
+                if item.get("energy_loss_detected") is None
+                else _bool(item.get("energy_loss_detected"), "telemetry.energy_loss_detected")
+            ),
+            kinetic_assist_j=_float(
+                item.get("kinetic_assist_j"),
+                "telemetry.kinetic_assist_j",
+                allow_none=True,
+                minimum=0.0,
+            ),
+            climb_entry_kinetic_j=_float(
+                item.get("climb_entry_kinetic_j"),
+                "telemetry.climb_entry_kinetic_j",
+                allow_none=True,
+                minimum=0.0,
             ),
         )
 

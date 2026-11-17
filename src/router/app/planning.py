@@ -53,6 +53,7 @@ from router.core.physics.demand import (
     DemandScenario,
 )
 from router.core.physics.environment import Environment
+from router.core.physics.energy import kinetic_energy_j
 from router.core.physics.models import SimulationState
 from router.core.physics.pacing import (
     PACING_POLICY,
@@ -409,6 +410,12 @@ def plan_offline_routes(
         snapping.SnapError: nunca — o snapping e tentado na zona; uma zona
             desconectada devolve ``reached=False``, sem crescimento.
     """
+    if environment is None:
+        # Sem teto global por padrão: a dinâmica encontra a velocidade de
+        # equilíbrio pela resistência do ar/rolamento. O chamador pode passar
+        # ``Environment(safe_max_speed_mps=...)`` quando houver uma restrição
+        # operacional explícita.
+        environment = Environment(safe_max_speed_mps=None)
     if search_mode not in ("exact", "progressive"):
         raise ValueError("search_mode deve ser 'exact' ou 'progressive'")
     if search_mode == "progressive":
@@ -515,7 +522,10 @@ def plan_offline_routes(
                 return None
             item = report.routes[0]
             partial_demand, partial_telemetry = _route_demand_and_telemetry(
-                query, candidate, assessment
+                query,
+                candidate,
+                assessment,
+                mass_kg=cyclist.mass_kg + bicycle.mass_kg,
             )
             planned = PlannedRoute(candidate, assessment, classification, item.safety,
                                    geometry=_route_points(
@@ -771,7 +781,12 @@ def plan_offline_routes(
     demand_by_id: dict[str, RouteDemand | None] = {}
     telemetry_by_id: dict[str, RouteTelemetry | None] = {}
     for candidate, assessment in zip(candidates, assessments):
-        demand, telemetry = _route_demand_and_telemetry(query, candidate, assessment)
+        demand, telemetry = _route_demand_and_telemetry(
+            query,
+            candidate,
+            assessment,
+            mass_kg=cyclist.mass_kg + bicycle.mass_kg,
+        )
         demand_by_id[candidate.route_id] = demand
         telemetry_by_id[candidate.route_id] = telemetry
 
@@ -953,6 +968,8 @@ def _route_demand_and_telemetry(
     query: QueryGraph,
     candidate: RouteCandidate,
     assessment: RouteAssessment,
+    *,
+    mass_kg: float,
 ) -> tuple[RouteDemand | None, RouteTelemetry | None]:
     """Monta demanda (custo do terreno) e telemetria do cartao de rota.
 
@@ -998,14 +1015,34 @@ def _route_demand_and_telemetry(
             distance_by_grade_bin_m=paced.distance_by_grade_bin_m,
         )
 
-    preserved = sum(
-        float(result.distance_m)
-        for result in results
-        if result.final_speed_mps + 0.2 >= result.initial_speed_mps
+    kinetic_start = (
+        kinetic_energy_j(mass_kg, results[0].initial_speed_mps)
+        if results
+        else 0.0
     )
+    kinetic_end = (
+        kinetic_energy_j(mass_kg, results[-1].final_speed_mps)
+        if results
+        else 0.0
+    )
+    retention_distance = 0.0
+    braking_energy = 0.0
+    for result in results:
+        initial_kinetic = kinetic_energy_j(mass_kg, result.initial_speed_mps)
+        final_kinetic = kinetic_energy_j(mass_kg, result.final_speed_mps)
+        # Starting from rest has no incoming kinetic energy to retain. This is
+        # deliberately independent of any speed ceiling.
+        retention = (
+            min(1.0, final_kinetic / initial_kinetic)
+            if initial_kinetic > 1e-9
+            else (1.0 if final_kinetic <= 1e-9 else 0.0)
+        )
+        retention_distance += float(result.distance_m) * retention
+        braking_energy += float(result.braking_energy_j)
     inertia_fraction = (
-        preserved / total_distance if total_distance > 0.0 else 0.0
+        retention_distance / total_distance if total_distance > 0.0 else 0.0
     )
+    energy = assessment.energy
     highways = tuple(
         query.graph.get_arc(arc_id).highway
         for arc_id in candidate.route.arc_ids
@@ -1026,6 +1063,24 @@ def _route_demand_and_telemetry(
             paced is None or paced.pacing.w_prime_is_provisional
         ),
         heart_rate_zones=None,
+        kinetic_energy_start_j=(
+            kinetic_start if energy is not None else None
+        ),
+        kinetic_energy_end_j=kinetic_end if energy is not None else None,
+        delta_kinetic_j=(kinetic_end - kinetic_start if energy is not None else None),
+        dissipative_loss_j=(
+            energy.dissipative_loss_j if energy is not None else None
+        ),
+        braking_energy_j=(braking_energy if results else 0.0),
+        energy_loss_detected=(
+            energy.energy_loss_detected if energy is not None else None
+        ),
+        kinetic_assist_j=(
+            assessment.metrics.kinetic_assist_j if energy is not None else None
+        ),
+        climb_entry_kinetic_j=(
+            assessment.metrics.climb_entry_kinetic_j if energy is not None else None
+        ),
     )
     return demand, telemetry
 

@@ -307,6 +307,8 @@ class TraversalResult:
     result_status: SimulationStatus = SimulationStatus.VALID
     aero_loss_j: float = 0.0
     rolling_loss_j: float = 0.0
+    kinetic_assist_j: float = 0.0
+    climb_entry_kinetic_j: float = 0.0
     #: True se algum passo usou o piso ``MIN_SPEED_MPS`` (regime de baixa
     #: velocidade regularizado). Permite ao consumidor nao superestimar a
     #: precisao do resultado (ADR-025, decisao 6, item 2).
@@ -398,6 +400,8 @@ class TraversalResult:
             "braking_energy_j": round(self.braking_energy_j, 3),
             "aero_loss_j": round(self.aero_loss_j, 3),
             "rolling_loss_j": round(self.rolling_loss_j, 3),
+            "kinetic_assist_j": round(self.kinetic_assist_j, 3),
+            "climb_entry_kinetic_j": round(self.climb_entry_kinetic_j, 3),
             "stalled": self.stalled,
             "result_status": self.result_status.value,
             "used_min_speed_regularization": self.used_min_speed_regularization,
@@ -427,6 +431,8 @@ class PhysicsRouteMetrics:
     battery_energy_j: float | None = None
     aero_loss_j: float = 0.0
     rolling_loss_j: float = 0.0
+    kinetic_assist_j: float = 0.0
+    climb_entry_kinetic_j: float = 0.0
 
     @property
     def average_speed_mps(self) -> float:
@@ -458,6 +464,10 @@ class PhysicsRouteMetrics:
             battery_energy_j=battery,
             aero_loss_j=self.aero_loss_j + result.aero_loss_j,
             rolling_loss_j=self.rolling_loss_j + result.rolling_loss_j,
+            kinetic_assist_j=self.kinetic_assist_j + result.kinetic_assist_j,
+            climb_entry_kinetic_j=(
+                self.climb_entry_kinetic_j + result.climb_entry_kinetic_j
+            ),
         )
 
     @classmethod
@@ -480,6 +490,8 @@ class PhysicsRouteMetrics:
             "braking_energy_j": round(self.braking_energy_j, 3),
             "aero_loss_j": round(self.aero_loss_j, 3),
             "rolling_loss_j": round(self.rolling_loss_j, 3),
+            "kinetic_assist_j": round(self.kinetic_assist_j, 3),
+            "climb_entry_kinetic_j": round(self.climb_entry_kinetic_j, 3),
             "battery_energy_j": (
                 None
                 if self.battery_energy_j is None

@@ -1,34 +1,67 @@
-# Cycling Routing Engine
+# 🚴 Cycling Routing Engine (Offline & Multi-Objective)
 
-Motor de roteamento cicloviário multiobjetivo, offline e auditável. O núcleo é
-Python puro, combinando modelo físico longitudinal, busca Pareto, regras de
-circulação OSM, elevação e uma camada opcional de Machine Learning.
+> Motor de roteamento cicloviário de alta fidelidade, **100% offline** e desenvolvido em **Python puro**, combinando simulação dinâmica longitudinal real, busca de fronteira Pareto (MOA\*), validação estrita de circulação e contratos fisiológicos auditáveis.
 
-O projeto separa quatro decisões: a física calcula as métricas; a busca encontra
-alternativas não dominadas; o ML pode gerar uma candidata independente; e a
-política do perfil ordena e limita o que será apresentado. A candidata ML passa
-pelas mesmas validações físicas e de circulação. Se coincidir com uma rota
-Pareto, o resultado preserva as duas origens.
+O projeto separa quatro decisões: a física calcula as métricas; a busca encontra alternativas não dominadas; o ML pode gerar uma candidata independente; e a política do perfil ordena e limita o que será apresentado. A candidata ML passa pelas mesmas validações físicas e de circulação. Se coincidir com uma rota Pareto, o resultado preserva as duas origens.
 
-## Recursos principais
+---
 
-- Física longitudinal com gravidade, rolamento, arrasto, vento, aceleração,
-  frenagem e continuidade da velocidade entre trechos.
-- Busca multiobjetivo com estado físico, heurísticas, dominância por velocidade
-  e fronteira Pareto.
-- Perfis `fastest`, `shortest`, `flattest`, `balanced` e `electric`.
-- Importação local de OSM PBF, elevação Terrarium e guard de rede offline.
-- Restrições de acesso, mão única, contramão configurável e restrições de
-  conversão quando fornecidas pelo grafo.
-- Presets de ciclista manual para estimar intensidade/RPE sem sensores.
-- Rede neural determinística opcional para produzir uma rota ML baseada nos
-  objetivos físicos do perfil.
-- Contrato de rota versionado, serialização estrita e múltiplas paradas.
+### ✨ O que torna este motor diferente?
 
-## Requisitos e instalação
+A maioria dos roteadores convencionais trata o relevo e o esforço como penalidades estáticas de peso em uma aresta. Este motor modela a travessia como um **problema físico e dinâmico real**:
 
-Requer Python 3.10 ou mais recente. O núcleo não possui dependências
-obrigatórias.
+- **Física Longitudinal Real:** Modela aceleração, desaceleração, atrito de rolamento ($C_{rr}$), arrasto aerodinâmico quadrático ($C_d \cdot A$), gradiente altimétrico, vento e dissipação de energia por frenagem. A velocidade de saída de um trecho é propagada como velocidade de entrada do próximo trecho.
+- **Busca Multiobjetivo (A\* Pareto):** Em vez de reduzir múltiplos objetivos a um número arbitrário, o motor explora a fronteira de Pareto (tempo, distância, ganho altimétrico e energia mecânica) com dominância discretizada por velocidade (`SpeedBucketDominance`).
+- **Autonomia Offline Total:** Não depende de serviços externos ou bibliotecas em C/Rust para o núcleo:
+  - Parser nativo de arquivos `OSM.PBF` (varints, zigzag, protobuf em duas passagens).
+  - Decodificador nativo de tiles de elevação `Terrarium PNG` (com implementação dos filtros de linha PNG).
+  - Guardrail de rede que impede conexões não autorizadas em tempo de execução.
+- **Guardrails Operacionais e de Circulação:** Aplicação estrita de restrições de conversão OSM (`via_node` e `via_way`), regras de acesso condicionais e tratamento formal de trechos a pé (`bicycle=dismount`).
+- **Honestidade Científica em ML:** Se não houver um modelo calibrado com dados reais, o motor declara explicitamente a ausência (`UNAVAILABLE` / `MODEL_NOT_CALIBRATED`) e opera em modo puramente físico (`PHYSICAL_ONLY`), recusando-se a inventar valores de percepção de esforço (Borg) ou frequência cardíaca.
+
+---
+
+### 🎯 Perfis de Rota Disponíveis
+
+| Perfil | Objetivos na Fronteira | Estratégia de Ranking |
+| :--- | :--- | :--- |
+| **Mais Rápido** (`fastest`) | Tempo + Ganho Altimétrico | Lexicográfico com tolerância |
+| **Mais Curto** (`shortest`) | Distância + Tempo | Lexicográfico com tolerância |
+| **Mais Plano** (`flattest`) | Ganho Altimétrico + Distância | Lexicográfico com tolerância |
+| **Equilibrado** (`balanced`) | Tempo + Distância + Ganho Altimétrico | Score ponderado normalizado |
+| **Elétrico** (`electric`) | Energia Mecânica + Tempo | Lexicográfico com tolerância + Viabilidade de bateria (Wh) |
+
+O perfil escolhe a política de ordenação; ele não altera a física da travessia. O perfil elétrico usa trabalho mecânico e não inventa autonomia ou descarga de bateria quando esses dados não foram fornecidos. Veja [busca física, precisão e benchmarks](docs/physical-search.md).
+
+### 🔋 Energia cinética e teto de velocidade
+
+O planejamento da API não aplica um teto global de velocidade por padrão. A
+velocidade evolui pela equação de energia, arrasto, rolamento e relevo; um teto
+só entra quando o chamador fornece `Environment(safe_max_speed_mps=...)` por
+uma exigência operacional. O resultado informa separadamente:
+
+- `delta_kinetic_j`: variação da energia cinética (`½·m·v²`);
+- `dissipative_loss_j`: energia realmente dissipada por arrasto, rolamento ou
+  frenagem;
+- `kinetic_assist_j`: energia cinética aproveitada durante trechos de subida;
+- `climb_entry_kinetic_j`: energia cinética disponível na entrada das subidas;
+- `energy_loss_detected`: resposta direta à pergunta “a rota perdeu energia?”;
+- `braking_energy_j`: parcela dissipada especificamente por frenagem.
+
+Assim, uma queda de energia cinética numa subida não é confundida com perda
+irreversível: ela aparece como conversão para energia potencial, enquanto a
+perda real fica explícita nos campos de dissipação.
+
+Em uma subida, `kinetic_assist_j` é acumulada continuamente como a parcela de
+`E_k` consumida contra o ganho de altura. Isso permite comparar uma rota que
+desce para ganhar embalo antes de uma subida longa com uma rota que sobe
+diretamente, sem transformar a preferência em um simples limite de velocidade.
+
+---
+
+### ⚙️ Requisitos e Instalação
+
+Requer Python 3.10 ou mais recente. O núcleo não possui dependências obrigatórias.
 
 ```powershell
 python -m venv .venv
@@ -48,7 +81,9 @@ Também é possível executar diretamente a partir da raiz:
 $env:PYTHONPATH = "src"
 ```
 
-## Uso mínimo
+---
+
+### 🚀 Uso Mínimo
 
 A superfície recomendada para integrações é `router.integration`.
 
@@ -71,8 +106,7 @@ plan = engine.plan(
 print(plan.to_json(indent=2))
 ```
 
-O grafo e a elevação são carregados localmente. Nenhuma etapa de planejamento
-baixa dados da internet. Para reutilizar uma rede preparada:
+O grafo e a elevação são carregados localmente — nenhuma etapa de planejamento baixa dados da internet. Para reutilizar uma rede preparada:
 
 ```python
 from router.integration import MobilityEngine, load_graph, save_graph
@@ -82,29 +116,14 @@ save_graph(prepared, "cache/bicycle.json")
 engine = MobilityEngine(load_graph("cache/bicycle.json"))
 ```
 
-## Perfis de rota
+---
 
-| Perfil | Objetivos principais |
-| --- | --- |
-| `fastest` | tempo e ganho de elevação |
-| `shortest` | distância e tempo |
-| `flattest` | ganho de elevação e distância |
-| `balanced` | tempo, distância e subida normalizados |
-| `electric` | energia mecânica e tempo, com bateria opcional |
+### 🏋️ Presets Manuais e RPE
 
-O perfil escolhe a política de ordenação; ele não altera a física da travessia.
-O perfil elétrico usa trabalho mecânico. Não inventa autonomia ou descarga de
-bateria quando esses dados não foram fornecidos.
-
-## Presets manuais e RPE
-
-Para bicicletas manuais, o cálculo mínimo do RPE estimado usa a potência humana
-produzida pela simulação e a potência de referência do perfil. Peso corporal e
-idade podem ser informados; a idade é registrada como contexto e não altera o
-baseline atual.
+Para bicicletas manuais, o RPE estimado usa a potência humana produzida pela simulação e a potência de referência do perfil. Peso corporal e idade podem ser informados.
 
 | Perfil | Potência de referência |
-| --- | ---: |
+| :--- | ---: |
 | Sedentário | 75 W |
 | Iniciante | 112,5 W |
 | Recreativo | 150 W |
@@ -112,11 +131,7 @@ baseline atual.
 | Competitivo | 315 W |
 | Elite | 412,5 W |
 
-São presets provisórios, versionados como `manual-rider-presets@1`. Não são FTP
-ou medições individuais, não escalam com a massa e não representam potência
-aplicada continuamente. O ritmo automático busca aproximadamente 18 km/h,
-limitado pela demanda física, pela via e pelo preset; descidas podem exigir
-potência humana zero.
+> São presets provisórios, versionados como `manual-rider-presets@1`. Não são FTP ou medições individuais e não representam potência aplicada continuamente.
 
 ```python
 from router.integration import ManualRiderProfile
@@ -133,15 +148,13 @@ for route in plan.routes:
     print(effort["mean_rpe"], effort["peak_rpe"])
 ```
 
-O RPE segue a escala Borg 6–20 e é uma estimativa computacional não calibrada.
-O contrato informa `calibrated=False` e `is_measurement=False`. Sem observações
-de ciclistas, o motor não afirma previsão fisiológica de frequência cardíaca ou
-fadiga acumulada.
+O RPE segue a escala Borg 6–20 e é uma estimativa computacional não calibrada (`calibrated=False`, `is_measurement=False`).
 
-## Geração de uma rota por ML
+---
 
-O ML tem uma função específica: gerar uma rota candidata independente. Ele não
-apenas classifica as rotas retornadas.
+### 🧠 Rota por ML (Candidata Neural)
+
+O ML tem uma função específica: gerar uma rota candidata independente — ele não apenas classifica as rotas retornadas pela busca Pareto.
 
 ```python
 plan = engine.plan(
@@ -158,30 +171,18 @@ for route in plan.routes:
 model_dict = plan.diagnostics["neural_routing"]["model"]
 ```
 
-O fluxo é treinar ou reutilizar a rede, executar a busca neural independente,
-executar a busca física Pareto, validar todas as candidatas e então ordenar pela
-política física do perfil. A rede atual tem sete entradas, oito neurônios ocultos,
-uma saída por objetivo, 180 épocas e seed determinística 42. Os alvos vêm da
-simulação física local, portanto o diagnóstico identifica a fonte como
-`simulation_surrogate` e `calibrated=False`.
+A rede atual tem sete entradas, oito neurônios ocultos, uma saída por objetivo, 180 épocas e seed determinística 42. Os alvos vêm da simulação física local (`simulation_surrogate`, `calibrated=False`). Veja [candidata neural e limites de calibração](docs/ml-candidate-design.md).
 
-O diagnóstico inclui modelo, versão, amostras, MSE, variáveis e percentuais de
-influência derivados dos caminhos absolutos dos pesos. Esses percentuais explicam
-a rede; não são pesos adicionais do score e não constituem atribuição causal.
+---
 
-## Quantidade e semelhança das rotas
+### 🔀 Quantidade e Semelhança das Rotas
 
-`max_routes` limita apenas a apresentação; a busca ainda pode encontrar a
-fronteira completa.
+`max_routes` limita apenas a apresentação; a busca ainda pode encontrar a fronteira completa.
 
 - `max_routes=None` ou `0` mantém todas as candidatas Pareto.
-- Um limite positivo mantém até N candidatas Pareto e preserva a candidata ML,
-  podendo resultar em N+1 rotas.
-- `collapse_similar=True` remove duplicatas exatas e agrupa rotas semelhantes
-  por Jaccard dos arcos direcionados.
-- Sem limite explícito, o agrupamento usa `structural-natural-break@1`: o corte
-  vem do maior salto na árvore de similaridade, sem percentual fixo.
-- Sem separação estrutural clara, nenhuma rota é removida.
+- Um limite positivo mantém até N candidatas Pareto e preserva a candidata ML, podendo resultar em N+1 rotas.
+- `collapse_similar=True` remove duplicatas exatas e agrupa rotas semelhantes por Jaccard dos arcos direcionados.
+- Sem limite explícito, o agrupamento usa `structural-natural-break@1`: o corte vem do maior salto na árvore de similaridade, sem percentual fixo.
 
 ```python
 plan = engine.plan(
@@ -194,15 +195,13 @@ plan = engine.plan(
 )
 ```
 
-`max_expansions` e `max_labels_per_state` são limites internos da exploração,
-distintos do número de rotas exibidas. Quando atingidos, o diagnóstico marca a
-busca como truncada; isso não é apresentado como ótimo global.
+`max_expansions` e `max_labels_per_state` são limites internos da exploração. Quando atingidos, o diagnóstico marca a busca como truncada — isso não é apresentado como ótimo global.
 
-## Múltiplas paradas e contrato
+---
 
-`plan_routes` resolve as pernas na ordem das paradas, usa o mesmo grafo e funde a
-geometria e as métricas. Uma rota só é considerada completa quando todas as
-pernas têm uma candidata elegível.
+### 📍 Múltiplas Paradas e Contrato
+
+`plan_routes` resolve as pernas na ordem das paradas, usa o mesmo grafo e funde geometria e métricas.
 
 ```python
 from router.integration import plan_routes
@@ -218,7 +217,7 @@ plan = plan_routes(
 )
 ```
 
-Os contratos públicos estão em `router.contracts`:
+Os contratos públicos estão em `router.contracts`. O envelope é versionado, rejeita versões desconhecidas e preserva geometria, fontes de parâmetros, incerteza de elevação, RPE e métricas físicas. `None` significa não calculado; não é convertido silenciosamente em zero.
 
 ```python
 from router.integration import dumps, loads
@@ -226,11 +225,9 @@ from router.integration import dumps, loads
 payload = loads(dumps(plan.to_contract(), indent=2))
 ```
 
-O envelope é versionado, rejeita versões desconhecidas e preserva geometria,
-fontes de parâmetros, incerteza de elevação, origem, RPE e métricas físicas.
-`None` significa não calculado; não é convertido silenciosamente em zero.
+---
 
-## CLI e documentação complementar
+### 🖥️ CLI
 
 ```powershell
 python scripts/mobility_route.py `
@@ -243,28 +240,32 @@ python scripts/mobility_route.py `
   --output debug/.cache/mobility-plan.json
 ```
 
-Referências úteis:
+---
 
-- [`docs/mobility-toolkit.md`](docs/mobility-toolkit.md): mobilidade, energia,
-  categorias e propulsão.
-- [`docs/physical-search.md`](docs/physical-search.md): busca física e
-  aproximações numéricas.
-- [`docs/ml-candidate-design.md`](docs/ml-candidate-design.md): candidata neural
-  e limites de calibração.
-- [`docs/reference/quickstart.md`](docs/reference/quickstart.md): receitas da
-  API e do contrato.
-- [`docs/reference/api.md`](docs/reference/api.md): referência pública gerada.
-
-## Testes
+### 🧪 Testes
 
 ```powershell
 pytest
 ```
 
-Os testes cobrem física, busca, Pareto, circulação, OSM PBF, DEM, energia,
-presets manuais, intensidade/RPE, rede neural, contratos, múltiplas paradas e
-guardrails offline.
+Os testes cobrem física, busca, Pareto, circulação, OSM PBF, DEM, energia, presets manuais, intensidade/RPE, rede neural, contratos, múltiplas paradas e guardrails offline.
 
-## Licença
+---
+
+### 📚 Toolkit de Mobilidade e Documentação
+
+A engine também oferece uma API orientada à estrada, com presets leves por veículo/propulsão e extensões para tração e resistência, preservando a API ciclável.
+
+| Documento | Conteúdo |
+| :--- | :--- |
+| [`docs/mobility-toolkit.md`](docs/mobility-toolkit.md) | Mobilidade, energia, categorias e propulsão |
+| [`docs/physical-search.md`](docs/physical-search.md) | Busca física e aproximações numéricas |
+| [`docs/ml-candidate-design.md`](docs/ml-candidate-design.md) | Candidata neural e limites de calibração |
+| [`docs/reference/quickstart.md`](docs/reference/quickstart.md) | Receitas da API e do contrato |
+| [`docs/reference/api.md`](docs/reference/api.md) | Referência pública gerada |
+
+---
+
+### 📄 Licença
 
 MIT. Consulte `pyproject.toml` para os metadados do pacote.
