@@ -33,6 +33,16 @@ A maioria dos roteadores convencionais trata o relevo e o esforço como penalida
 
 O perfil escolhe a política de ordenação; ele não altera a física da travessia. O perfil elétrico usa trabalho mecânico e não inventa autonomia ou descarga de bateria quando esses dados não foram fornecidos. Veja [busca física, precisão e benchmarks](docs/physical-search.md).
 
+O ambiente aceita vento frontal escalar (`headwind_mps`, positivo contra o
+movimento) ou vento meteorológico (`wind_speed_mps` e `wind_from_deg`, direção
+de onde sopra, em graus a partir do norte). Quando informado, o vetor substitui
+o escalar e é projetado pelo azimute médio de cada arco. Essa aproximação exige
+geometria direcionada e não calcula arrasto transversal. Exemplo:
+`Environment(safe_max_speed_mps=None, wind_speed_mps=5, wind_from_deg=0)`.
+
+A [auditoria de paridade com o TopoRide](docs/engine-parity-audit.md) registra
+os testes comparativos, correções aplicadas e divergências ainda abertas.
+
 ### 🔋 Energia cinética e teto de velocidade
 
 O planejamento da API não aplica um teto global de velocidade por padrão. A

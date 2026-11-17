@@ -52,6 +52,7 @@ class MotionEngine:
     def traverse(self, arc, mobility: MobilityProfile, propulsion: PropulsionModel,
                  *, initial_state: SimulationState | None = None, environment: Environment | None = None) -> MotionResult:
         environment = environment if environment is not None else Environment()
+        environment = environment.for_geometry(arc.geometry)
         state = initial_state if initial_state is not None else SimulationState()
         profile = self.geometry.profile(arc)
         totals = dict(time_s=0.0, mechanical_energy_j=0.0, rider_energy_j=0.0,
